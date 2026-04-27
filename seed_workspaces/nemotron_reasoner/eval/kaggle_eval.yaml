@@ -1,0 +1,22 @@
+# Presence of this file activates Kaggle mode in NemoReasonerBenchmark:
+# the backend loads base + LoRA via vLLM and scores the dev CSV with the
+# verbatim host metric (boxed-EM + relative-tolerance numeric fallback).
+primary_metric_name: kaggle_nemo_boxed_em
+default_split: kaggle_dev_local
+
+# vLLM engine / sampling — match the Kaggle host contract verbatim.
+temperature: 1.0
+top_p: 1.0
+max_tokens: 3584
+max_model_len: 4096
+max_lora_rank: 32
+tensor_parallel_size: 1
+gpu_memory_utilization: 0.85
+max_num_seqs: 128
+seed: 0
+
+# Path to the 30B base. If unset, the benchmark falls back to model/base.yaml::path.
+model_path: /fsx/models/Nemotron-3-Nano-30B-A3B-BF16
+
+# Optional cap on eval rows — useful for quick iteration. `null` means full split.
+limit: null

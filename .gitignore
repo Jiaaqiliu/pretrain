@@ -67,6 +67,8 @@ uv.lock
 evolution_workdir
 logs/
 swe_results*/
+/runs/
+/training_evolution_workdir/
 .crowdresearch/
 .claude/
 

@@ -53,6 +53,11 @@ class TrainingEvolver:
         self.benchmark = resolve_benchmark(benchmark)
         self.algorithm = resolve_algorithm(algorithm)
         self.backend = resolve_backend(backend)
+        # Propagate the global smoke flag into backends that expose a ``mock``
+        # toggle (e.g. SingleNodeTinkerLiteBackend). Without this, the CLI's
+        # ``--smoke`` and the backend's ``mock`` drift apart.
+        if hasattr(self.backend, "mock"):
+            self.backend.mock = bool(self.config.smoke)
         self._loop = self._build_loop()
 
     def run(self, cycles: int | None = None) -> TrainingEvolutionResult:

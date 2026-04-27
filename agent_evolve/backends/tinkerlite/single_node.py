@@ -41,6 +41,13 @@ class SingleNodeTinkerLiteBackend:
         # `mock=True` is PR2's default — PR7 flips this to `False` for real
         # training when a GPU is available.
         self.mock = mock
+        # These are set during ``run_trial`` so that ``run_eval_plan`` (called
+        # via ``benchmark.evaluate(workspace, checkpoint, backend, split)``)
+        # can reach the current workspace + benchmark without threading them
+        # through the EvalPlan dataclass.
+        self._current_workspace: Any | None = None
+        self._current_benchmark: Any | None = None
+        self._current_split: str | None = None
 
     # ── Factory methods ──────────────────────────────────────────────
 
@@ -59,7 +66,13 @@ class SingleNodeTinkerLiteBackend:
         return MockSamplingClient()
 
     def run_eval_plan(self, plan: EvalPlan) -> Path:
-        return _run_eval_plan(plan, smoke=self.mock)
+        return _run_eval_plan(
+            plan,
+            smoke=self.mock,
+            benchmark=self._current_benchmark,
+            workspace=self._current_workspace,
+            split=self._current_split,
+        )
 
     # ── Trial ───────────────────────────────────────────────────────
 
@@ -72,6 +85,9 @@ class SingleNodeTinkerLiteBackend:
     ) -> TrainingTrialResult:
         t0 = time.time()
         workspace_path = str(workspace.root)
+        self._current_workspace = workspace
+        self._current_benchmark = benchmark
+        self._current_split = _load_default_split(workspace)
         try:
             pipeline = _load_pipeline(workspace)
         except FileNotFoundError as exc:
@@ -83,7 +99,16 @@ class SingleNodeTinkerLiteBackend:
             )
 
         try:
-            checkpoint, train_metrics = self._run_pipeline(workspace, pipeline, budget)
+            seed_ckpt = _seed_adapter_ref(workspace)
+            if seed_ckpt is not None and not pipeline.get("override_seed_adapter"):
+                # Eval-only cycle: use the pre-provisioned adapter directly.
+                checkpoint = seed_ckpt
+                train_metrics = {
+                    "stage": "seed_adapter_passthrough",
+                    "adapter": seed_ckpt.path,
+                }
+            else:
+                checkpoint, train_metrics = self._run_pipeline(workspace, pipeline, budget)
         except Exception as exc:  # train crashed
             logger.exception("train_worker crashed for node %s", node.node_id)
             return TrainingTrialResult(
@@ -195,6 +220,34 @@ def _load_yaml_safely(path: Path) -> dict:
             return yaml.safe_load(f) or {}
     except Exception:  # pragma: no cover — best-effort config load
         return {}
+
+
+def _load_default_split(workspace: Any) -> str:
+    cfg = _load_yaml_safely(Path(workspace.root) / "eval" / "kaggle_eval.yaml")
+    return str(cfg.get("default_split", "local_holdout_small"))
+
+
+def _seed_adapter_ref(workspace: Any) -> CheckpointRef | None:
+    """If ``model/adapter.yaml::seed_adapter_path`` is set, return a CheckpointRef.
+
+    Eval-only cycles use this to skip training and evaluate an existing
+    adapter (e.g. the ``E-28`` baseline).
+    """
+    adapter_cfg = _load_yaml_safely(Path(workspace.root) / "model" / "adapter.yaml")
+    seed = adapter_cfg.get("seed_adapter_path")
+    if not seed:
+        return None
+    path = Path(seed)
+    if not path.is_absolute():
+        path = (Path(workspace.root) / seed).resolve()
+    if not path.is_dir():
+        return None
+    return CheckpointRef(
+        name=adapter_cfg.get("seed_adapter_name", "seed_adapter"),
+        path=str(path),
+        kind="adapter",
+        metadata={"source": "seed_adapter_path"},
+    )
 
 
 def _run_evaluation(

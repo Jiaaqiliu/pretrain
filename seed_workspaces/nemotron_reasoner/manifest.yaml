@@ -23,6 +23,7 @@ evolvable_layers:
 protected_layers:
   - model/base.yaml
   - eval/local_splits.yaml
+  - eval/kaggle_eval.yaml
   - eval/private_holdout.jsonl
   - data/raw
 

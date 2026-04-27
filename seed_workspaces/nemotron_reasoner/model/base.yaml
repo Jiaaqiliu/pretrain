@@ -1,4 +1,7 @@
-name: nemotron-reasoner-base
-size: 7b
-context_window: 8192
+name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+# Absolute path to the BF16 weights on this cluster. When unset, tests fall
+# back to a toy config.
+path: /fsx/models/Nemotron-3-Nano-30B-A3B-BF16
 dtype: bfloat16
+context_window: 4096
+architecture: nemotron-h-hybrid-mamba-attn-moe

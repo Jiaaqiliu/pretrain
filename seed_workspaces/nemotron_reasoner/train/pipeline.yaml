@@ -1,12 +1,15 @@
+# Eval-only default. When ``model/adapter.yaml::seed_adapter_path`` is set,
+# the backend skips every stage and evaluates the seed adapter directly. To
+# run a real training cycle: unset seed_adapter_path AND flip the stage below
+# to ``enabled: true``.
 stages:
   - name: sft_warmup
     type: sft
     steps: 2
     loss: cross_entropy
     data_mix: default
-    enabled: true
-
-  - name: rl_verifier
+    enabled: false
+  - name: rl_gspo
     type: rl
     steps: 0
     loss: importance_sampling
