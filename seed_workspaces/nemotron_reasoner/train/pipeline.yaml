@@ -1,14 +1,19 @@
-# Eval-only default. When ``model/adapter.yaml::seed_adapter_path`` is set,
-# the backend skips every stage and evaluates the seed adapter directly. To
-# run a real training cycle: unset seed_adapter_path AND flip the stage below
-# to ``enabled: true``.
+# Real SFT training pipeline. MCGS forks this workspace per cycle and the
+# LRBagMutationProposer overwrites ``train/optimizer.yaml::lr``.
+#
+# ``max_steps`` caps training at N optimizer steps; at effective batch 32
+# (per_device_bs=1 × grad_accum=32), 8 steps ≈ 256 examples, roughly E-05/3.5.
+# Each step on a 30B hybrid-Mamba model with grad checkpointing is ~3.5 min
+# on one H200 → ~30 min/cycle. Set ``max_steps: null`` (or delete) to train
+# for full ``epochs``.
 stages:
   - name: sft_warmup
     type: sft
-    steps: 2
+    epochs: 2
+    max_steps: 8
     loss: cross_entropy
     data_mix: default
-    enabled: false
+    enabled: true
   - name: rl_gspo
     type: rl
     steps: 0

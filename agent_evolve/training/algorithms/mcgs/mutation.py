@@ -1,13 +1,9 @@
-"""Baseline mutation proposer (PR5).
-
-Generates simple, self-contained patches to ``data/mix.yaml``. PR6 replaces
-this with a memory-aware proposer.
-"""
+"""Mutation proposers for MCGS."""
 
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Iterable
 
 from ...types import (
     PatchOperation,
@@ -51,4 +47,43 @@ class BaselineMutationProposer:
                 ]
             ),
             mutation_type="data_mix",
+        )
+
+
+class LRBagMutationProposer:
+    """Rotates through a bag of learning-rate values.
+
+    Each mutation patches ``train/optimizer.yaml::lr``. Used for the Kaggle
+    4-cycle sweep that forks a candidate per lr from root.
+    """
+
+    def __init__(self, bag: Iterable[float] = (1e-4, 5e-5, 3e-5, 1e-5)) -> None:
+        self._i = 0
+        self._bag = list(bag)
+        if not self._bag:
+            raise ValueError("LRBagMutationProposer bag must be non-empty")
+
+    def propose(
+        self,
+        parent: Any,
+        graph: Any = None,  # noqa: ARG002
+    ) -> WorkspaceMutation:
+        lr = self._bag[self._i % len(self._bag)]
+        self._i += 1
+        mutation_id = f"m-lr-{uuid.uuid4().hex[:8]}"
+        return WorkspaceMutation(
+            mutation_id=mutation_id,
+            parent_node_id=parent.node_id,
+            description=f"Set train/optimizer.yaml:lr={lr}",
+            patch=WorkspacePatch(
+                operations=[
+                    PatchOperation(
+                        op="replace",
+                        path="train/optimizer.yaml",
+                        key_path=["lr"],
+                        value=lr,
+                    )
+                ]
+            ),
+            mutation_type="training_recipe",
         )

@@ -11,8 +11,7 @@ target_modules:
   - in_proj
   - out_proj
 
-# Eval-only cycle: start from the E-28 LB SOTA adapter (dev 48.79%, LB 0.59).
-# Backend detects this path and skips training, evaluating the adapter
-# directly. Comment out both lines to run a training cycle from base.
-seed_adapter_path: /fsx/zzsamshi/nemotron-auto-research/experiments/E-28-iter3-noprm/adapter
-seed_adapter_name: E-28-iter3-noprm
+# Eval-only cycle (commented): start from the E-28 LB SOTA adapter (dev 48.79%).
+# Leave commented for real-SFT cycles so each fork trains from base.
+# seed_adapter_path: /fsx/zzsamshi/nemotron-auto-research/experiments/E-28-iter3-noprm/adapter
+# seed_adapter_name: E-28-iter3-noprm

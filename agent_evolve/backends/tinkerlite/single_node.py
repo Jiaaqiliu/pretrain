@@ -172,7 +172,10 @@ class SingleNodeTinkerLiteBackend:
                 # Non-SFT stages are no-ops for PR7; PR9+ owns RL paths.
                 continue
             remaining = budget.seconds - (time.time() - start) if budget.seconds else None
-            datums = list(render_datums(workspace, smoke=self.mock))
+            # Smoke path still uses the mock Datum iterable; real path pulls
+            # its tokenized dataset from ``render_hf_dataset`` inside
+            # ``train_worker`` and ignores the ``datums`` arg.
+            datums = list(render_datums(workspace, smoke=self.mock)) if self.mock else None
             ckpt, stage_metrics = run_sft_stage(
                 workspace,
                 stage,
@@ -190,14 +193,28 @@ class SingleNodeTinkerLiteBackend:
             shell = MockTrainingClient(Path(workspace.root))
             last_ckpt = shell.save_weights_for_sampler(name="empty")
 
-        # Package the raw checkpoint into an adapter directory the benchmark
-        # can point at.
-        adapter = pack_adapter(
-            last_ckpt,
-            target_root=Path(workspace.root) / "checkpoints" / "adapters",
-            adapter_name=last_ckpt.name,
-            metadata={"pipeline_stages": len(stages)},
-        )
+        # Real-path guard: the real SFT path writes ``adapter_config.json``
+        # directly via ``trainer.save_model``; the mock path writes a fake
+        # ``state.json`` / ``weights.json``. Only re-pack when the mock path
+        # was used — repacking a real adapter would discard its config.
+        if self.mock:
+            adapter = pack_adapter(
+                last_ckpt,
+                target_root=Path(workspace.root) / "checkpoints" / "adapters",
+                adapter_name=last_ckpt.name,
+                metadata={"pipeline_stages": len(stages)},
+            )
+        else:
+            # Validity guard: the real trainer must have produced an adapter
+            # directory with ``adapter_config.json``. Missing either is a
+            # hard failure — raise so ``run_trial`` catches and flips the
+            # trial status to ``train_failed``.
+            adapter_dir = Path(last_ckpt.path)
+            if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
+                raise RuntimeError(
+                    f"Expected adapter_config.json under {adapter_dir} after real SFT"
+                )
+            adapter = last_ckpt
         aggregated["total_seconds"] = time.time() - start
         return adapter, aggregated
 
