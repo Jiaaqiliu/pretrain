@@ -55,6 +55,7 @@ inspect_evals/
 /tests/*
 !/tests/test_skillbench_setup.py
 !/tests/gepa/
+!/tests/training/
 
 # Root-level artifacts
 /*.json

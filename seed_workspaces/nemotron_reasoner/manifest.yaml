@@ -1,0 +1,32 @@
+name: nemotron_reasoner
+contract_version: train-1.0
+
+defaults:
+  benchmark: nemo_reasoner
+  algorithm: mcgs
+  backend: h200_single_node
+
+evolvable_layers:
+  - data/mix.yaml
+  - data/curriculum.yaml
+  - data/generators
+  - data/filters
+  - train/pipeline.yaml
+  - train/optimizer.yaml
+  - train/loss.yaml
+  - train/batching.yaml
+  - rl/reward.py
+  - rl/advantage.py
+  - rl/rollout.yaml
+  - eval/error_taxonomy.yaml
+
+protected_layers:
+  - model/base.yaml
+  - eval/local_splits.yaml
+  - eval/private_holdout.jsonl
+  - data/raw
+
+artifact_layers:
+  - memory
+  - checkpoints
+  - evolution

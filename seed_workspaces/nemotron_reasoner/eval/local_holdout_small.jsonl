@@ -1,0 +1,5 @@
+{"id": 1, "prompt": "If 2 + 2 = ?", "answer": "4", "is_correct": true}
+{"id": 2, "prompt": "Square of 5 is ?", "answer": "25", "is_correct": true}
+{"id": 3, "prompt": "Cube of 3 is ?", "answer": "27", "is_correct": true}
+{"id": 4, "prompt": "Prime between 10 and 20?", "answer": "11", "is_correct": false, "format_error": true}
+{"id": 5, "prompt": "Reasoning chain question...", "answer": null, "is_correct": false}

@@ -1,0 +1,14 @@
+stages:
+  - name: sft_warmup
+    type: sft
+    steps: 2
+    loss: cross_entropy
+    data_mix: default
+    enabled: true
+
+  - name: rl_verifier
+    type: rl
+    steps: 0
+    loss: importance_sampling
+    rollout: default
+    enabled: false

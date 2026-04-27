@@ -11,6 +11,8 @@ from .engine.base import EvolutionEngine
 from .engine.history import EvolutionHistory
 from .engine.trial import TrialRunner
 from .protocol.base_agent import BaseAgent
+from .training.api import TrainingEvolver
+from .training.workspace import TrainingWorkspace
 from .types import (
     CycleRecord,
     EvolutionResult,
@@ -24,6 +26,8 @@ from .types import (
 
 __all__ = [
     "Evolver",
+    "TrainingEvolver",
+    "TrainingWorkspace",
     "EvolutionEngine",
     "EvolutionHistory",
     "TrialRunner",

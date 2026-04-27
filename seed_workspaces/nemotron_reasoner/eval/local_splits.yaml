@@ -1,0 +1,3 @@
+splits:
+  local_holdout: eval/local_holdout.jsonl
+  local_holdout_small: eval/local_holdout_small.jsonl

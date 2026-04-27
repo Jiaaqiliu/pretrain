@@ -1,0 +1,4 @@
+name: nemotron-reasoner-base
+size: 7b
+context_window: 8192
+dtype: bfloat16
