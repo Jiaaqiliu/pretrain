@@ -234,8 +234,89 @@ class MLLearningRateSweepProposer:
         )
 
 
+class MLDepthSweepProposer:
+    """Sweeps through max_depth values for tree models."""
+
+    def __init__(self, depths: tuple[int, ...] = (5, 8, 10, 12, 15, 20)):
+        self.depths = depths
+        self.index = 0
+
+    def propose(self, parent: Any, graph: Any) -> WorkspaceMutation:
+        """Propose next max_depth."""
+        depth = self.depths[self.index % len(self.depths)]
+        self.index += 1
+
+        mutation_id = f"m-depth-{uuid.uuid4().hex[:8]}"
+
+        return WorkspaceMutation(
+            mutation_id=mutation_id,
+            parent_node_id=parent.node_id,
+            description=f"Set max_depth={depth}",
+            patch=WorkspacePatch(
+                operations=[
+                    PatchOperation(
+                        op="replace",
+                        path="model/config.yaml",
+                        key_path=["hyperparameters", "max_depth"],
+                        value=depth,
+                    ),
+                ]
+            ),
+            mutation_type="training_recipe",
+        )
+
+
+class MLNEstimatorsSweepProposer:
+    """Sweeps through n_estimators values."""
+
+    def __init__(self, n_estimators: tuple[int, ...] = (50, 100, 150, 200, 300)):
+        self.n_estimators = n_estimators
+        self.index = 0
+
+    def propose(self, parent: Any, graph: Any) -> WorkspaceMutation:
+        """Propose next n_estimators."""
+        n_est = self.n_estimators[self.index % len(self.n_estimators)]
+        self.index += 1
+
+        mutation_id = f"m-nest-{uuid.uuid4().hex[:8]}"
+
+        return WorkspaceMutation(
+            mutation_id=mutation_id,
+            parent_node_id=parent.node_id,
+            description=f"Set n_estimators={n_est}",
+            patch=WorkspacePatch(
+                operations=[
+                    PatchOperation(
+                        op="replace",
+                        path="model/config.yaml",
+                        key_path=["hyperparameters", "n_estimators"],
+                        value=n_est,
+                    ),
+                ]
+            ),
+            mutation_type="training_recipe",
+        )
+
+
+class CombinedMutationProposer:
+    """Cycles through multiple mutation strategies."""
+
+    def __init__(self, mutators: list):
+        self.mutators = mutators
+        self.index = 0
+
+    def propose(self, parent: Any, graph: Any) -> WorkspaceMutation:
+        """Propose using the next mutator in sequence."""
+        mutator = self.mutators[self.index % len(self.mutators)]
+        self.index += 1
+        return mutator.propose(parent, graph)
+
+
 __all__ = [
     "MLHyperparameterMutationProposer",
     "MLModelTypeMutationProposer",
     "MLLearningRateSweepProposer",
+    "MLDepthSweepProposer",
+    "MLNEstimatorsSweepProposer",
+    "CombinedMutationProposer",
 ]

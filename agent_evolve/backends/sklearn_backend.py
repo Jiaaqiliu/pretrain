@@ -58,7 +58,7 @@ class SklearnBackend:
             model = self._train_model(config, X_train, y_train)
 
             # 4. Save model (checkpoint)
-            checkpoint_path = self._save_model(workspace, node.node_id, model, config)
+            checkpoint_path = self._save_model(workspace, node.node_id, model, config, self.feature_engineer)
             checkpoint = CheckpointRef(
                 name=f"model-{node.node_id}",
                 path=str(checkpoint_path),
@@ -130,22 +130,52 @@ class SklearnBackend:
         # Get ID column (usually 'PassengerId', 'id', etc.)
         id_col = config.get("id_column", "PassengerId")
 
-        # Separate features and target (exclude ID and target)
-        feature_cols = [c for c in train_df.columns if c != target_col and c != id_col]
-        X_train = train_df[feature_cols]
+        # Store test IDs for later submission
+        self.test_ids = test_df[id_col].values if id_col in test_df.columns else test_df.index.values
+
+        # Separate target
         y_train = train_df[target_col]
 
-        # For test set, use same feature columns
-        X_test = test_df[feature_cols] if all(c in test_df.columns for c in feature_cols) else test_df[[c for c in feature_cols if c in test_df.columns]]
+        # Remove target and ID from dataframes before feature engineering
+        X_train_raw = train_df.drop(columns=[target_col] + ([id_col] if id_col in train_df.columns else []))
+        X_test_raw = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
 
-        # Feature engineering (from config)
-        X_train, X_test = self._apply_feature_engineering(X_train, X_test, config)
+        # Feature engineering (advanced or basic)
+        X_train, X_test, feature_engineer = self._apply_feature_engineering(X_train_raw, X_test_raw, config)
+
+        # Store feature engineer for later use in evaluation
+        self.feature_engineer = feature_engineer
 
         return X_train, y_train, X_test
 
     def _apply_feature_engineering(self, X_train, X_test, config):
-        """Apply feature engineering steps."""
+        """Apply feature engineering steps.
+
+        Returns:
+            X_train, X_test, feature_engineer (or None if basic FE)
+        """
         fe_config = config.get("feature_engineering", {})
+        competition_id = config.get("competition_id", "unknown")
+
+        # Check if we should use advanced feature engineering
+        use_advanced_fe = fe_config.get("advanced", True)
+
+        if use_advanced_fe:
+            # Try to use competition-specific feature engineering
+            try:
+                from .feature_engineering import create_feature_engineer
+
+                fe = create_feature_engineer(competition_id)
+                if fe is not None:
+                    print(f"✓ Using advanced feature engineering for {competition_id}")
+                    X_train = fe.fit_transform(X_train, is_train=True)
+                    X_test = fe.transform(X_test)
+                    return X_train, X_test, fe
+            except Exception as e:
+                print(f"Warning: Advanced FE failed ({e}), falling back to basic FE")
+
+        # Fallback to basic feature engineering
+        print(f"Using basic feature engineering")
 
         # Separate numeric and categorical columns
         numeric_cols = X_train.select_dtypes(include=[np.number]).columns.tolist()
@@ -189,7 +219,7 @@ class SklearnBackend:
                 X_train[all_numeric_cols] = scaler.fit_transform(X_train[all_numeric_cols])
                 X_test[all_numeric_cols] = scaler.transform(X_test[all_numeric_cols])
 
-        return X_train, X_test
+        return X_train, X_test, None
 
     def _train_model(self, config: Dict, X_train, y_train):
         """Train ML model based on config."""
@@ -236,7 +266,7 @@ class SklearnBackend:
         unique_ratio = len(np.unique(y)) / len(y)
         return unique_ratio < 0.05 or y.dtype == "object"
 
-    def _save_model(self, workspace: Any, node_id: str, model, config: Dict) -> Path:
+    def _save_model(self, workspace: Any, node_id: str, model, config: Dict, feature_engineer=None) -> Path:
         """Save trained model as checkpoint."""
         workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
         checkpoint_dir = workspace_path / "checkpoints" / "models" / node_id
@@ -246,6 +276,12 @@ class SklearnBackend:
         model_path = checkpoint_dir / "model.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(model, f)
+
+        # Save feature engineer if provided
+        if feature_engineer is not None:
+            fe_path = checkpoint_dir / "feature_engineer.pkl"
+            with open(fe_path, "wb") as f:
+                pickle.dump(feature_engineer, f)
 
         # Save config
         config_path = checkpoint_dir / "config.json"
@@ -275,6 +311,13 @@ class SklearnBackend:
         with open(model_path, "rb") as f:
             model = pickle.load(f)
 
+        # Load feature engineer if available
+        fe_path = Path(checkpoint.path) / "feature_engineer.pkl"
+        feature_engineer = None
+        if fe_path.exists():
+            with open(fe_path, "rb") as f:
+                feature_engineer = pickle.load(f)
+
         # Load test data from plan metadata
         workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
 
@@ -290,33 +333,33 @@ class SklearnBackend:
         id_col = plan.metadata.get("id_column", "PassengerId")
         test_ids = X_test[id_col] if id_col in X_test.columns else X_test.index
 
-        # Drop ID column for prediction
-        feature_cols = [c for c in X_test.columns if c != id_col]
-        X_test_features = X_test[feature_cols]
+        # Drop ID column
+        X_test_raw = X_test.drop(columns=[id_col] if id_col in X_test.columns else [])
 
-        # Apply same feature engineering as training (need to match)
-        # Load config to get feature engineering settings
-        config_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
-        config_path = config_path / "model" / "config.yaml"
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        # Apply feature engineering
+        if feature_engineer is not None:
+            # Use saved feature engineer
+            X_test_features = feature_engineer.transform(X_test_raw)
+        else:
+            # Fallback: basic feature engineering
+            X_test_features = X_test_raw
 
-        # Separate numeric and categorical columns
-        numeric_cols = X_test_features.select_dtypes(include=[np.number]).columns.tolist()
-        categorical_cols = X_test_features.select_dtypes(include=["object", "category"]).columns.tolist()
+            # Separate numeric and categorical columns
+            numeric_cols = X_test_features.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = X_test_features.select_dtypes(include=["object", "category"]).columns.tolist()
 
-        # Handle missing values for numeric columns
-        if numeric_cols:
-            X_test_features[numeric_cols] = X_test_features[numeric_cols].fillna(X_test_features[numeric_cols].median())
+            # Handle missing values for numeric columns
+            if numeric_cols:
+                X_test_features[numeric_cols] = X_test_features[numeric_cols].fillna(X_test_features[numeric_cols].median())
 
-        # Handle missing values and encode categorical columns
-        if categorical_cols:
-            for col in categorical_cols:
-                # Fill missing with 'Unknown'
-                X_test_features[col] = X_test_features[col].fillna('Unknown')
-                # Encode
-                le = LabelEncoder()
-                X_test_features[col] = le.fit_transform(X_test_features[col].astype(str))
+            # Handle missing values and encode categorical columns
+            if categorical_cols:
+                for col in categorical_cols:
+                    # Fill missing with 'Unknown'
+                    X_test_features[col] = X_test_features[col].fillna('Unknown')
+                    # Encode
+                    le = LabelEncoder()
+                    X_test_features[col] = le.fit_transform(X_test_features[col].astype(str))
 
         # Predict
         if hasattr(model, "predict_proba"):
