@@ -1,0 +1,21 @@
+name: mle_automl
+contract_version: train-1.0
+
+defaults:
+  benchmark: mle_bench
+  algorithm: mcgs
+  backend: sklearn_backend
+
+evolvable_layers:
+  - model/config.yaml         # ML model type and hyperparameters
+  - model/feature_engineering.yaml  # Feature engineering strategies
+  - train/ensemble.yaml       # Ensemble strategies
+
+protected_layers:
+  - data/paths.yaml           # Data file paths (from MLE-Bench)
+  - eval/competition.yaml     # Competition metadata
+
+artifact_layers:
+  - memory
+  - checkpoints
+  - evolution

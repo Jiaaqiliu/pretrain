@@ -1,0 +1,12 @@
+# Ensemble strategies (for future enhancement)
+
+enabled: false
+
+strategy: voting  # voting, stacking, blending
+
+models:
+  - xgboost
+  - random_forest
+  - lightgbm
+
+weights: null  # null = equal weights, or specify [0.4, 0.3, 0.3]

@@ -13,6 +13,7 @@ from .types import TrainingRegistryError
 
 TRAINING_BENCHMARKS: dict[str, str] = {
     "nemo_reasoner": "agent_evolve.benchmarks.nemo_reasoner.NemoReasonerBenchmark",
+    "mle_bench": "agent_evolve.benchmarks.mle_bench.mle_bench.MLEBenchAdapter",
 }
 
 TRAINING_ALGORITHMS: dict[str, str] = {
@@ -22,6 +23,7 @@ TRAINING_ALGORITHMS: dict[str, str] = {
 TRAINING_BACKENDS: dict[str, str] = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
     "k8s_h200": "agent_evolve.backends.tinkerlite.k8s.K8sTinkerLiteBackend",
+    "sklearn_backend": "agent_evolve.backends.sklearn_backend.SklearnBackend",
 }
 
 

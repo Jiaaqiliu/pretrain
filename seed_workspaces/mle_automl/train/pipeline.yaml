@@ -1,0 +1,5 @@
+# Training pipeline for AutoML
+stages:
+  - name: ml_training
+    type: ml
+    enabled: true
