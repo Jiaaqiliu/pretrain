@@ -170,8 +170,6 @@ class MLEBenchAdapter:
 
         This is called for sklearn backend to compute actual Kaggle scores.
         """
-        import subprocess
-
         submission_path = result_dir / "submission.csv"
         if not submission_path.exists():
             return
@@ -180,72 +178,56 @@ class MLEBenchAdapter:
         workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
         config_path = workspace_path / "model" / "config.yaml"
 
-        import yaml
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
         competition_id = config.get("competition_id", "unknown")
 
         try:
-            # Use mlebench CLI to grade
-            result = subprocess.run(
-                ["mlebench", "grade", "--competition", competition_id, "--submission", str(submission_path)],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
+            # Use mlebench grader directly (more reliable than CLI)
+            from mlebench.registry import registry
+            from mlebench.utils import load_answers, read_csv
 
-            # Parse output and save to metrics.json
-            # The output format depends on mlebench, typically includes score
-            metrics = self._parse_mlebench_output(result.stdout, competition_id)
+            competition = registry.get_competition(competition_id)
+            submission_df = read_csv(submission_path)
+            answers = load_answers(competition.answers)
+
+            # Grade submission
+            score = competition.grader(submission_df, answers)
+
+            # Save metrics
+            metrics = {
+                "competition_id": competition_id,
+                "mle_bench_score": float(score),
+                "primary_metric": "mle_bench_score",
+                "mle_bench_success_rate": 1.0 if score > 0 else 0.0,  # Success if valid score
+            }
 
             metrics_path = result_dir / "metrics.json"
             with open(metrics_path, "w") as f:
-                import json
                 json.dump(metrics, f, indent=2)
+
+            print(f"✓ Graded {competition_id}: score = {score:.5f}")
 
         except Exception as e:
             print(f"Warning: Failed to grade submission: {e}")
-            # Create dummy metrics
+            # Create fallback metrics
             metrics_path = result_dir / "metrics.json"
             with open(metrics_path, "w") as f:
-                import json
                 json.dump({
+                    "competition_id": competition_id,
                     "mle_bench_score": 0.0,
                     "error": str(e),
                 }, f)
-
-    def _parse_mlebench_output(self, output: str, competition_id: str) -> dict:
-        """Parse mlebench grade output."""
-        # Simple parser - adjust based on actual mlebench output format
-        import json
-
-        # Try to extract JSON from output
-        try:
-            # Look for JSON in output
-            start_idx = output.find('{')
-            end_idx = output.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = output[start_idx:end_idx]
-                return json.loads(json_str)
-        except:
-            pass
-
-        # Fallback: simple parsing
-        return {
-            "competition_id": competition_id,
-            "mle_bench_score": 0.0,
-            "raw_output": output,
-        }
 
     def parse_metrics(self, result_dir: Path) -> EvalMetrics:
         """Parse evaluation metrics from result directory.
 
         Expects result_dir/metrics.json with:
         {
-            "mle_bench_success_rate": 0.75,
-            "mle_bench_avg_score": 0.65,
-            "per_task": {...}
+            "competition_id": "spaceship-titanic",
+            "mle_bench_score": 0.748,
+            "mle_bench_success_rate": 1.0
         }
         """
         metrics_path = result_dir / "metrics.json"
@@ -259,12 +241,14 @@ class MLEBenchAdapter:
         with open(metrics_path) as f:
             data = json.load(f)
 
-        primary_name = data.get("primary_metric", DEFAULT_PRIMARY_METRIC_NAME)
+        # Use mle_bench_score as primary metric
+        primary_name = data.get("primary_metric", "mle_bench_score")
         primary_value = data.get(primary_name, 0.0)
 
         return EvalMetrics(
             primary_metric_name=primary_name,
             primary_metric_value=primary_value,
+            maximize=True,
             secondary={
                 k: v for k, v in data.items()
                 if k not in ["primary_metric", primary_name]

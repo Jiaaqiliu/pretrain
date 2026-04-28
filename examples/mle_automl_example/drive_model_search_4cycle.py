@@ -107,7 +107,8 @@ def main() -> int:
         )
 
     print("\nBest configuration saved to:")
-    print(f"  {result.graph_path.parent / 'incumbent' / 'model' / 'config.yaml'}")
+    from pathlib import Path
+    print(f"  {Path(result.graph_path).parent / 'incumbent' / 'model' / 'config.yaml'}")
 
     return 0
 
