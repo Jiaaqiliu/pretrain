@@ -59,6 +59,13 @@ DEFAULT_SEED_CONFIG = {
         "n_splits": 5,
         "strategy": "stratified_kfold",
     },
+    # Ensemble config (lives in train/ensemble.yaml on disk; mirrored here).
+    "ensemble": {
+        "enabled": False,
+        "strategy": "voting_soft",
+        "members": [],
+        "stacking_meta_learner": "logistic_regression",
+    },
 }
 
 
@@ -86,7 +93,8 @@ def _load_node_secondary_metrics(node: Any) -> dict:
             data = json.load(f)
         # Return only the secondary signals we care about (keep LLM context lean)
         out = {}
-        for k in ("cv_mean_accuracy", "cv_std", "cv_n_splits"):
+        for k in ("cv_mean_accuracy", "cv_std", "cv_n_splits",
+                  "ensemble_strategy", "ensemble_n_members", "ensemble_member_types"):
             if k in data:
                 out[k] = data[k]
         return out
@@ -113,7 +121,8 @@ def _reconstruct_config(node: Any, graph: Any) -> dict:
         cursor = graph.parent(cursor) if graph else None
     chain.reverse()  # root → node order
 
-    # Apply patches in order. Both model/config.yaml and eval/cv.yaml are tracked.
+    # Apply patches in order. model/config.yaml, eval/cv.yaml, and
+    # train/ensemble.yaml are all tracked and mirrored into the flat config.
     for n in chain:
         if not hasattr(n, "workspace_patch") or not n.workspace_patch:
             continue
@@ -123,8 +132,9 @@ def _reconstruct_config(node: Any, graph: Any) -> dict:
             if op.path == "model/config.yaml":
                 _apply_patch_to_dict(config, op.key_path, op.value)
             elif op.path == "eval/cv.yaml":
-                # Mirror cv.yaml keys under config["cv"]
                 _apply_patch_to_dict(config.setdefault("cv", {}), op.key_path, op.value)
+            elif op.path == "train/ensemble.yaml":
+                _apply_patch_to_dict(config.setdefault("ensemble", {}), op.key_path, op.value)
 
     return config
 
@@ -173,11 +183,15 @@ class LLMHyperparameterProposer:
         "feature_engineering.flags.log_transform_spending": [True, False],
         "feature_engineering.flags.target_encoding": [True, False],
         "feature_engineering.flags.group_aggregates": [True, False],  # NEW
-        # Cross-validation (eval/cv.yaml) — CV removes test-split noise.
-        # When enabled, primary metric becomes CV-mean (cleaner signal for MCGS).
+        # Cross-validation (eval/cv.yaml) — CV metric appears in secondary.
         "cv.enabled": [True, False],
         "cv.n_splits": [3, 5, 10],
         "cv.strategy": ["stratified_kfold", "kfold"],
+        # Ensemble (train/ensemble.yaml) — combine multiple models for robustness.
+        # When enabled, you MUST populate ensemble.members with at least 2 entries.
+        "ensemble.enabled": [True, False],
+        "ensemble.strategy": ["voting_soft", "voting_hard", "stacking"],
+        "ensemble.stacking_meta_learner": ["logistic_regression", "ridge"],
     }
 
     def __init__(
@@ -274,6 +288,8 @@ You MUST propose something DIFFERENT. Consider:
             path = op.get("path", "model/config.yaml")
             if path == "eval/cv.yaml":
                 _apply_patch_to_dict(new_config.setdefault("cv", {}), key_path, op.get("value"))
+            elif path == "train/ensemble.yaml":
+                _apply_patch_to_dict(new_config.setdefault("ensemble", {}), key_path, op.get("value"))
             else:
                 _apply_patch_to_dict(new_config, key_path, op.get("value"))
         return new_config
@@ -442,18 +458,25 @@ Many attempts to "improve" via slow-learning (lower lr + more trees) have FAILED
 **Stop proposing "lr=0.01, n_estimators=1000"** — that region is exhausted and underperforms!
 
 ## 🎯 UNEXPLORED REGIONS WITH HIGH POTENTIAL
-1. **Group-level aggregates** (`feature_engineering.flags.group_aggregates=True`):
+1. **Ensembles** (`ensemble.enabled=True`, path `train/ensemble.yaml`):
+   - Typically adds +0.005 to +0.015 vs single model — this is the Kaggle top-10 move.
+   - Populate `ensemble.members` with 3-5 entries. Each entry has
+     `model_type`, `random_state`, `hyperparameters`. Diversity across model_type
+     and/or random_state is what makes voting work.
+   - See Example 3 below for the exact members list shape.
+   - Strategies: voting_soft (default, stable), stacking (meta-learner on OOF preds).
+2. **Group-level aggregates** (`feature_engineering.flags.group_aggregates=True`):
    - Adds GroupSpendMean/Std/Max, GroupCryoRate, GroupAgeMean — same-group passengers
      share fate, so within-group stats are strong signal (Kaggle top-20 rely on this).
-2. **Cross-validation** (`cv.enabled=True`, path `eval/cv.yaml`):
-   - Replaces single test split with K-fold CV (default 5). Primary metric becomes CV-mean,
-     removing ~0.003 of test-split noise. Use this to distinguish real wins from noise.
-3. **Other FE flags**:
+3. **Cross-validation** (`cv.enabled=True`, path `eval/cv.yaml`):
+   - Robustness signal via secondary metrics — does NOT improve primary directly.
+   - Use when you want to confirm a jump is real vs. holdout noise.
+4. **Other FE flags**:
    - `interactions=True`: CryoSleep*HasSpending, Age*Spent, VIP*Spent
    - `log_transform_spending=True`: fixes skewed spending distribution
    - `target_encoding=True`: smoothed mean-target encoding for categoricals
-4. **Model diversity**: Random Forest rarely tried; lightgbm + group_aggregates untried.
-5. **Multi-parameter combos**: e.g. lightgbm + group_aggregates=True + cv.enabled=True
+5. **Model diversity** + **multi-parameter combos**: ensemble of lightgbm+xgboost
+   with different seeds is often the single biggest win above 0.82.
 
 ## Search Space (pick values from these)
 {json.dumps(context['search_space'], indent=2)}
@@ -488,6 +511,7 @@ Return a JSON object with:
     - "path": one of:
         * "model/config.yaml"       — for model_type, hyperparameters, feature_engineering
         * "eval/cv.yaml"            — for cv.enabled, cv.n_splits, cv.strategy
+        * "train/ensemble.yaml"     — for ensemble.enabled, ensemble.strategy, ensemble.members, ensemble.stacking_meta_learner
     - "key_path": list of keys into that YAML (e.g. ["hyperparameters", "n_estimators"])
     - "value": the new value
 
@@ -509,6 +533,22 @@ Example 2 (Enable CV for robustness signal — primary metric unchanged):
   "operations": [
     {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["enabled"], "value": true}},
     {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["n_splits"], "value": 5}}
+  ]
+}}
+
+Example 3 (Build ensemble — biggest single move above 0.82 baseline):
+{{
+  "reasoning": "Single models have plateaued around 0.832. Ensemble of 3 diverse models (2 LightGBM seeds + 1 XGBoost) with voting_soft typically adds +0.005 to +0.010 via variance reduction and model-type diversity.",
+  "base_node_id": "node-a84d59df1c",
+  "description": "voting_soft ensemble: 2x LightGBM (diff seeds) + 1x XGBoost",
+  "operations": [
+    {{"op": "replace", "path": "train/ensemble.yaml", "key_path": ["enabled"], "value": true}},
+    {{"op": "replace", "path": "train/ensemble.yaml", "key_path": ["strategy"], "value": "voting_soft"}},
+    {{"op": "replace", "path": "train/ensemble.yaml", "key_path": ["members"], "value": [
+      {{"model_type": "lightgbm", "random_state": 42,  "hyperparameters": {{"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1}}}},
+      {{"model_type": "lightgbm", "random_state": 100, "hyperparameters": {{"n_estimators": 150, "max_depth": 8, "learning_rate": 0.05}}}},
+      {{"model_type": "xgboost",  "random_state": 42,  "hyperparameters": {{"n_estimators": 200, "max_depth": 6, "learning_rate": 0.1}}}}
+    ]}}
   ]
 }}
 

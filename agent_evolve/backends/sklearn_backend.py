@@ -45,6 +45,70 @@ class CVEnsembleModel:
         return np.mean([m.predict(X) for m in self.models], axis=0)
 
 
+class EnsembleModel:
+    """Combines multiple trained base models via voting or stacking.
+
+    - voting_soft: average predict_proba across members
+    - voting_hard: majority vote on predicted labels
+    - stacking: meta-learner trained on K-fold OOF predictions of members
+    """
+
+    def __init__(
+        self,
+        members: list,
+        strategy: str = "voting_soft",
+        meta_learner=None,
+        member_specs: list | None = None,
+    ):
+        self.members = members
+        self.strategy = strategy
+        self.meta_learner = meta_learner  # fitted only when strategy=stacking
+        self.member_specs = member_specs or []  # for introspection
+
+    def predict_proba(self, X):
+        if self.strategy in ("voting_soft", "voting_hard"):
+            # Both strategies use proba-average internally; predict() distinguishes them
+            probas = np.mean([m.predict_proba(X) for m in self.members], axis=0)
+            return probas
+        elif self.strategy == "stacking":
+            # Stacking: meta-learner consumes member proba predictions
+            meta_features = self._stack_features(X)
+            if hasattr(self.meta_learner, "predict_proba"):
+                return self.meta_learner.predict_proba(meta_features)
+            # Fallback: turn predictions into pseudo-proba
+            preds = self.meta_learner.predict(meta_features)
+            proba = np.zeros((len(preds), 2))
+            proba[np.arange(len(preds)), preds.astype(int)] = 1.0
+            return proba
+        else:
+            raise ValueError(f"Unknown ensemble strategy: {self.strategy}")
+
+    def predict(self, X):
+        if self.strategy == "voting_hard":
+            # Majority vote on class labels from each member
+            member_preds = np.array([m.predict(X) for m in self.members])  # (M, N)
+            # Mode per column
+            from scipy.stats import mode
+            return mode(member_preds, axis=0, keepdims=False).mode
+        # voting_soft and stacking use predict_proba threshold
+        probas = self.predict_proba(X)
+        if probas.ndim == 2 and probas.shape[1] == 2:
+            return (probas[:, 1] > 0.5).astype(int)
+        return np.argmax(probas, axis=1)
+
+    def _stack_features(self, X):
+        """Build meta-features for stacking: concatenate each member's proba of positive class."""
+        cols = []
+        for m in self.members:
+            p = m.predict_proba(X)
+            # For binary: use proba of class 1 as a single feature
+            if p.ndim == 2 and p.shape[1] == 2:
+                cols.append(p[:, 1:2])
+            else:
+                cols.append(p)  # multi-class: full proba matrix
+        return np.hstack(cols)
+
+
 class SklearnBackend:
     """Backend for training traditional ML models on tabular data."""
 
@@ -77,14 +141,27 @@ class SklearnBackend:
             # 1. Load configuration
             config = self._load_ml_config(workspace)
             cv_config = self._load_cv_config(workspace)
+            ensemble_config = self._load_ensemble_config(workspace)
 
             # 2. Load and prepare data
             X_train, y_train, X_test = self._load_data(workspace, config)
 
-            # 3. Train ML model (single or CV ensemble based on cv.yaml)
+            # 3. Train: ensemble > CV > single (in priority order)
             self._cv_mean_score = None
             self._cv_std = None
-            if cv_config.get("enabled", False):
+            self._ensemble_info = None
+
+            if ensemble_config.get("enabled", False) and ensemble_config.get("members"):
+                model = self._train_ensemble(config, ensemble_config, X_train, y_train)
+                self._ensemble_info = {
+                    "strategy": ensemble_config.get("strategy", "voting_soft"),
+                    "n_members": len(model.members),
+                    "member_types": [s.get("model_type", "?") for s in model.member_specs],
+                }
+                print(f"✓ Ensemble: {self._ensemble_info['strategy']} over "
+                      f"{self._ensemble_info['n_members']} members "
+                      f"({self._ensemble_info['member_types']})")
+            elif cv_config.get("enabled", False):
                 model = self._train_model_with_cv(config, cv_config, X_train, y_train)
                 self._cv_mean_score = model.cv_mean_score
                 self._cv_std = model.cv_std
@@ -152,6 +229,17 @@ class SklearnBackend:
 
         with open(cv_path) as f:
             return yaml.safe_load(f) or {"enabled": False}
+
+    def _load_ensemble_config(self, workspace: Any) -> Dict[str, Any]:
+        """Load ensemble configuration from train/ensemble.yaml."""
+        workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
+        ens_path = workspace_path / "train" / "ensemble.yaml"
+
+        if not ens_path.exists():
+            return {"enabled": False, "members": []}
+
+        with open(ens_path) as f:
+            return yaml.safe_load(f) or {"enabled": False, "members": []}
 
     def _load_data(self, workspace: Any, config: Dict) -> tuple:
         """Load training and test data."""
@@ -360,6 +448,105 @@ class SklearnBackend:
             n_splits=n_splits,
         )
 
+    def _train_ensemble(self, base_config: Dict, ensemble_config: Dict, X_train, y_train) -> EnsembleModel:
+        """Train each member with its own sub-config; wrap in EnsembleModel.
+
+        Each member spec is a dict with:
+          - model_type: str
+          - hyperparameters: dict  (merged over base_config hyperparameters)
+          - random_state: int (optional; falls back to base_config random_state)
+        """
+        strategy = ensemble_config.get("strategy", "voting_soft")
+        members_spec = ensemble_config.get("members", []) or []
+
+        if not members_spec:
+            raise ValueError("ensemble.enabled=True but ensemble.members is empty")
+
+        base_hparams = base_config.get("hyperparameters", {})
+
+        base_model_type = base_config.get("model_type")
+
+        trained_members = []
+        for i, spec in enumerate(members_spec):
+            member_type = spec.get("model_type", base_model_type)
+            # Only inherit base_hparams when the member uses the same model_type;
+            # hyperparameters like learning_rate are specific to the base model
+            # and would crash a different algorithm (e.g. RF doesn't take learning_rate).
+            if member_type == base_model_type:
+                member_hparams = {**base_hparams, **(spec.get("hyperparameters") or {})}
+            else:
+                member_hparams = dict(spec.get("hyperparameters") or {})
+            if "random_state" in spec:
+                member_hparams["random_state"] = spec["random_state"]
+
+            member_cfg = {
+                "model_type": member_type,
+                "hyperparameters": member_hparams,
+            }
+            print(f"  [ensemble member {i+1}/{len(members_spec)}] "
+                  f"{member_cfg['model_type']} "
+                  f"seed={member_hparams.get('random_state', 'default')}")
+            trained_members.append(self._train_model(member_cfg, X_train, y_train))
+
+        # Stacking: need K-fold OOF predictions to train the meta-learner
+        meta_learner = None
+        if strategy == "stacking":
+            meta_learner = self._train_stacking_meta(
+                members_spec=members_spec,
+                base_config=base_config,
+                X_train=X_train,
+                y_train=y_train,
+                meta_learner_name=ensemble_config.get("stacking_meta_learner", "logistic_regression"),
+            )
+
+        return EnsembleModel(
+            members=trained_members,
+            strategy=strategy,
+            meta_learner=meta_learner,
+            member_specs=members_spec,
+        )
+
+    def _train_stacking_meta(self, members_spec, base_config, X_train, y_train, meta_learner_name):
+        """Train meta-learner on K-fold OOF proba predictions from each member."""
+        n_splits = 5
+        splitter = (StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+                    if self._is_classification(y_train)
+                    else KFold(n_splits=n_splits, shuffle=True, random_state=42))
+
+        base_hparams = base_config.get("hyperparameters", {})
+        base_model_type = base_config.get("model_type")
+        # OOF matrix: (N, M) where M = number of members (proba of class 1 per member)
+        n = len(X_train)
+        m = len(members_spec)
+        oof = np.zeros((n, m))
+
+        for member_idx, spec in enumerate(members_spec):
+            member_type = spec.get("model_type", base_model_type)
+            if member_type == base_model_type:
+                member_hparams = {**base_hparams, **(spec.get("hyperparameters") or {})}
+            else:
+                member_hparams = dict(spec.get("hyperparameters") or {})
+            if "random_state" in spec:
+                member_hparams["random_state"] = spec["random_state"]
+            member_cfg = {
+                "model_type": member_type,
+                "hyperparameters": member_hparams,
+            }
+            for tr_idx, va_idx in splitter.split(X_train, y_train):
+                fold_model = self._train_model(member_cfg, X_train.iloc[tr_idx], y_train.iloc[tr_idx])
+                if hasattr(fold_model, "predict_proba"):
+                    oof[va_idx, member_idx] = fold_model.predict_proba(X_train.iloc[va_idx])[:, 1]
+                else:
+                    oof[va_idx, member_idx] = fold_model.predict(X_train.iloc[va_idx])
+
+        # Train meta-learner on OOF features
+        if meta_learner_name == "ridge":
+            meta = Ridge()
+        else:
+            meta = LogisticRegression(max_iter=1000)
+        meta.fit(oof, y_train)
+        return meta
+
     def _is_classification(self, y):
         """Detect if task is classification or regression."""
         # Simple heuristic
@@ -512,6 +699,12 @@ class SklearnBackend:
                     "cv_std": getattr(self, "_cv_std", 0.0),
                     "n_splits": getattr(model, "n_splits", None),
                 }, f)
+
+        ens_info = getattr(self, "_ensemble_info", None)
+        if ens_info is not None:
+            ens_marker = result_dir / "ensemble.json"
+            with open(ens_marker, "w") as f:
+                json.dump(ens_info, f)
 
         return result_dir
 

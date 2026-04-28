@@ -224,6 +224,15 @@ class MLEBenchAdapter:
                     print(f"  CV-mean={cv_mean:.5f} ± {metrics['cv_std']:.5f} "
                           f"(secondary; primary stays mle_bench_score={score:.5f})")
 
+            # Ensemble marker — record strategy + member count as secondary info
+            ens_marker = result_dir / "ensemble.json"
+            if ens_marker.exists():
+                with open(ens_marker) as ef:
+                    ens_data = json.load(ef)
+                metrics["ensemble_strategy"] = ens_data.get("strategy")
+                metrics["ensemble_n_members"] = ens_data.get("n_members")
+                metrics["ensemble_member_types"] = ens_data.get("member_types")
+
             metrics_path = result_dir / "metrics.json"
             with open(metrics_path, "w") as f:
                 json.dump(metrics, f, indent=2)

@@ -1,12 +1,37 @@
-# Ensemble strategies (for future enhancement)
+# Ensemble configuration (evolvable)
+#
+# When enabled: backend trains each member with its own sub-config, then combines
+# predictions via the chosen strategy. Each member is a full, independent model
+# spec (model_type + hyperparameters + random_state).
+#
+# When disabled: backend trains a single model from model/config.yaml (original
+# behavior).
+#
+# Strategies:
+#   voting_soft  — average predict_proba across members (default, most stable)
+#   voting_hard  — majority vote on class labels
+#   stacking     — train meta-learner on K-fold OOF predictions of members
+#
+# Interop with eval/cv.yaml:
+#   - CV enabled + ensemble enabled → each member still trains on full train for
+#     the final predict path; CV metric reported separately.
+#   - Stacking requires K-fold OOF internally, independent of eval/cv.yaml.
 
 enabled: false
 
-strategy: voting  # voting, stacking, blending
+strategy: voting_soft        # searchable: [voting_soft, voting_hard, stacking]
 
-models:
-  - xgboost
-  - random_forest
-  - lightgbm
+# Each member is an independent model spec.
+# LLM / rule mutator can add / remove / edit members.
+# Example:
+#   members:
+#     - model_type: lightgbm
+#       random_state: 42
+#       hyperparameters: {n_estimators: 100, max_depth: 6, learning_rate: 0.1}
+#     - model_type: lightgbm
+#       random_state: 100
+#       hyperparameters: {n_estimators: 150, max_depth: 8, learning_rate: 0.05}
+members: []
 
-weights: null  # null = equal weights, or specify [0.4, 0.3, 0.3]
+# Meta-learner for stacking (only used when strategy=stacking)
+stacking_meta_learner: logistic_regression  # searchable: [logistic_regression, ridge]

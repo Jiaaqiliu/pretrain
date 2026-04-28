@@ -375,6 +375,116 @@ class CombinedMutationProposer:
         return mutator.propose(parent, graph)
 
 
+class EnsembleMutationProposer:
+    """Assembles an ensemble from the top-K validated configs in the graph.
+
+    Rule-based counterpart to LLM-proposed ensembles. Picks the top-K nodes
+    by metric, reconstructs their configs, and creates a `train/ensemble.yaml`
+    patch with those configs as members.
+
+    Useful as a late-stage bootstrap: once MCGS has found several strong
+    single-model configs, this proposer composes them into one ensemble.
+    """
+
+    def __init__(
+        self,
+        top_k: int = 3,
+        strategy: str = "voting_soft",
+        ensure_diversity: bool = True,
+    ):
+        self.top_k = top_k
+        self.strategy = strategy
+        self.ensure_diversity = ensure_diversity
+
+    def propose(self, parent: Any, graph: Any) -> WorkspaceMutation:
+        # Gather valid non-root nodes sorted by metric
+        valid = [
+            n for n in graph.nodes.values()
+            if n.node_id != "node-root"
+            and getattr(n, "is_valid", False)
+            and getattr(n, "metric", None) is not None
+        ]
+        valid.sort(key=lambda n: n.metric or float("-inf"), reverse=True)
+
+        if not valid:
+            # No validated configs yet — fall back to a trivial single-member ensemble
+            members = [{"model_type": "lightgbm", "random_state": 42, "hyperparameters": {}}]
+        else:
+            members = self._build_members_from_topk(valid, graph)
+
+        mutation_id = f"m-ensemble-{uuid.uuid4().hex[:8]}"
+        return WorkspaceMutation(
+            mutation_id=mutation_id,
+            parent_node_id=parent.node_id,
+            description=f"Rule ensemble: {self.strategy} over top-{len(members)} configs",
+            patch=WorkspacePatch(operations=[
+                PatchOperation(
+                    op="replace",
+                    path="train/ensemble.yaml",
+                    key_path=["enabled"],
+                    value=True,
+                ),
+                PatchOperation(
+                    op="replace",
+                    path="train/ensemble.yaml",
+                    key_path=["strategy"],
+                    value=self.strategy,
+                ),
+                PatchOperation(
+                    op="replace",
+                    path="train/ensemble.yaml",
+                    key_path=["members"],
+                    value=members,
+                ),
+            ]),
+            mutation_type="training_recipe",
+        )
+
+    def _build_members_from_topk(self, valid_nodes: list, graph: Any) -> list[dict]:
+        """Reconstruct each top-K node's config and emit as a member spec.
+
+        Each member keeps only keys valid across tree models (keeps hyperparameters
+        minimal — learning_rate, n_estimators, max_depth, random_state). Model-specific
+        params like gamma, reg_alpha (xgboost) or num_leaves (lightgbm) are dropped
+        here; the backend's _train_model pipeline uses model defaults for anything not
+        specified.
+        """
+        from .llm_mutation import _reconstruct_config
+
+        # Safe set of hparams that most tree models accept (or ignore harmlessly)
+        SAFE_KEYS = {"n_estimators", "max_depth", "random_state"}
+
+        members = []
+        used_types = set()
+        for node in valid_nodes:
+            cfg = _reconstruct_config(node, graph)
+            model_type = cfg.get("model_type", "lightgbm")
+            raw_hparams = cfg.get("hyperparameters", {})
+
+            # Keep only safe keys + learning_rate if model supports it
+            safe_hparams = {k: v for k, v in raw_hparams.items() if k in SAFE_KEYS}
+            if model_type in ("xgboost", "lightgbm"):
+                # These accept learning_rate; include if present
+                if "learning_rate" in raw_hparams:
+                    safe_hparams["learning_rate"] = raw_hparams["learning_rate"]
+
+            seed = safe_hparams.get("random_state", 42)
+            if self.ensure_diversity and model_type in used_types:
+                seed = seed + 100 * len(members)
+            safe_hparams["random_state"] = seed
+
+            spec = {
+                "model_type": model_type,
+                "random_state": seed,
+                "hyperparameters": safe_hparams,
+            }
+            used_types.add(model_type)
+            members.append(spec)
+            if len(members) >= self.top_k:
+                break
+        return members
+
+
 __all__ = [
     "MLHyperparameterMutationProposer",
     "MLModelTypeMutationProposer",
@@ -382,4 +492,5 @@ __all__ = [
     "MLDepthSweepProposer",
     "MLNEstimatorsSweepProposer",
     "CombinedMutationProposer",
+    "EnsembleMutationProposer",
 ]
