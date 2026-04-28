@@ -21,6 +21,15 @@ feature_engineering:
   advanced: true      # Use advanced feature engineering
   fillna: median      # Fallback strategy for basic FE
   scale: false        # No scaling needed for tree-based models
+  flags:
+    passenger_id: true
+    cabin_split: true
+    spending_features: true
+    age_groups: true
+    family_features: true
+    interactions: false            # NEW — searchable
+    log_transform_spending: false  # NEW — searchable
+    target_encoding: false         # NEW — searchable
 
 # Data paths
 train_data: train.csv

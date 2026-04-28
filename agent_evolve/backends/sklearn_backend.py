@@ -140,6 +140,9 @@ class SklearnBackend:
         X_train_raw = train_df.drop(columns=[target_col] + ([id_col] if id_col in train_df.columns else []))
         X_test_raw = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
 
+        # Save y for target_encoding in FE
+        self._current_y = y_train
+
         # Feature engineering (advanced or basic)
         X_train, X_test, feature_engineer = self._apply_feature_engineering(X_train_raw, X_test_raw, config)
 
@@ -165,10 +168,18 @@ class SklearnBackend:
             try:
                 from .feature_engineering import create_feature_engineer
 
-                fe = create_feature_engineer(competition_id)
+                # Read feature flags from config (for LLM-driven FE mutation)
+                fe_flags = fe_config.get("flags", None)
+
+                fe = create_feature_engineer(competition_id, flags=fe_flags)
                 if fe is not None:
-                    print(f"✓ Using advanced feature engineering for {competition_id}")
-                    X_train = fe.fit_transform(X_train, is_train=True)
+                    enabled = (
+                        [k for k, v in fe.flags.items() if v]
+                        if hasattr(fe, "flags") else []
+                    )
+                    print(f"✓ Using advanced FE for {competition_id} | enabled: {enabled}")
+                    # Pass y to support target_encoding
+                    X_train = fe.fit_transform(X_train, is_train=True, y=self._current_y)
                     X_test = fe.transform(X_test)
                     return X_train, X_test, fe
             except Exception as e:

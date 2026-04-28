@@ -1,423 +1,245 @@
-# TrainingEvolver → AutoML Framework 改造文档
+# TrainingEvolver → AutoML Framework 实现文档
 
-## 🎯 改造目标
+## 改造目标
 
-将 TrainingEvolver 从 **LLM 训练框架** 改造为 **AutoML 框架**，使其能够：
-- 搜索传统 ML 模型的最佳超参数
-- 直接在 MLE-Bench 任务上优化
-- 不涉及任何 LLM 训练
+将 TrainingEvolver 从 **LLM 训练框架** 改造为 **AutoML 框架**：
+- 搜索传统 ML 模型（XGBoost / LightGBM / RandomForest）的超参数
+- 直接在 MLE-Bench 任务上评估（Kaggle grader）
+- 支持**规则驱动**和 **LLM 驱动**两种 mutation 策略
 
-## 📊 架构对比
+## 架构对比
 
 ### 原始架构（LLM 训练）
 
 ```
-┌─────────────┐
-│  Workspace  │  LLM 训练配置（LR, LoRA rank, data）
-└──────┬──────┘
-       │
-   ┌───▼──────────────┐
-   │ MCGS Algorithm   │  搜索 LLM 训练超参数
-   └───┬──────────────┘
-       │
-   ┌───▼──────────────┐
-   │ HF Trainer       │  训练 LLM + LoRA
-   │ Backend          │  → 微调后的模型
-   └───┬──────────────┘
-       │
-   ┌───▼──────────────┐
-   │ vLLM Evaluation  │  推理 → 文本 → 评分
-   │                  │
-   └──────────────────┘
+Workspace (LoRA rank, LR, data mix)
+    ↓
+MCGS Algorithm
+    ↓
+HF Trainer + PEFT Backend (训练 LLM)
+    ↓
+vLLM Evaluation (文本 → 评分)
 ```
 
 ### 新架构（AutoML）
 
 ```
-┌─────────────┐
-│  Workspace  │  ML 模型配置（model_type, hyperparameters）
-└──────┬──────┘
-       │
-   ┌───▼──────────────┐
-   │ MCGS Algorithm   │  搜索 ML 超参数
-   └───┬──────────────┘
-       │
-   ┌───▼──────────────┐
-   │ Sklearn          │  训练 XGBoost/RandomForest/LightGBM
-   │ Backend          │  → 训练好的 ML 模型
-   └───┬──────────────┘
-       │
-   ┌───▼──────────────┐
-   │ MLE-Bench        │  预测 → submission.csv → Kaggle 评分
-   │ Evaluation       │
-   └──────────────────┘
+Workspace (model_type, hyperparameters, FE flags)
+    ↓
+MCGS Algorithm
+    ↓
+Sklearn Backend (训练 XGBoost/LightGBM/RF)
+    ↓
+MLE-Bench Evaluation (submission.csv → Kaggle grader)
 ```
 
-## 🔧 关键改动
+## 关键改动
 
 ### 1. Backend 层
 
-**文件**: `agent_evolve/backends/sklearn_backend.py` (新增)
+**新增**: `agent_evolve/backends/sklearn_backend.py`
 
-**核心功能**:
-- `run_trial()`: 完整的训练+评估流程
-- `_load_data()`: 加载 CSV 数据
-- `_apply_feature_engineering()`: 特征工程
-- `_train_model()`: 训练 sklearn/xgboost/lightgbm 模型
-- `_save_model()`: 保存为 pickle
-- `run_eval_plan()`: 预测 + 生成 submission.csv
-
-**关键代码**:
-```python
-class SklearnBackend:
-    def run_trial(self, workspace, node, budget, benchmark):
-        # 1. 加载配置
-        config = self._load_ml_config(workspace)
-        
-        # 2. 加载数据
-        X_train, y_train, X_test = self._load_data(workspace, config)
-        
-        # 3. 训练模型
-        model = self._train_model(config, X_train, y_train)
-        
-        # 4. 保存模型
-        checkpoint = self._save_model(workspace, node.node_id, model, config)
-        
-        # 5. 评估
-        result_dir = benchmark.evaluate(workspace, checkpoint, self, "test")
-        
-        return TrainingTrialResult(...)
-```
+- `run_trial()` — 完整的训练 + 评估流程
+- `_load_data()` — 加载 CSV 训练/测试数据
+- `_apply_feature_engineering()` — 应用**可配置**的特征工程（见 #3）
+- `_train_model()` — sklearn / xgboost / lightgbm 模型训练
+- `_save_model()` — pickle 序列化 checkpoint
+- `run_eval_plan()` — 在测试集上生成预测并保存为 `submission.csv`
 
 ### 2. Workspace 结构
 
 **目录**: `seed_workspaces/mle_automl/`
 
-**与原始 workspace 的差异**:
-
-| 原始（LLM） | 新（AutoML） | 说明 |
-|------------|-------------|------|
-| `model/base.yaml` | `model/config.yaml` | 模型配置 |
-| `model/adapter.yaml` (LoRA 配置) | `model/feature_engineering.yaml` | 特征工程 |
-| `train/optimizer.yaml` (LR, betas) | - | 不需要（ML 模型无 optimizer） |
-| `train/pipeline.yaml` (SFT, RL stages) | `train/ensemble.yaml` | 集成策略 |
-| `data/sources.yaml` (训练数据) | `data/paths.yaml` | MLE-Bench 数据路径 |
-
-**核心配置文件**:
-
 ```yaml
-# model/config.yaml
+# model/config.yaml — 可变异的 seed config
 model_type: xgboost
 hyperparameters:
   n_estimators: 100
   max_depth: 6
   learning_rate: 0.1
   subsample: 0.8
+  colsample_bytree: 0.8
+  min_child_weight: 1
+  gamma: 0
+  reg_alpha: 0
+  reg_lambda: 1
+  random_state: 42
+feature_engineering:
+  advanced: true
+  fillna: median
+  scale: false
+  flags:                          # 新增 — 可被 LLM 变异
+    passenger_id: true
+    cabin_split: true
+    spending_features: true
+    age_groups: true
+    family_features: true
+    interactions: false           # 可搜索
+    log_transform_spending: false # 可搜索
+    target_encoding: false        # 可搜索
 competition_id: spaceship-titanic
 target_column: Transported
 ```
 
-### 3. Mutation 策略
+### 3. 可配置特征工程
 
-**文件**: `agent_evolve/training/algorithms/mcgs/ml_mutation.py` (新增)
+**文件**: `agent_evolve/backends/feature_engineering.py`
 
-**三种 mutator**:
+每个特征工程组件由 `flags` dict 控制启用/禁用。`SpaceshipTitanicFeatureEngineer` 接受 flags 参数，backend 从 config 读取并传入：
 
-1. **MLModelTypeMutationProposer**: 轮换模型类型
-   ```python
-   model_types = ("xgboost", "lightgbm", "random_forest")
-   # 每次选择下一个模型类型
-   ```
-
-2. **MLLearningRateSweepProposer**: 学习率扫描
-   ```python
-   learning_rates = (0.01, 0.05, 0.1, 0.2)
-   # 类似 LRBagMutationProposer
-   ```
-
-3. **MLHyperparameterMutationProposer**: 随机超参数变异
-   ```python
-   # 随机改变 n_estimators, max_depth, subsample 等
-   ```
-
-### 4. Benchmark 适配
-
-**文件**: `agent_evolve/benchmarks/mle_bench/mle_bench.py` (修改)
-
-**新增功能**:
-- `_grade_submission()`: 调用 `mlebench grade` 评分
-- `_parse_mlebench_output()`: 解析评分结果
-
-**工作流程**:
 ```python
-def evaluate(workspace, checkpoint, backend, split):
-    # 1. Backend 生成 submission.csv
-    result_dir = backend.run_eval_plan(...)
-    
-    # 2. 如果是 sklearn backend，调用 mlebench grader
-    if isinstance(backend, SklearnBackend):
-        self._grade_submission(workspace, result_dir, split)
-    
-    return result_dir
+fe = create_feature_engineer("spaceship-titanic", flags=fe_config["flags"])
+X_train = fe.fit_transform(X_train_raw, is_train=True, y=y_train)
+X_test = fe.transform(X_test_raw)
 ```
 
-### 5. 注册 Backend
+新增的三个可搜索 flags：
+- `interactions` — 创建 CryoSleep×HasSpending、Age×Spent、VIP×Spent、FamilySize×Spent
+- `log_transform_spending` — 对所有消费列做 log1p
+- `target_encoding` — 对 HomePlanet / Destination / CabinDeck 做平滑的目标编码
 
-**文件**: `agent_evolve/training/registries.py` (修改)
+### 4. Mutation 策略
+
+**文件**: `agent_evolve/training/algorithms/mcgs/ml_mutation.py`（规则驱动）+ `llm_mutation.py`（LLM 驱动）
+
+#### 规则驱动（4 种 proposers）
+
+1. **MLModelTypeMutationProposer** — 轮换模型类型
+2. **MLLearningRateSweepProposer** — 学习率扫描
+3. **MLDepthSweepProposer / MLNEstimatorsSweepProposer** — 超参数扫描
+4. **MLHyperparameterMutationProposer** — 随机变异
+5. **CombinedMutationProposer** — 按 cycle 组合多个 mutator（分阶段）
+
+#### LLM 驱动（Claude Opus 4.7 via Bedrock）
+
+**文件**: `agent_evolve/training/algorithms/mcgs/llm_mutation.py`
+
+- **LLMHyperparameterProposer** — 主 proposer，覆盖超参数 + FE flags
+- **LLMFeatureEngineeringProposer** — 兼容别名（转发到 LLMHyperparameterProposer）
+
+关键设计：
+- **13 维搜索空间**（10 个超参数 + 3 个 FE flags），离散化的候选值集
+- **完整 config 历史** —— LLM 看到祖先链 patch 重建出的完整 YAML，不只是描述
+- **Fingerprint 去重** —— 所有非 root 节点（含 crash 节点）的配置指纹进入 `tried_configs`，LLM 提议重复时硬 retry（最多 3 次）
+- **Crash 分离呈现** —— 训练失败（metric=None）的配置单独列出，防止 LLM 再次提议同一个会 crash 的组合
+- **噪声警告** —— prompt 中明确告诉 LLM test set 只有 4277 行，< 0.002 的差异在噪声范围内
+
+### 5. Benchmark 适配
+
+**修改**: `agent_evolve/benchmarks/mle_bench/mle_bench.py`
+
+- `_grade_submission()` — 直接调用 `mlebench.registry.registry.get_competition(comp_id).grader(...)` 评分
+- `parse_metrics()` — 从 `metrics.json` 读出 `mle_bench_score` 作为 primary metric
+
+### 6. 注册 Backend
+
+**修改**: `agent_evolve/training/registries.py`
 
 ```python
 TRAINING_BACKENDS = {
     "h200_single_node": "...",
-    "sklearn_backend": "agent_evolve.backends.sklearn_backend.SklearnBackend",  # 新增
+    "sklearn_backend": "agent_evolve.backends.sklearn_backend.SklearnBackend",
 }
 ```
 
-## 📋 使用流程
+## 实验结果（spaceship-titanic）
 
-### 完整工作流程
+### Baselines 对比
 
-```bash
-# 1. 准备 MLE-Bench 数据
-mlebench prepare --competition spaceship-titanic
+| 方法 | Cycles | Best Score | 备注 |
+|------|--------|-----------|------|
+| 规则驱动（phased sweep） | 20 | **0.81839** | LightGBM defaults 最优 |
+| LLM-guided v1（初版） | 5 | **0.81839** | 用 1/4 的 cycles 达到同分 |
+| LLM-guided v3（优化版） | 20 | **0.81839** | 找到第二条等价路径（XGBoost + 正则化） |
 
-# 2. 配置 workspace
-vim seed_workspaces/mle_automl/model/config.yaml
-# 设置: competition_id, target_column
+**结论**：0.81839 是该 workspace 单模型、无 CV 场景下的天花板。LLM 的价值体现在**路径多样性**和**更快收敛**，而不是更高分数。要突破上限需要 ensemble / CV，见"局限与下一步"。
 
-# 3. 复制数据
-cp ~/.cache/mlebench/competitions/spaceship-titanic/prepared/public/*.csv \
-   seed_workspaces/mle_automl/data/
+### v3 关键发现
 
-# 4. 运行 AutoML 搜索
-python examples/mle_automl_example/drive_model_search_4cycle.py
+在 20-cycle v3 运行中，LLM 独立找到了一个**不同参数空间**下达到 baseline 的配置：
 
-# 5. 查看结果
-cat runs/mle-automl-search/mle_automl/evolution/mcgs_graph.json
-```
+| Rank | Metric | Config | 来源 |
+|------|--------|--------|------|
+| 1 | 0.81839 | LightGBM defaults | 规则（cycle 2） |
+| 1 | 0.81839 | XGBoost + min_child_weight=3 + reg_lambda=3 + gamma=0.1 | **LLM** |
+| 3 | 0.81724 | LightGBM + interactions=True | LLM |
+| 3 | 0.81724 | XGBoost + interactions=True | LLM |
 
-### MCGS 搜索过程（单个 cycle）
+### v1 → v3 优化总结
 
-```python
-# Cycle 0: 测试 XGBoost
-config = {
-    "model_type": "xgboost",
-    "hyperparameters": {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1}
-}
-→ 训练 → Kaggle 分数: 0.7823
+| 问题 | v1 表现 | v3 修复 |
+|------|--------|---------|
+| LLM 看不到完整 config | 只看到 `"Switch to lightgbm"` | 从 ancestor patches 重建完整 YAML |
+| 重复提议 | cycles 18-20 提同一个 config 3 次 | fingerprint + 最多 3 次 retry |
+| 陷入 slow-learning loop | 8 个类似 `lr=0.01 n_est=1000` | prompt 加 noise warning + "unexplored regions" hint |
+| Crash 配置被重复提 | `target_encoding` bug 后 LLM 提了 10+ 次 | 把 crashed nodes 单独列给 LLM |
+| FE 从未被搜索 | 所有 mutations 只动超参数 | 搜索空间加入 3 个 FE flags |
+| Mutation 多样性 | 2-3 种类型 | 8+ 种（FE / 正则化 / 不同模型） |
 
-# Cycle 1: 测试 LightGBM
-config = {
-    "model_type": "lightgbm",
-    "hyperparameters": {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1}
-}
-→ 训练 → Kaggle 分数: 0.7956 ← 最佳！
-
-# Cycle 2: 测试 RandomForest
-config = {
-    "model_type": "random_forest",
-    "hyperparameters": {"n_estimators": 100, "max_depth": 10}
-}
-→ 训练 → Kaggle 分数: 0.7701
-
-# Cycle 3: 优化 XGBoost 超参数
-config = {
-    "model_type": "xgboost",
-    "hyperparameters": {"n_estimators": 150, "max_depth": 8, "learning_rate": 0.05}
-}
-→ 训练 → Kaggle 分数: 0.7890
-
-# 最终: LightGBM 获胜，成为 incumbent
-```
-
-## 🎨 扩展性
-
-### 添加新模型类型
-
-```python
-# 在 sklearn_backend.py 的 _train_model() 中添加
-
-elif model_type == "catboost":
-    import catboost
-    model = catboost.CatBoostClassifier(**hyperparams)
-    model.fit(X_train, y_train, verbose=False)
-```
-
-### 添加新特征工程策略
-
-```python
-# 在 feature_engineering.yaml 中定义
-feature_engineering:
-  pca: true
-  n_components: 10
-  
-# 在 _apply_feature_engineering() 中实现
-if fe_config.get("pca"):
-    from sklearn.decomposition import PCA
-    pca = PCA(n_components=fe_config["n_components"])
-    X_train = pca.fit_transform(X_train)
-    X_test = pca.transform(X_test)
-```
-
-### 添加集成学习
-
-```python
-# 在 train/ensemble.yaml 中配置
-enabled: true
-strategy: voting
-models: [xgboost, random_forest, lightgbm]
-
-# 在 Backend 中实现
-from sklearn.ensemble import VotingClassifier
-
-ensemble = VotingClassifier([
-    ("xgb", xgb_model),
-    ("rf", rf_model),
-    ("lgb", lgb_model),
-], voting="soft")
-ensemble.fit(X_train, y_train)
-```
-
-## 📊 性能对比
-
-### vs 标准 AutoML 工具
-
-| 工具 | 搜索策略 | 并行度 | 可扩展性 | 记忆机制 |
-|------|---------|--------|---------|---------|
-| **TrainingEvolver (AutoML)** | MCGS (tree search) | 中 | 高 | ✅ (graph + memory) |
-| Auto-sklearn | Bayesian Optimization | 低 | 中 | ✅ (metalearning) |
-| TPOT | Genetic Programming | 高 | 中 | ❌ |
-| H2O AutoML | Random + Grid Search | 高 | 低 | ❌ |
-| AutoGluon | Ensemble + Bagging | 高 | 中 | ❌ |
-
-**优势**:
-- ✅ MCGS 比随机搜索更高效
-- ✅ Memory layer 避免重复失败
-- ✅ Graph 结构保留搜索历史
-- ✅ 可自定义 mutation 策略
-
-**劣势**:
-- ⚠️ 需要手动设计 mutation 策略
-- ⚠️ 并行度不如 genetic programming
-- ⚠️ 暂无 meta-learning
-
-### vs MLEvolve
-
-| 维度 | MLEvolve | TrainingEvolver (AutoML) |
-|------|----------|-------------------------|
-| **搜索空间** | 代码空间（无限） | 超参数空间（有限） |
-| **评估速度** | 慢（需执行代码） | 快（直接训练） |
-| **资源消耗** | 高（LLM API + 代码执行） | 低（仅 ML 训练） |
-| **适用任务** | 所有类型 | 主要是表格数据 |
-| **可解释性** | 低 | 高 |
-| **上限** | 高 | 中 |
-
-**使用建议**:
-- **表格数据任务**: 优先用 TrainingEvolver (AutoML)
-- **图像/NLP/复杂任务**: 考虑 MLEvolve
-- **混合**: 先用 AutoML 建立 baseline，再用 MLEvolve 探索新方法
-
-## 🚀 未来改进
-
-### 1. 添加神经网络支持
-
-```python
-# 支持 PyTorch 模型
-elif model_type == "neural_network":
-    import torch.nn as nn
-    model = nn.Sequential(...)
-    # 训练逻辑
-```
-
-### 2. Meta-Learning
-
-```python
-# 从历史任务学习，快速初始化新任务
-meta_memory = MetaMemory()
-initial_config = meta_memory.suggest_config(new_task_features)
-```
-
-### 3. 多目标优化
-
-```python
-# 同时优化准确率和推理速度
-reward = alpha * accuracy - beta * inference_time
-```
-
-### 4. 自动特征工程
-
-```python
-# MCGS 搜索特征工程策略
-class FeatureEngineeringMutationProposer:
-    def propose(self, parent, graph):
-        # 变异特征变换、选择、创建策略
-        ...
-```
-
-## 📚 代码清单
+## 文件清单
 
 ### 新增文件
 
 ```
-agent_evolve/backends/sklearn_backend.py                     # Sklearn backend
-agent_evolve/training/algorithms/mcgs/ml_mutation.py         # ML mutation 策略
-seed_workspaces/mle_automl/                                  # AutoML workspace
-├── manifest.yaml
-├── model/
-│   ├── config.yaml
-│   └── feature_engineering.yaml
-├── train/ensemble.yaml
-├── data/paths.yaml
-└── eval/competition.yaml
-examples/mle_automl_example/                                 # 示例代码
-├── drive_model_search_4cycle.py
-├── run_automl_search.sh
-└── README.md
+agent_evolve/backends/sklearn_backend.py
+agent_evolve/backends/feature_engineering.py
+agent_evolve/training/algorithms/mcgs/ml_mutation.py
+agent_evolve/training/algorithms/mcgs/llm_mutation.py
+seed_workspaces/mle_automl/
+  ├── manifest.yaml
+  ├── model/config.yaml
+  ├── train/ensemble.yaml
+  ├── data/paths.yaml
+  └── eval/competition.yaml
+examples/mle_automl_example/
+  ├── drive_model_search_4cycle.py           # 规则驱动，4 cycles
+  ├── drive_advanced_search_20cycle.py       # 规则驱动，20 cycles 分阶段
+  ├── drive_llm_test_5cycle.py               # LLM 烟雾测试
+  ├── drive_llm_smoke3.py                    # LLM v3 烟雾测试（FE/dedup 验证）
+  ├── drive_llm_20cycle.py                   # LLM 主实验
+  ├── create_ensemble_submission.py
+  ├── run_automl_search.sh
+  └── run_full_optimization.sh
 ```
 
 ### 修改文件
 
 ```
-agent_evolve/training/registries.py                          # 注册 sklearn_backend
-agent_evolve/benchmarks/mle_bench/mle_bench.py               # 添加 mlebench grading
+agent_evolve/training/registries.py           # 注册 sklearn_backend
+agent_evolve/benchmarks/mle_bench/mle_bench.py # 添加 mlebench grading
 ```
 
-## ✅ 验证清单
+## 局限与下一步
 
-运行以下命令验证安装：
+**0.81839 这个上限不是 LLM proposer 的问题，是 workspace 层面的设计限制**：
+
+1. **无 CV**：评估是一次性 train/test split，±0.003 都在噪声范围内，LLM 没办法判断小幅提升是真改进还是噪声。下一步可以把 backend 改成 stratified k-fold，metric 用 CV 均值。
+2. **无 ensemble**：backend 一次训一个模型。要突破 0.82+ 在 spaceship-titanic 上几乎必须 ensemble（voting/stacking）。需要加一个 `train/ensemble.yaml` 层和相应的 backend 逻辑。
+3. **FE flags 偏激进**：`interactions` 里的 `CryoSleep×HasSpending` 可能带来数据泄漏，所有 FE 组合都降了分。更保守的特征（count encoding、binned age）可能更稳。
+4. **固定 FE 空间**：目前三个 flag 是手写的离散选项，LLM 只能开关不能创造。下一步可以让 LLM 生成 Python FE 代码片段（需要代码沙盒）。
+
+## 运行命令
 
 ```bash
-# 1. 检查 backend 注册
-python -c "from agent_evolve.training.registries import resolve_backend; print(resolve_backend('sklearn_backend'))"
+# 规则驱动 20-cycle
+PYTHONPATH=/fsx/yisi/A-EVOLVE-V2 \
+  /fsx/yisi/A-EVOLVE-V2/.venv/bin/python \
+  examples/mle_automl_example/drive_advanced_search_20cycle.py
 
-# 2. 检查 workspace 结构
-ls seed_workspaces/mle_automl/model/config.yaml
+# LLM-guided 20-cycle（Opus 4.7 via Bedrock）
+PYTHONPATH=/fsx/yisi/A-EVOLVE-V2 \
+  /fsx/yisi/A-EVOLVE-V2/.venv/bin/python \
+  examples/mle_automl_example/drive_llm_20cycle.py
 
-# 3. 检查示例脚本
-python examples/mle_automl_example/drive_model_search_4cycle.py --help
-
-# 4. 运行 smoke test
-# (需要先准备 MLE-Bench 数据)
+# LLM 3-cycle 烟雾测试（验证 FE flags + dedup 生效）
+PYTHONPATH=/fsx/yisi/A-EVOLVE-V2 \
+  /fsx/yisi/A-EVOLVE-V2/.venv/bin/python \
+  examples/mle_automl_example/drive_llm_smoke3.py
 ```
 
-## 🎓 总结
+## 核心洞察
 
-通过这次改造，我们成功地将 TrainingEvolver 从：
-
-**LLM 训练框架** 
-↓
-**通用优化框架**
-↓
-**AutoML 框架**
-
-**关键洞察**:
-1. **Backend 是关键抽象**: 只需替换 Backend，框架其他部分（MCGS、Workspace、Benchmark）都可以复用
-2. **MCGS 是通用搜索算法**: 不仅可以搜索 LLM 训练超参数，也可以搜索 ML 超参数
-3. **Workspace 是配置 DNA**: 通过改变 workspace 结构，可以适配不同类型的任务
-
-**适用场景**:
-- ✅ 表格数据竞赛（Kaggle）
-- ✅ 快速 baseline 建立
-- ✅ 超参数优化
-- ✅ 模型选择
-
-**下一步**: 在更多 MLE-Bench 任务上测试，积累经验，持续改进搜索策略！
+1. **Backend 是关键抽象** — 只需替换 Backend，框架其他部分（MCGS / Workspace / Benchmark）都可以复用。
+2. **Mutator 接口已经通用** — 加 LLM-driven mutation 不需要改框架，只需要实现 `.propose(parent, graph)`。
+3. **LLM 提议的真实价值** — 不是"找到更好的 hyperparameter"，而是在**相同上限下**探索**多样的路径**，并在大搜索空间里比 grid search 收敛更快。
+4. **工程细节决定成败** — config 完整呈现、fingerprint 去重、crash 可见性、noise warning 这几项中任何一个做错，LLM 都会陷入 loop。
