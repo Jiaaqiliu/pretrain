@@ -64,7 +64,22 @@ class HFTrainingClient:
         lora_dropout: float = 0.05,
         target_modules: list[str] | None = None,
         lr: float = 5e-5,
+        device_map: str | dict | None = None,
     ) -> None:
+        """HF + PEFT training client.
+
+        ``device_map`` controls how the base model is placed across GPUs:
+          * ``None`` (default): single-GPU, the entire model lands on
+            ``cuda:0``. Matches the verified reference recipe.
+          * ``"auto"``: HF/accelerate shards the model across all visible
+            GPUs. Forward + backward flow through the shards. Uses every
+            visible GPU, not just ``cuda:0``.
+          * ``dict``: explicit layer→device mapping (advanced).
+
+        When ``device_map`` is set, we skip the post-hoc ``.to("cuda:0")``
+        since ``from_pretrained`` already placed the weights. ``cuda_input``
+        in forward/backward paths is resolved via the first model parameter.
+        """
         import torch
         from peft import LoraConfig, PeftModel, get_peft_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -81,13 +96,20 @@ class HFTrainingClient:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        logger.info("[hf-client] loading base model in bf16")
-        base = AutoModelForCausalLM.from_pretrained(
-            model_path,
+        load_kwargs: dict[str, Any] = dict(
             trust_remote_code=True,
             torch_dtype=torch.bfloat16,
             attn_implementation="eager",
-        ).to("cuda:0")
+        )
+        if device_map is not None:
+            load_kwargs["device_map"] = device_map
+
+        logger.info(
+            "[hf-client] loading base model in bf16 (device_map=%r)", device_map
+        )
+        base = AutoModelForCausalLM.from_pretrained(model_path, **load_kwargs)
+        if device_map is None:
+            base = base.to("cuda:0")
         base.config.use_cache = False
 
         if start_adapter_path is not None and Path(start_adapter_path).is_dir():
@@ -383,6 +405,15 @@ def build_hf_client_from_workspace(
             )
         ),
         lr=float(optimizer_cfg.get("lr", 5e-5)),
+        # Resolution order for device_map:
+        #   1. AE_HF_DEVICE_MAP env var
+        #   2. adapter.yaml::device_map
+        #   3. None (single-GPU, verified-recipe default)
+        device_map=(
+            os.environ.get("AE_HF_DEVICE_MAP")
+            or adapter_cfg.get("device_map")
+            or None
+        ),
     )
 
 

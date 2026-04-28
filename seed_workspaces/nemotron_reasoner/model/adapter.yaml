@@ -11,6 +11,19 @@ target_modules:
   - in_proj
   - out_proj
 
+# HF device_map for training. Options:
+#   unset / null    → single-GPU on cuda:0 (default; matches verified E-28 recipe).
+#   "auto"          → pipeline-parallel shard across all visible GPUs. Verified
+#                     to hold weights on all 8 H200s, but per-rollout backward
+#                     crosses device boundaries on every layer, which made
+#                     training 10x+ slower than single-GPU in practice.
+#                     Kept available as an env override (AE_HF_DEVICE_MAP) but
+#                     NOT enabled by default.
+# Rollout + eval use vLLM TP=8 (see eval/kaggle_eval.yaml) — that's where the
+# real multi-GPU speedup lives. Teacher distill uses TP=8 too (see
+# data/generators/teacher_distill.yaml).
+# device_map: auto
+
 # Eval-only cycle (commented): start from the E-28 LB SOTA adapter (dev 48.79%).
 # Leave commented for real-SFT cycles so each fork trains from base.
 # seed_adapter_path: /fsx/zzsamshi/nemotron-auto-research/experiments/E-28-iter3-noprm/adapter

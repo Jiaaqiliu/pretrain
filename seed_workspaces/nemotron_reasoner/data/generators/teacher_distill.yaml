@@ -23,7 +23,9 @@ temperature: 0.8
 top_p: 0.95
 seed: 17
 
-# vLLM engine for 120B FP8. TP=4 is required (117 GiB, doesn't fit 1 H200).
-tp: 4
-max_num_seqs: 16
+# vLLM engine for 120B FP8. TP=8 uses the whole box — 117 GiB of weights
+# split 8 ways leaves ~125 GiB of KV cache headroom per GPU, so we also
+# bump max_num_seqs from 16 → 32 to raise rollout concurrency.
+tp: 8
+max_num_seqs: 32
 gpu_memory_utilization: 0.9

@@ -261,6 +261,28 @@ def _run_real_gspo(
     except Exception:
         pass
 
+    # ── DDP path: dispatch GSPO update to a torchrun subprocess ────────
+    # AE_TRAIN_DDP=1 enables true data-parallel training across all visible
+    # GPUs. The subprocess spawns N ranks, each loads the model on its GPU,
+    # shards ``records`` strided, and DDP auto-syncs gradients on backward.
+    if os.environ.get("AE_TRAIN_DDP", "0") == "1":
+        ddp_ckpt, ddp_stats = _run_gspo_update_ddp(
+            workspace, stage, records, cfg, rollouts_path=rollouts_path
+        )
+        stats = {
+            "stage": stage.get("name"),
+            "loss_fn": "dapo_token_level" if cfg["dapo_token_level"] else "gspo",
+            "total_rollouts": total_rollouts,
+            "non_degenerate_rollouts": len(records),
+            "rollout_correctness": corr_rate,
+            "rollout_seconds": rollout_seconds,
+            "advantage_mode": cfg["advantage_mode"],
+            "rollouts_path": str(rollouts_path),
+            **ddp_stats,
+        }
+        (outdir / "stats.json").write_text(json.dumps(stats, indent=2))
+        return ddp_ckpt, stats
+
     print("[gspo] building training client (post-rollout)…")
     training_client = training_client_factory()
 
@@ -500,6 +522,85 @@ def _load_train_prompts(cfg: dict) -> list[dict[str, Any]]:
                 }
             )
     return sampled
+
+
+# ── DDP dispatch for the GSPO update phase ──────────────────────────────
+
+def _run_gspo_update_ddp(
+    workspace: Any,
+    stage: dict,
+    records: list[dict[str, Any]],
+    cfg: dict,
+    *,
+    rollouts_path: Path,
+) -> tuple[CheckpointRef, dict[str, Any]]:
+    """Write post-advantage records to disk, launch torchrun DDP worker."""
+    from ...backends.tinkerlite.ddp_launcher import run_gspo_ddp
+
+    outdir = Path(workspace.root) / "evolution" / "rl" / stage.get("name", "rl_gspo")
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Dump the post-advantage record set (already filtered for non-zero
+    # advantage + length). One JSONL line per rollout.
+    records_path = outdir / "records_with_advantage.jsonl"
+    with open(records_path, "w") as f:
+        for r in records:
+            # Strip anything huge we don't need in the subprocess; keep the
+            # fields the DDP worker reads (prompt_ids, completion_tokens,
+            # logprobs_old, advantage).
+            keep = {
+                "prompt_ids": list(r["prompt_ids"]),
+                "completion_tokens": list(r["completion_tokens"]),
+                "logprobs_old": list(r["logprobs_old"]),
+                "advantage": float(r["advantage"]),
+                "pid": r.get("pid"),
+                "domain": r.get("domain"),
+            }
+            f.write(json.dumps(keep) + "\n")
+    print(f"[gspo-ddp] wrote {len(records)} records to {records_path}")
+
+    # Load base + adapter YAML snapshots the launcher needs.
+    root = Path(workspace.root)
+
+    def _load(rel: str) -> dict[str, Any]:
+        path = root / rel
+        if not path.exists():
+            return {}
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+
+    base_cfg = _load("model/base.yaml")
+    adapter_cfg = _load("model/adapter.yaml")
+    optimizer_cfg = _load("train/optimizer.yaml")
+
+    start_adapter = adapter_cfg.get("seed_adapter_path")
+    if not start_adapter:
+        raise RuntimeError(
+            "GSPO DDP needs model/adapter.yaml::seed_adapter_path to be set "
+            "(the starting-policy adapter for the update)."
+        )
+
+    gspo_cfg = {
+        "epochs": cfg["epochs"],
+        "grad_accum": cfg["grad_accum"],
+        "lr": cfg["lr"],
+        "eps_low": cfg["eps_low"],
+        "eps_high": cfg["eps_high"],
+        "dapo_token_level": cfg["dapo_token_level"],
+        "max_steps": cfg.get("max_steps"),
+        "log_every": cfg["log_every"],
+        "seed": cfg["seed"],
+    }
+    return run_gspo_ddp(
+        workspace,
+        stage,
+        base_cfg=base_cfg,
+        adapter_cfg=adapter_cfg,
+        optimizer_cfg=optimizer_cfg,
+        rollouts_path=records_path,
+        start_adapter_path=str(start_adapter),
+        gspo_cfg=gspo_cfg,
+    )
 
 
 __all__ = ["run_gspo_stage", "group_normalize_advantages"]

@@ -2,16 +2,17 @@
 # 1-cycle teacher-distillation → SFT → eval on the Kaggle Nemotron-Reasoning benchmark.
 #
 # Stage breakdown (one workspace fork, three pipeline stages):
-#   1. synth_generate: Nemotron-Super-120B-FP8 TP=4 on GPUs 0-3 samples 500
+#   1. synth_generate: Nemotron-Super-120B-FP8 TP=8 on all GPUs samples 500
 #      prompts (250 cipher + 250 bits) from train_local.csv, filters by
 #      correct + boxed + min_tokens>=2500 + student_len<=8192. Writes
 #      data/synth/teacher_traces.jsonl and appends it to data/sources.yaml.
-#   2. sft_warmup: rank-16 LoRA training on the mix of short_correct.jsonl
-#      (476 rows) + teacher_traces.jsonl. max_steps=8, grad_accum=32, lr=5e-5.
-#   3. eval: vLLM + LoRA on 951-row Kaggle dev, verbatim boxed-EM metric.
+#   2. sft_warmup: rank-16 LoRA training via HFTrainingClient with
+#      device_map="auto" — the 30B MoE shards across all 8 GPUs.
+#      max_steps=8, grad_accum=32, lr=5e-5.
+#   3. eval: vLLM TP=8 + LoRA on 951-row Kaggle dev, verbatim boxed-EM metric.
 #
-# GPU usage: needs 4 GPUs for the synth stage. SFT + eval then run on GPU 0
-# after the teacher is torn down (synth_worker calls torch.cuda.empty_cache).
+# GPU usage: all 8 GPUs are used end-to-end. Teacher subprocess tears down
+# its CUDA state on exit so SFT gets a clean box.
 #
 # Wallclock budget: ~75-95 min. Trial budget is 2h hard cap.
 #
@@ -26,12 +27,12 @@ NEMOTRON_VENV=/fsx/zzsamshi/nemotron-auto-research/.venv
 cd "$AE"
 mkdir -p runs/teacher-distill-1cycle/logs
 
-# Parent keeps ONE GPU visible so HF Trainer doesn't auto-DataParallel the
-# 30B model across 4 devices (which OOMs because LoRA isn't sharded). The
-# teacher subprocess overrides its own CUDA_VISIBLE_DEVICES via AE_SYNTH_GPUS
-# so it still gets the full TP=4 quota.
-CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
-  AE_SYNTH_GPUS=${AE_SYNTH_GPUS:-0,1,2,3} \
+# Parent keeps all 8 GPUs visible. HFTrainingClient uses device_map="auto"
+# (configured via model/adapter.yaml) to shard the 30B model across them.
+# The teacher synth subprocess inherits CUDA_VISIBLE_DEVICES via AE_SYNTH_GPUS
+# and runs TP=8 to match.
+unset CUDA_VISIBLE_DEVICES
+AE_SYNTH_GPUS=${AE_SYNTH_GPUS:-0,1,2,3,4,5,6,7} \
   PYTHONPATH="$AE" \
   HF_HUB_OFFLINE=1 \
   TRANSFORMERS_OFFLINE=1 \
