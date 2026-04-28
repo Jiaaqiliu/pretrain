@@ -16,7 +16,32 @@ import numpy as np
 import yaml
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+
+class CVEnsembleModel:
+    """Wraps K fold-trained models. Predictions are the mean across folds."""
+
+    def __init__(self, models: list, cv_mean_score: float, n_splits: int):
+        self.models = models
+        self.cv_mean_score = cv_mean_score
+        self.n_splits = n_splits
+
+    def predict_proba(self, X):
+        # Mean of per-fold predicted probabilities
+        probas = np.mean([m.predict_proba(X) for m in self.models], axis=0)
+        return probas
+
+    def predict(self, X):
+        if hasattr(self.models[0], "predict_proba"):
+            probas = self.predict_proba(X)
+            if probas.ndim == 2 and probas.shape[1] == 2:
+                return (probas[:, 1] > 0.5).astype(int)
+            return np.argmax(probas, axis=1)
+        # Regression fallback: mean of predictions
+        return np.mean([m.predict(X) for m in self.models], axis=0)
 
 
 class SklearnBackend:
@@ -50,12 +75,19 @@ class SklearnBackend:
         try:
             # 1. Load configuration
             config = self._load_ml_config(workspace)
+            cv_config = self._load_cv_config(workspace)
 
             # 2. Load and prepare data
             X_train, y_train, X_test = self._load_data(workspace, config)
 
-            # 3. Train ML model
-            model = self._train_model(config, X_train, y_train)
+            # 3. Train ML model (single or CV ensemble based on cv.yaml)
+            self._cv_mean_score = None
+            if cv_config.get("enabled", False):
+                model = self._train_model_with_cv(config, cv_config, X_train, y_train)
+                self._cv_mean_score = model.cv_mean_score
+                print(f"✓ CV-mean accuracy: {self._cv_mean_score:.5f} (n_splits={model.n_splits})")
+            else:
+                model = self._train_model(config, X_train, y_train)
 
             # 4. Save model (checkpoint)
             checkpoint_path = self._save_model(workspace, node.node_id, model, config, self.feature_engineer)
@@ -106,6 +138,17 @@ class SklearnBackend:
 
         return config
 
+    def _load_cv_config(self, workspace: Any) -> Dict[str, Any]:
+        """Load CV configuration from eval/cv.yaml. Returns disabled config if file missing."""
+        workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
+        cv_path = workspace_path / "eval" / "cv.yaml"
+
+        if not cv_path.exists():
+            return {"enabled": False}
+
+        with open(cv_path) as f:
+            return yaml.safe_load(f) or {"enabled": False}
+
     def _load_data(self, workspace: Any, config: Dict) -> tuple:
         """Load training and test data."""
         workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
@@ -136,9 +179,10 @@ class SklearnBackend:
         # Separate target
         y_train = train_df[target_col]
 
-        # Remove target and ID from dataframes before feature engineering
-        X_train_raw = train_df.drop(columns=[target_col] + ([id_col] if id_col in train_df.columns else []))
-        X_test_raw = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
+        # Remove target only; KEEP PassengerId so FE can extract Group features.
+        # FE's _extract_passenger_id_features drops PassengerId after extracting Group.
+        X_train_raw = train_df.drop(columns=[target_col])
+        X_test_raw = test_df.copy()
 
         # Save y for target_encoding in FE
         self._current_y = y_train
@@ -271,6 +315,41 @@ class SklearnBackend:
 
         return model
 
+    def _train_model_with_cv(self, config: Dict, cv_config: Dict, X_train, y_train) -> CVEnsembleModel:
+        """Train K fold-models via CV. Returns CVEnsembleModel whose predictions average the folds."""
+        n_splits = int(cv_config.get("n_splits", 5))
+        strategy = cv_config.get("strategy", "stratified_kfold")
+        shuffle = bool(cv_config.get("shuffle", True))
+        random_state = cv_config.get("random_state", 42)
+
+        if strategy == "stratified_kfold" and self._is_classification(y_train):
+            splitter = StratifiedKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+        else:
+            splitter = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+
+        fold_models = []
+        fold_scores = []
+        for fold_idx, (tr_idx, va_idx) in enumerate(splitter.split(X_train, y_train)):
+            X_tr, X_va = X_train.iloc[tr_idx], X_train.iloc[va_idx]
+            y_tr, y_va = y_train.iloc[tr_idx], y_train.iloc[va_idx]
+
+            # Train one fold with the same hyperparams
+            fold_model = self._train_model(config, X_tr, y_tr)
+
+            # Out-of-fold score — this is the signal we report as primary metric
+            if hasattr(fold_model, "predict_proba") and self._is_classification(y_tr):
+                va_preds = (fold_model.predict_proba(X_va)[:, 1] > 0.5).astype(int)
+                score = accuracy_score(y_va, va_preds)
+            else:
+                va_preds = fold_model.predict(X_va)
+                score = accuracy_score(y_va, va_preds) if self._is_classification(y_tr) else -np.mean((va_preds - y_va) ** 2)
+
+            fold_models.append(fold_model)
+            fold_scores.append(score)
+
+        cv_mean = float(np.mean(fold_scores))
+        return CVEnsembleModel(models=fold_models, cv_mean_score=cv_mean, n_splits=n_splits)
+
     def _is_classification(self, y):
         """Detect if task is classification or regression."""
         # Simple heuristic
@@ -344,8 +423,9 @@ class SklearnBackend:
         id_col = plan.metadata.get("id_column", "PassengerId")
         test_ids = X_test[id_col] if id_col in X_test.columns else X_test.index
 
-        # Drop ID column
-        X_test_raw = X_test.drop(columns=[id_col] if id_col in X_test.columns else [])
+        # KEEP ID column so FE can extract Group features (matches _load_data).
+        # FE itself drops PassengerId after extracting features.
+        X_test_raw = X_test.copy()
 
         # Apply feature engineering
         if feature_engineer is not None:
@@ -408,7 +488,18 @@ class SklearnBackend:
 
         submission_df.to_csv(submission_path, index=False)
 
+        # If CV was used, write metrics.json with CV-mean as primary metric.
+        # The benchmark's _grade_submission runs AFTER run_eval_plan returns,
+        # so it will overwrite this. We need to write AFTER the grader runs,
+        # which happens in benchmark.evaluate. Instead, we signal via a marker
+        # file that the caller (benchmark.evaluate) checks.
+        cv_mean = getattr(self, "_cv_mean_score", None)
+        if cv_mean is not None:
+            marker_path = result_dir / "cv_mean.json"
+            with open(marker_path, "w") as f:
+                json.dump({"cv_mean_accuracy": cv_mean, "n_splits": getattr(model, "n_splits", None)}, f)
+
         return result_dir
 
 
-__all__ = ["SklearnBackend"]
+__all__ = ["SklearnBackend", "CVEnsembleModel"]

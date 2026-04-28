@@ -27,9 +27,10 @@ feature_engineering:
     spending_features: true
     age_groups: true
     family_features: true
-    interactions: false            # NEW — searchable
-    log_transform_spending: false  # NEW — searchable
-    target_encoding: false         # NEW — searchable
+    interactions: false            # searchable
+    log_transform_spending: false  # searchable
+    target_encoding: false         # searchable
+    group_aggregates: false        # NEW — searchable (Kaggle top-20 signal)
 
 # Data paths
 train_data: train.csv

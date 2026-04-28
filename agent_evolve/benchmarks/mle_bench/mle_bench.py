@@ -203,6 +203,21 @@ class MLEBenchAdapter:
                 "mle_bench_success_rate": 1.0 if score > 0 else 0.0,  # Success if valid score
             }
 
+            # If backend wrote a cv_mean.json marker, prefer CV-mean as primary metric
+            # (CV-mean has no test-split noise, so MCGS/LLM get cleaner signal).
+            # Real Kaggle score is retained in secondary metrics.
+            cv_marker = result_dir / "cv_mean.json"
+            if cv_marker.exists():
+                with open(cv_marker) as cf:
+                    cv_data = json.load(cf)
+                cv_mean = cv_data.get("cv_mean_accuracy")
+                if cv_mean is not None:
+                    metrics["cv_mean_accuracy"] = float(cv_mean)
+                    metrics["cv_n_splits"] = cv_data.get("n_splits")
+                    metrics["primary_metric"] = "cv_mean_accuracy"
+                    print(f"✓ Using CV-mean as primary metric: {cv_mean:.5f} "
+                          f"(Kaggle score: {score:.5f})")
+
             metrics_path = result_dir / "metrics.json"
             with open(metrics_path, "w") as f:
                 json.dump(metrics, f, indent=2)

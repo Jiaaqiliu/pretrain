@@ -22,9 +22,10 @@ class SpaceshipTitanicFeatureEngineer:
         "spending_features": True,  # TotalSpent, HasSpending, etc.
         "age_groups": True,         # Bin Age into groups
         "family_features": True,    # FamilySize, TravelingAlone, SurnameCount
-        "interactions": False,      # NEW: Age*TotalSpent, CryoSleep*HasSpending
-        "log_transform_spending": False,  # NEW: log1p on skewed spending cols
-        "target_encoding": False,   # NEW: mean target encoding for HomePlanet/Destination/Deck
+        "interactions": False,      # Age*TotalSpent, CryoSleep*HasSpending
+        "log_transform_spending": False,  # log1p on skewed spending cols
+        "target_encoding": False,   # mean target encoding for HomePlanet/Destination/Deck
+        "group_aggregates": False,  # Group-level aggregates: GroupSpendMean, GroupCryoRate, etc.
     }
 
     def __init__(self, flags: dict | None = None):
@@ -77,6 +78,16 @@ class SpaceshipTitanicFeatureEngineer:
         # 5b. NEW: Interaction features (gated)
         if self.flags.get("interactions", False):
             df = self._create_interaction_features(df)
+
+        # 5d. NEW: Group-level aggregates (gated) — the Kaggle top-20 signal
+        if self.flags.get("group_aggregates", False):
+            df = self._create_group_aggregates(df, is_train=is_train)
+
+        # IMPORTANT: The raw 'Group' integer ID is pure noise (sequential IDs with no
+        # semantic meaning). It's used only as a join key for aggregates above.
+        # Drop before training to avoid polluting models.
+        if "Group" in df.columns:
+            df = df.drop("Group", axis=1)
 
         # 5c. NEW: Target encoding (gated). On test, uses saved encoders from train.
         if self.flags.get("target_encoding", False):
@@ -253,6 +264,40 @@ class SpaceshipTitanicFeatureEngineer:
         # FamilySize * TotalSpent: bigger families spend differently
         if 'FamilySize' in df.columns and 'TotalSpent' in df.columns:
             df['Family_x_Spent'] = df['FamilySize'] * df['TotalSpent'].fillna(0)
+
+        return df
+
+    def _create_group_aggregates(self, df: pd.DataFrame, is_train: bool) -> pd.DataFrame:
+        """Group-level aggregates — strong signal in spaceship-titanic.
+
+        Passengers in the same group tend to share fate (transported or not).
+        Aggregating within-group stats exposes this pattern to tree splits.
+        """
+        if 'Group' not in df.columns:
+            return df
+
+        # Same-group spending stats (smoothing via combined fit at transform time
+        # is OK here because test groups overlap with train groups in this dataset)
+        if 'TotalSpent' in df.columns:
+            df['GroupSpendMean'] = df.groupby('Group')['TotalSpent'].transform('mean')
+            df['GroupSpendStd'] = df.groupby('Group')['TotalSpent'].transform('std').fillna(0)
+            df['GroupSpendMax'] = df.groupby('Group')['TotalSpent'].transform('max')
+
+        # Same-group cryo rate
+        if 'CryoSleep' in df.columns:
+            cryo_numeric = df['CryoSleep'].astype(str).map(
+                {'True': 1.0, 'False': 0.0, 'nan': 0.5, 'NaN': 0.5}
+            ).fillna(0.5).astype(float)
+            df['GroupCryoRate'] = cryo_numeric.groupby(df['Group']).transform('mean')
+
+        # Same-group age mean
+        if 'Age' in df.columns:
+            df['GroupAgeMean'] = df.groupby('Group')['Age'].transform('mean')
+
+        # Group size already computed in family features as FamilySize; if not present,
+        # expose it here for downstream interactions
+        if 'FamilySize' not in df.columns:
+            df['GroupSize'] = df.groupby('Group')['Group'].transform('count')
 
         return df
 

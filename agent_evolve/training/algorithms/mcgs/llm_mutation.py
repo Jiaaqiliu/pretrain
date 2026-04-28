@@ -47,10 +47,17 @@ DEFAULT_SEED_CONFIG = {
             "spending_features": True,
             "age_groups": True,
             "family_features": True,
-            "interactions": False,           # NEW — searchable
-            "log_transform_spending": False, # NEW — searchable
-            "target_encoding": False,        # NEW — searchable
+            "interactions": False,           # searchable
+            "log_transform_spending": False, # searchable
+            "target_encoding": False,        # searchable
+            "group_aggregates": False,       # searchable (Kaggle top-20 signal)
         },
+    },
+    # CV config (lives in eval/cv.yaml on disk; mirrored here for LLM context).
+    "cv": {
+        "enabled": False,
+        "n_splits": 5,
+        "strategy": "stratified_kfold",
     },
 }
 
@@ -74,15 +81,18 @@ def _reconstruct_config(node: Any, graph: Any) -> dict:
         cursor = graph.parent(cursor) if graph else None
     chain.reverse()  # root → node order
 
-    # Apply patches in order
+    # Apply patches in order. Both model/config.yaml and eval/cv.yaml are tracked.
     for n in chain:
         if not hasattr(n, "workspace_patch") or not n.workspace_patch:
             continue
         for op in n.workspace_patch.operations:
-            if op.path != "model/config.yaml":
+            if not op.key_path:
                 continue
-            if op.key_path:
+            if op.path == "model/config.yaml":
                 _apply_patch_to_dict(config, op.key_path, op.value)
+            elif op.path == "eval/cv.yaml":
+                # Mirror cv.yaml keys under config["cv"]
+                _apply_patch_to_dict(config.setdefault("cv", {}), op.key_path, op.value)
 
     return config
 
@@ -126,10 +136,16 @@ class LLMHyperparameterProposer:
         "hyperparameters.gamma": [0, 0.1, 0.3, 0.5, 1.0],
         "hyperparameters.reg_alpha": [0, 0.01, 0.1, 1.0],
         "hyperparameters.reg_lambda": [0.1, 1.0, 3.0, 5.0, 10.0],
-        # NEW: Feature engineering flags — unexplored territory with high potential!
+        # Feature engineering flags — unexplored territory with high potential!
         "feature_engineering.flags.interactions": [True, False],
         "feature_engineering.flags.log_transform_spending": [True, False],
         "feature_engineering.flags.target_encoding": [True, False],
+        "feature_engineering.flags.group_aggregates": [True, False],  # NEW
+        # Cross-validation (eval/cv.yaml) — CV removes test-split noise.
+        # When enabled, primary metric becomes CV-mean (cleaner signal for MCGS).
+        "cv.enabled": [True, False],
+        "cv.n_splits": [3, 5, 10],
+        "cv.strategy": ["stratified_kfold", "kfold"],
     }
 
     def __init__(
@@ -212,14 +228,22 @@ You MUST propose something DIFFERENT. Consider:
         return self._parse_response(last_response, parent)
 
     def _apply_operations_to_config(self, base_config: dict, operations: list) -> dict:
-        """Apply a list of operations to a base config (for dedup check)."""
+        """Apply a list of operations to a base config (for dedup check).
+
+        Both model/config.yaml and eval/cv.yaml are mirrored into the same
+        fingerprint dict (cv.yaml keys live under new_config["cv"]).
+        """
         import copy
         new_config = copy.deepcopy(base_config)
         for op in operations:
             key_path = op.get("key_path", [])
             if not key_path:
                 continue
-            _apply_patch_to_dict(new_config, key_path, op.get("value"))
+            path = op.get("path", "model/config.yaml")
+            if path == "eval/cv.yaml":
+                _apply_patch_to_dict(new_config.setdefault("cv", {}), key_path, op.get("value"))
+            else:
+                _apply_patch_to_dict(new_config, key_path, op.get("value"))
         return new_config
 
     def _build_context(self, parent: Any, graph: Any) -> dict:
@@ -356,12 +380,18 @@ Many attempts to "improve" via slow-learning (lower lr + more trees) have FAILED
 **Stop proposing "lr=0.01, n_estimators=1000"** — that region is exhausted and underperforms!
 
 ## 🎯 UNEXPLORED REGIONS WITH HIGH POTENTIAL
-1. **Feature Engineering flags** (likely biggest win, never tried):
-   - `interactions=True`: creates CryoSleep*HasSpending (known data leak), Age*Spent, VIP*Spent
-   - `log_transform_spending=True`: fixes skewed spending distribution (helps tree splits)
-   - `target_encoding=True`: smoothed mean-target encoding for HomePlanet/Destination/Deck
-2. **Completely different model**: Random Forest rarely tried, might find different patterns
-3. **Multi-parameter combos you haven't tried**: e.g. xgboost + interactions=True + small max_depth
+1. **Group-level aggregates** (`feature_engineering.flags.group_aggregates=True`):
+   - Adds GroupSpendMean/Std/Max, GroupCryoRate, GroupAgeMean — same-group passengers
+     share fate, so within-group stats are strong signal (Kaggle top-20 rely on this).
+2. **Cross-validation** (`cv.enabled=True`, path `eval/cv.yaml`):
+   - Replaces single test split with K-fold CV (default 5). Primary metric becomes CV-mean,
+     removing ~0.003 of test-split noise. Use this to distinguish real wins from noise.
+3. **Other FE flags**:
+   - `interactions=True`: CryoSleep*HasSpending, Age*Spent, VIP*Spent
+   - `log_transform_spending=True`: fixes skewed spending distribution
+   - `target_encoding=True`: smoothed mean-target encoding for categoricals
+4. **Model diversity**: Random Forest rarely tried; lightgbm + group_aggregates untried.
+5. **Multi-parameter combos**: e.g. lightgbm + group_aggregates=True + cv.enabled=True
 
 ## Search Space (pick values from these)
 {json.dumps(context['search_space'], indent=2)}
@@ -393,27 +423,31 @@ Return a JSON object with:
 - "description": 1-line summary of the change
 - "operations": list of PatchOperation dicts, each with:
     - "op": "replace"
-    - "path": "model/config.yaml"
-    - "key_path": ["hyperparameters", "n_estimators"]  # or ["model_type"], etc.
+    - "path": one of:
+        * "model/config.yaml"       — for model_type, hyperparameters, feature_engineering
+        * "eval/cv.yaml"            — for cv.enabled, cv.n_splits, cv.strategy
+    - "key_path": list of keys into that YAML (e.g. ["hyperparameters", "n_estimators"])
     - "value": the new value
 
-Example 1 (Feature Engineering — recommended when FE flags all False):
+Example 1 (Enable group aggregates — strongest known unexplored signal):
 {{
-  "reasoning": "Best is LightGBM defaults (0.81839). All FE flags are False — an unexplored high-value region. Enabling interactions creates CryoSleep*HasSpending which captures the known rule that cryo passengers can't spend.",
+  "reasoning": "Best is LightGBM defaults (0.81839). group_aggregates=False is the biggest unexplored lever — same-group passengers share fate and GroupSpendMean/CryoRate captures this directly. Enabling should give a meaningful bump.",
   "base_node_id": "node-5a44e50433",
-  "description": "LightGBM + interactions=True (new feature family)",
+  "description": "LightGBM + group_aggregates=True",
   "operations": [
-    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "interactions"], "value": true}}
+    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "group_aggregates"], "value": true}}
   ]
 }}
 
-Example 2 (Hyperparameter — only if FE has been explored):
+Example 2 (Enable CV — removes test-split noise so we can trust comparisons):
 {{
-  "reasoning": "LightGBM with interactions=True hit 0.824. Now try target_encoding on top to add HomePlanet/Destination target stats.",
+  "reasoning": "Test noise (~0.003) makes 0.816 vs 0.818 indistinguishable. Enable 5-fold CV so primary metric becomes CV-mean (noise-free). Pair with group_aggregates for robust signal.",
   "base_node_id": "node-abc123",
-  "description": "LightGBM + interactions + target_encoding",
+  "description": "Enable 5-fold CV + group_aggregates",
   "operations": [
-    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "target_encoding"], "value": true}}
+    {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["enabled"], "value": true}},
+    {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["n_splits"], "value": 5}},
+    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "group_aggregates"], "value": true}}
   ]
 }}
 

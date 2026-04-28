@@ -33,6 +33,59 @@ Sklearn Backend (训练 XGBoost/LightGBM/RF)
 MLE-Bench Evaluation (submission.csv → Kaggle grader)
 ```
 
+## Cycle 流程（三种 mutation 策略）
+
+每个 cycle 的 MCGS 骨架都一样，**只有第 2 步（谁提议变异）不同**：
+
+```
+1. SELECT   — selector 选 parent 节点
+2. PROPOSE  — mutator.propose(parent, graph) → WorkspaceMutation   ← 唯一差异
+3. FORK     — 复制 parent workspace，apply patch
+4. TRAIN    — sklearn backend 训练 ML 模型
+5. EVALUATE — 生成 submission.csv，mlebench grader 评分
+6. UPDATE   — backprop reward，更新 graph / topk / incumbent
+```
+
+### 规则驱动
+
+```
+PROPOSE:
+  i = cycle_index
+  value = bag[i % len(bag)]         # 按顺序查表
+  patch: <param> = value
+```
+
+- Mutator: `MLModelTypeMutationProposer` / `MLDepthSweepProposer` /
+  `MLNEstimatorsSweepProposer` / `MLLearningRateSweepProposer` /
+  `MLHyperparameterMutationProposer`
+- 不看 metric 历史、不看 parent config，每次只改 1 个字段
+- 确定性、零 API 成本、0ms 延迟
+
+### LLM 驱动
+
+```
+PROPOSE:
+  context = {parent_config, top10_history, tried_fingerprints, crashed_configs}
+  response = bedrock.invoke(opus-4-7, prompt(context))
+  if fingerprint(response) in tried: retry (最多 3 次)
+  patch: <1-3 个字段>
+```
+
+- Mutator: `LLMHyperparameterProposer`
+- 看完整 config 历史、避免重复、能跨多参数协调
+- ~1-2s 延迟，~$0.003 / mutation
+
+### 混合驱动
+
+```
+PROPOSE:
+  if cycle <= N: rule_proposer.propose()       # 前 N cycles 规则探索
+  else:          llm_proposer.propose()        # 后续 LLM 精调
+```
+
+- Mutator: `CombinedMutationProposer([rule] * N + [llm] * M)`
+- Selector: `HybridSelector(exploration_cycles=N)` — 前 N cycles 从 root 分叉（广度探索），之后从当前 top-1 演化（深度利用）
+
 ## 关键改动
 
 ### 1. Backend 层

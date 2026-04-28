@@ -10,6 +10,7 @@ evolvable_layers:
   - model/config.yaml         # ML model type and hyperparameters
   - model/feature_engineering.yaml  # Feature engineering strategies
   - train/ensemble.yaml       # Ensemble strategies
+  - eval/cv.yaml              # Cross-validation configuration
 
 protected_layers:
   - data/paths.yaml           # Data file paths (from MLE-Bench)
