@@ -68,25 +68,61 @@ def main():
     test_df = pd.read_csv(args.test_data)
     print(f"  Test samples: {len(test_df)}")
 
-    # Extract IDs and features
+    # Extract IDs
     id_col = "PassengerId"
     test_ids = test_df[id_col].values if id_col in test_df.columns else test_df.index.values
+    X_test_raw = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
 
-    # Apply same feature engineering as training
-    # (This requires loading the model config to get competition_id)
-    from agent_evolve.backends.feature_engineering import create_feature_engineer
+    # Load feature engineer from the best model's checkpoint
+    # (Feature engineer must be fitted on training data)
+    import json
+    import pickle
 
-    competition_id = "spaceship-titanic"  # TODO: Load from config
-    fe = create_feature_engineer(competition_id)
+    with open(args.graph) as f:
+        graph = json.load(f)
 
-    if fe is not None:
+    # Find best node
+    nodes = graph.get("nodes", [])
+    valid_nodes = [n for n in nodes if n.get("metric") is not None]
+    if not valid_nodes:
+        print("Error: No valid nodes found in graph")
+        return 1
+
+    best_node = max(valid_nodes, key=lambda n: n["metric"])
+    checkpoint_info = best_node.get("checkpoint")
+
+    if not checkpoint_info or not checkpoint_info.get("path"):
+        print("Error: Best node has no checkpoint path")
+        return 1
+
+    best_checkpoint_path = checkpoint_info["path"]
+
+    # Load feature engineer from checkpoint
+    fe_path = Path(best_checkpoint_path) / "feature_engineer.pkl"
+    if fe_path.exists():
+        print(f"Loading feature engineer from {fe_path}")
+        with open(fe_path, "rb") as f:
+            fe = pickle.load(f)
+
         print(f"Applying advanced feature engineering...")
-        X_test_raw = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
         X_test = fe.transform(X_test_raw)
         print(f"  Features: {X_test.shape[1]}")
     else:
-        print("Warning: Using raw features (no FE applied)")
-        X_test = test_df.drop(columns=[id_col] if id_col in test_df.columns else [])
+        print("Warning: No feature engineer found, using basic FE")
+        from sklearn.preprocessing import LabelEncoder
+        X_test = X_test_raw.copy()
+
+        # Basic FE
+        numeric_cols = X_test.select_dtypes(include=['number']).columns
+        categorical_cols = X_test.select_dtypes(include=['object', 'category']).columns
+
+        if len(numeric_cols) > 0:
+            X_test[numeric_cols] = X_test[numeric_cols].fillna(X_test[numeric_cols].median())
+
+        for col in categorical_cols:
+            X_test[col] = X_test[col].fillna('Unknown')
+            le = LabelEncoder()
+            X_test[col] = le.fit_transform(X_test[col].astype(str))
 
     # Create ensemble
     print(f"\nCreating top-{args.k} ensemble with {args.strategy} strategy...")
@@ -131,6 +167,7 @@ def main():
         from mlebench.utils import load_answers, read_csv
 
         print(f"\nGrading ensemble submission...")
+        competition_id = "spaceship-titanic"
         competition = registry.get_competition(competition_id)
         submission_data = read_csv(output_path)
         answers = load_answers(competition.answers)

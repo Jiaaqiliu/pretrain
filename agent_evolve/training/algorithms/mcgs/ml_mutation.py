@@ -102,16 +102,79 @@ class MLHyperparameterMutationProposer:
         elif mutation_type == "feature_engineering":
             # This would mutate feature_engineering.yaml
             # For now, just toggle scaling
+            mutation_id = f"m-fe-{uuid.uuid4().hex[:8]}"
             return WorkspaceMutation(
-                path="model/feature_engineering.yaml",
-                patch={"scale": True},  # Enable scaling
+                mutation_id=mutation_id,
+                parent_node_id=parent.node_id,
                 description="Enable feature scaling",
+                patch=WorkspacePatch(
+                    operations=[
+                        PatchOperation(
+                            op="replace",
+                            path="model/config.yaml",
+                            key_path=["feature_engineering", "scale"],
+                            value=True,
+                        ),
+                    ]
+                ),
+                mutation_type="training_recipe",
             )
 
+        mutation_id = f"m-hyper-{uuid.uuid4().hex[:8]}"
+
+        # Create PatchOperation for the mutation
+        if mutation_type == "learning_rate":
+            operations = [
+                PatchOperation(
+                    op="replace",
+                    path="model/config.yaml",
+                    key_path=["hyperparameters", "learning_rate"],
+                    value=new_config["hyperparameters"]["learning_rate"],
+                ),
+            ]
+        elif mutation_type == "n_estimators":
+            operations = [
+                PatchOperation(
+                    op="replace",
+                    path="model/config.yaml",
+                    key_path=["hyperparameters", "n_estimators"],
+                    value=new_config["hyperparameters"]["n_estimators"],
+                ),
+            ]
+        elif mutation_type == "max_depth":
+            operations = [
+                PatchOperation(
+                    op="replace",
+                    path="model/config.yaml",
+                    key_path=["hyperparameters", "max_depth"],
+                    value=new_config["hyperparameters"]["max_depth"],
+                ),
+            ]
+        elif mutation_type == "subsample":
+            operations = [
+                PatchOperation(
+                    op="replace",
+                    path="model/config.yaml",
+                    key_path=["hyperparameters", "subsample"],
+                    value=new_config["hyperparameters"]["subsample"],
+                ),
+            ]
+        elif mutation_type == "model_type":
+            operations = [
+                PatchOperation(
+                    op="replace",
+                    path="model/config.yaml",
+                    key_path=["model_type"],
+                    value=new_config["model_type"],
+                ),
+            ]
+
         return WorkspaceMutation(
-            path="model/config.yaml",
-            patch=new_config,
+            mutation_id=mutation_id,
+            parent_node_id=parent.node_id,
             description=description,
+            patch=WorkspacePatch(operations=operations),
+            mutation_type="training_recipe",
         )
 
     def _read_config(self, parent: Any) -> dict:

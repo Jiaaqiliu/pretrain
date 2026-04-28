@@ -8,14 +8,20 @@ This script demonstrates a more sophisticated search strategy:
 4. Phase 4 (cycles 18-20): Random hyperparameter mutations
 """
 
+import os
 import sys
 from pathlib import Path
+
+# Disable wandb
+os.environ.setdefault("WANDB_DISABLED", "true")
 
 # Add project root to path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
 from agent_evolve.training.api import TrainingEvolver
+from agent_evolve.training.types import TrainingEvolveConfig
+from agent_evolve.training.algorithms.mcgs.search import MCGSSearch
 from agent_evolve.training.algorithms.mcgs.ml_mutation import (
     MLModelTypeMutationProposer,
     MLDepthSweepProposer,
@@ -24,7 +30,31 @@ from agent_evolve.training.algorithms.mcgs.ml_mutation import (
     MLHyperparameterMutationProposer,
     CombinedMutationProposer,
 )
-from agent_evolve.training.algorithms.mcgs.selectors import RootFanoutSelector
+
+
+class RootFanoutSelector:
+    """Forces first `fanout` cycles to pick root as parent.
+
+    Ensures we get independent siblings testing different models,
+    rather than a chain from UCT.
+    """
+
+    def __init__(self, fanout: int = 4) -> None:
+        self.fanout = fanout
+
+    def select(self, graph, *, cycle: int):
+        root = graph.root()
+        assert root is not None
+        direct_children = [
+            n for n in graph.nodes.values() if n.parent_id == root.node_id
+        ]
+        if len(direct_children) < self.fanout:
+            return root
+        # Fallback: pick best child
+        return max(
+            direct_children,
+            key=lambda n: (n.mean_reward, n.metric or float("-inf")),
+        )
 
 
 def main():
@@ -38,21 +68,6 @@ def main():
     print("  Phase 3 (7 cycles):  N-estimators tuning")
     print("  Phase 4 (3 cycles):  Random mutations")
     print()
-
-    # Create evolver
-    evolver = TrainingEvolver(
-        workspace="seed_workspaces/mle_automl",
-        run_name="mle-automl-advanced-20cycles",
-        output_dir="runs",
-    )
-
-    # Configure MCGS
-    evolver.config.max_cycles = 20
-    evolver.config.trial_budget_seconds = 600.0  # 10 minutes per trial
-
-    # Set backend and benchmark
-    evolver.backend_name = "sklearn_backend"
-    evolver.benchmark_name = "mle_bench"
 
     # Create combined mutator with phased strategy
     phase1_mutator = MLModelTypeMutationProposer(
@@ -104,16 +119,33 @@ def main():
     ])
 
     # Use RootFanoutSelector to explore all 20 configurations
-    selector = RootFanoutSelector(num_children=20)
+    selector = RootFanoutSelector(fanout=20)
+
+    # Create MCGS algorithm
+    algo = MCGSSearch(
+        mutator=mutator,
+        selector=selector,
+    )
+
+    # Create evolver
+    evolver = TrainingEvolver(
+        workspace=project_root / "seed_workspaces" / "mle_automl",
+        benchmark="mle_bench",
+        algorithm=algo,
+        backend="sklearn_backend",
+        config=TrainingEvolveConfig(
+            smoke=False,
+            max_cycles=20,
+            trial_budget_seconds=600,  # 10 min per trial
+        ),
+        work_dir=project_root / "runs" / "mle-automl-advanced-20cycles",
+    )
 
     print("Starting 20-cycle search...")
     print()
 
     # Run evolution
-    result = evolver.evolve(
-        mutator=mutator,
-        selector=selector,
-    )
+    result = evolver.run(cycles=20)
 
     # Print results
     print("\n" + "=" * 60)
