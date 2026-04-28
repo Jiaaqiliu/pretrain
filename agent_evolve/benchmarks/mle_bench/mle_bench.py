@@ -203,9 +203,15 @@ class MLEBenchAdapter:
                 "mle_bench_success_rate": 1.0 if score > 0 else 0.0,  # Success if valid score
             }
 
-            # If backend wrote a cv_mean.json marker, prefer CV-mean as primary metric
-            # (CV-mean has no test-split noise, so MCGS/LLM get cleaner signal).
-            # Real Kaggle score is retained in secondary metrics.
+            # If backend wrote a cv_mean.json marker, attach CV metrics as SECONDARY
+            # signal only. We do NOT change primary_metric:
+            #
+            # CV-mean is computed on full train via K-fold OOF; Kaggle score is on
+            # a ~870-row public holdout. The two scales differ (CV is often ~0.02-0.03
+            # lower than the holdout score for the same model). Replacing the primary
+            # metric with CV-mean breaks MCGS comparisons across nodes with different
+            # CV settings. Instead, expose CV as secondary so LLM/MCGS can use it as
+            # a robustness / overfitting signal without scale confusion.
             cv_marker = result_dir / "cv_mean.json"
             if cv_marker.exists():
                 with open(cv_marker) as cf:
@@ -213,10 +219,10 @@ class MLEBenchAdapter:
                 cv_mean = cv_data.get("cv_mean_accuracy")
                 if cv_mean is not None:
                     metrics["cv_mean_accuracy"] = float(cv_mean)
+                    metrics["cv_std"] = float(cv_data.get("cv_std", 0.0))
                     metrics["cv_n_splits"] = cv_data.get("n_splits")
-                    metrics["primary_metric"] = "cv_mean_accuracy"
-                    print(f"✓ Using CV-mean as primary metric: {cv_mean:.5f} "
-                          f"(Kaggle score: {score:.5f})")
+                    print(f"  CV-mean={cv_mean:.5f} ± {metrics['cv_std']:.5f} "
+                          f"(secondary; primary stays mle_bench_score={score:.5f})")
 
             metrics_path = result_dir / "metrics.json"
             with open(metrics_path, "w") as f:

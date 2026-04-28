@@ -62,6 +62,38 @@ DEFAULT_SEED_CONFIG = {
 }
 
 
+def _load_node_secondary_metrics(node: Any) -> dict:
+    """Best-effort load of secondary metrics (CV etc.) from node's metrics.json.
+
+    Returns empty dict if file not found. Doesn't raise — used for prompt
+    enrichment only, so missing metrics should degrade gracefully.
+    """
+    checkpoint = getattr(node, "checkpoint", None)
+    if checkpoint is None:
+        return {}
+    ckpt_path = getattr(checkpoint, "path", None) if not isinstance(checkpoint, dict) else checkpoint.get("path")
+    if not ckpt_path:
+        return {}
+    # checkpoint.path is .../nodes/<id>/workspace/checkpoints/models/<id>
+    # metrics.json lives at    .../nodes/<id>/workspace/evolution/eval/full_state/test/metrics.json
+    from pathlib import Path as _Path
+    try:
+        ws_path = _Path(ckpt_path).parents[2]  # .../workspace
+        metrics_path = ws_path / "evolution" / "eval" / "full_state" / "test" / "metrics.json"
+        if not metrics_path.exists():
+            return {}
+        with open(metrics_path) as f:
+            data = json.load(f)
+        # Return only the secondary signals we care about (keep LLM context lean)
+        out = {}
+        for k in ("cv_mean_accuracy", "cv_std", "cv_n_splits"):
+            if k in data:
+                out[k] = data[k]
+        return out
+    except Exception:
+        return {}
+
+
 def _reconstruct_config(node: Any, graph: Any) -> dict:
     """Reconstruct full config for a node by applying all ancestor patches.
 
@@ -283,13 +315,17 @@ You MUST propose something DIFFERENT. Consider:
 
         for n in valid_nodes[:10]:  # Top 10 configs
             full_cfg = _reconstruct_config(n, graph)
+            secondary = _load_node_secondary_metrics(n)
 
-            history.append({
+            entry = {
                 "node_id": n.node_id,
-                "metric": round(n.metric, 5),
+                "metric": round(n.metric, 5),  # primary = Kaggle holdout score
                 "full_config": full_cfg,
                 "is_best": False,
-            })
+            }
+            if secondary:
+                entry["secondary"] = secondary  # may contain cv_mean_accuracy, cv_std
+            history.append(entry)
 
         if history:
             history[0]["is_best"] = True
@@ -321,16 +357,21 @@ You MUST propose something DIFFERENT. Consider:
         """Build prompt with full context and search space."""
 
         # Show full configs with metrics (not just descriptions!)
+        # Include secondary metrics (cv_mean_accuracy, cv_std) when available —
+        # gives the LLM a robustness signal orthogonal to the primary Kaggle score.
+        def _entry_for_prompt(h):
+            out = {
+                "metric": h["metric"],  # primary = Kaggle 870-row holdout
+                "config": h["full_config"],
+                "is_best": h["is_best"],
+            }
+            if "secondary" in h:
+                out["secondary"] = h["secondary"]  # cv_mean_accuracy ± cv_std on full train
+            return out
+
         history_str = json.dumps(
-            [
-                {
-                    "metric": h["metric"],
-                    "config": h["full_config"],
-                    "is_best": h["is_best"],
-                }
-                for h in context["metric_history"]
-            ],
-            indent=2
+            [_entry_for_prompt(h) for h in context["metric_history"]],
+            indent=2,
         )
 
         # CRITICAL FIX: Actually show the LLM the list of tried configs
@@ -360,6 +401,27 @@ You MUST propose something DIFFERENT. Consider:
 
 ## Task
 Binary classification. Score range: 0-1 (higher is better). Current best: {context['best_metric']}.
+
+## 📏 Two metrics — how to read them
+
+The `metric` field is the **primary**: accuracy on the mlebench local holdout (~870 rows).
+This is what MCGS optimizes and the Kaggle grader reports.
+
+When `secondary.cv_mean_accuracy` / `secondary.cv_std` appear in history, they are
+**K-fold out-of-fold accuracy on the full training set** (from `eval/cv.yaml`). They
+live on a different scale than the primary metric (typically ~0.02–0.03 lower because
+the holdout sample is easier than the full-train distribution). Use them as a
+robustness signal, not as a replacement:
+
+- **Primary↑ AND CV↑** → real improvement, trust it.
+- **Primary↑ BUT CV↓ or CV-std↑** → likely overfitting the 870-row holdout; be skeptical.
+- **Primary flat BUT CV↑** → genuine generalization gain; worth keeping even if
+  holdout didn't reflect it.
+- **High CV-std (>0.01)** → the config is unstable across folds — prefer configs with
+  tighter CV-std at the same or slightly lower CV-mean.
+
+**Do NOT** interpret `cv.enabled=True` configs as "worse" just because their primary
+metric is unchanged — CV's value is the `secondary` signal, not a primary-metric shift.
 
 ## 📊 Dataset Info
 - Spaceship Titanic: predict if passenger was "Transported" to another dimension
@@ -439,15 +501,14 @@ Example 1 (Enable group aggregates — strongest known unexplored signal):
   ]
 }}
 
-Example 2 (Enable CV — removes test-split noise so we can trust comparisons):
+Example 2 (Enable CV for robustness signal — primary metric unchanged):
 {{
-  "reasoning": "Test noise (~0.003) makes 0.816 vs 0.818 indistinguishable. Enable 5-fold CV so primary metric becomes CV-mean (noise-free). Pair with group_aggregates for robust signal.",
+  "reasoning": "Best config at 0.832 holdout, but no CV signal yet. Enabling 5-fold CV exposes cv_mean_accuracy ± cv_std in history — a robustness check orthogonal to the 870-row holdout. Does NOT improve primary metric directly; provides signal for next cycle.",
   "base_node_id": "node-abc123",
-  "description": "Enable 5-fold CV + group_aggregates",
+  "description": "Enable 5-fold CV on current best (for robustness signal)",
   "operations": [
     {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["enabled"], "value": true}},
-    {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["n_splits"], "value": 5}},
-    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "group_aggregates"], "value": true}}
+    {{"op": "replace", "path": "eval/cv.yaml", "key_path": ["n_splits"], "value": 5}}
   ]
 }}
 

@@ -24,9 +24,10 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 class CVEnsembleModel:
     """Wraps K fold-trained models. Predictions are the mean across folds."""
 
-    def __init__(self, models: list, cv_mean_score: float, n_splits: int):
+    def __init__(self, models: list, cv_mean_score: float, cv_std: float, n_splits: int):
         self.models = models
         self.cv_mean_score = cv_mean_score
+        self.cv_std = cv_std
         self.n_splits = n_splits
 
     def predict_proba(self, X):
@@ -82,10 +83,13 @@ class SklearnBackend:
 
             # 3. Train ML model (single or CV ensemble based on cv.yaml)
             self._cv_mean_score = None
+            self._cv_std = None
             if cv_config.get("enabled", False):
                 model = self._train_model_with_cv(config, cv_config, X_train, y_train)
                 self._cv_mean_score = model.cv_mean_score
-                print(f"✓ CV-mean accuracy: {self._cv_mean_score:.5f} (n_splits={model.n_splits})")
+                self._cv_std = model.cv_std
+                print(f"✓ CV-mean accuracy: {self._cv_mean_score:.5f} ± {self._cv_std:.5f} "
+                      f"(n_splits={model.n_splits})")
             else:
                 model = self._train_model(config, X_train, y_train)
 
@@ -348,7 +352,13 @@ class SklearnBackend:
             fold_scores.append(score)
 
         cv_mean = float(np.mean(fold_scores))
-        return CVEnsembleModel(models=fold_models, cv_mean_score=cv_mean, n_splits=n_splits)
+        cv_std = float(np.std(fold_scores))
+        return CVEnsembleModel(
+            models=fold_models,
+            cv_mean_score=cv_mean,
+            cv_std=cv_std,
+            n_splits=n_splits,
+        )
 
     def _is_classification(self, y):
         """Detect if task is classification or regression."""
@@ -497,7 +507,11 @@ class SklearnBackend:
         if cv_mean is not None:
             marker_path = result_dir / "cv_mean.json"
             with open(marker_path, "w") as f:
-                json.dump({"cv_mean_accuracy": cv_mean, "n_splits": getattr(model, "n_splits", None)}, f)
+                json.dump({
+                    "cv_mean_accuracy": cv_mean,
+                    "cv_std": getattr(self, "_cv_std", 0.0),
+                    "n_splits": getattr(model, "n_splits", None),
+                }, f)
 
         return result_dir
 
