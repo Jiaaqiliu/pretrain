@@ -221,7 +221,8 @@ class TrainingWorkspace:
                     with open(target, "w") as f:
                         f.write(str(op.value) if op.value is not None else "")
                 return
-        # Nested YAML key update.
+        # Nested YAML key update. Supports both dict keys (str) and list
+        # indices (int) in ``key_path``.
         data: dict[str, Any] = {}
         if target.exists():
             with open(target) as f:
@@ -229,13 +230,29 @@ class TrainingWorkspace:
         cursor: Any = data
         *parents, last = op.key_path
         for key in parents:
-            if key not in cursor or not isinstance(cursor[key], dict):
-                cursor[key] = {}
-            cursor = cursor[key]
+            if isinstance(cursor, list) and isinstance(key, int):
+                cursor = cursor[key]
+                continue
+            if isinstance(cursor, dict):
+                if key not in cursor or not isinstance(cursor[key], (dict, list)):
+                    cursor[key] = {}
+                cursor = cursor[key]
+                continue
+            raise TrainingWorkspaceValidationError(
+                str(self.root),
+                [f"Cannot descend into {type(cursor).__name__} with key {key!r} in {op.path}"],
+            )
         if op.op == "remove":
-            cursor.pop(last, None)
+            if isinstance(cursor, list) and isinstance(last, int):
+                if 0 <= last < len(cursor):
+                    cursor.pop(last)
+            elif isinstance(cursor, dict):
+                cursor.pop(last, None)
         else:
-            cursor[last] = op.value
+            if isinstance(cursor, list) and isinstance(last, int):
+                cursor[last] = op.value
+            else:
+                cursor[last] = op.value
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)

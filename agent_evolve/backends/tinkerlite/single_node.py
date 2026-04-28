@@ -18,6 +18,8 @@ import yaml
 from ...training.runners.data_worker import render_datums
 from ...training.runners.eval_worker import run_eval_plan as _run_eval_plan
 from ...training.runners.pack_adapter_worker import pack_adapter
+from ...training.runners.rl_worker import run_gspo_stage
+from ...training.runners.synth_worker import run_synth_stage
 from ...training.runners.train_worker import run_sft_stage
 from ...training.types import (
     CheckpointRef,
@@ -54,16 +56,44 @@ class SingleNodeTinkerLiteBackend:
     def create_training_client(
         self,
         workspace: Any,
-        checkpoint: CheckpointRef | None = None,  # noqa: ARG002 (future use)
-    ) -> MockTrainingClient:
-        return MockTrainingClient(Path(workspace.root))
+        checkpoint: CheckpointRef | None = None,
+    ) -> Any:
+        if self.mock:
+            return MockTrainingClient(Path(workspace.root))
+        from .hf_clients import build_hf_client_from_workspace
+
+        return build_hf_client_from_workspace(workspace, checkpoint=checkpoint)
 
     def create_sampling_client(
         self,
-        workspace: Any,  # noqa: ARG002
-        checkpoint: CheckpointRef,  # noqa: ARG002
-    ) -> MockSamplingClient:
-        return MockSamplingClient()
+        workspace: Any,
+        checkpoint: CheckpointRef,
+    ) -> Any:
+        if self.mock:
+            return MockSamplingClient()
+        from .vllm_sampling import VLLMSamplingClient
+
+        import yaml
+
+        def _load(p: Path) -> dict:
+            if not p.exists():
+                return {}
+            with open(p) as f:
+                return yaml.safe_load(f) or {}
+
+        base_cfg = _load(Path(workspace.root) / "model" / "base.yaml")
+        kaggle_cfg = _load(Path(workspace.root) / "eval" / "kaggle_eval.yaml")
+        return VLLMSamplingClient(
+            model_path=str(base_cfg.get("path")),
+            adapter_path=checkpoint.path,
+            adapter_name=checkpoint.name or "candidate",
+            tensor_parallel_size=int(kaggle_cfg.get("tensor_parallel_size", 1)),
+            max_model_len=int(kaggle_cfg.get("max_model_len", 4096)),
+            max_lora_rank=int(kaggle_cfg.get("max_lora_rank", 32)),
+            max_num_seqs=int(kaggle_cfg.get("max_num_seqs", 128)),
+            gpu_memory_utilization=float(kaggle_cfg.get("gpu_memory_utilization", 0.85)),
+            seed=int(kaggle_cfg.get("seed", 0)),
+        )
 
     def run_eval_plan(self, plan: EvalPlan) -> Path:
         return _run_eval_plan(
@@ -164,14 +194,107 @@ class SingleNodeTinkerLiteBackend:
         optimizer = _load_yaml_safely(Path(workspace.root) / "train" / "optimizer.yaml")
         start = time.time()
 
+        # Single training client reused across all SFT/RL stages in this trial,
+        # so the base model + adapter load once. The client is torn down at
+        # the end of the pipeline so the subsequent vLLM eval has GPU headroom.
+        shared_training_client: Any | None = None
+
+        def _ensure_training_client() -> Any:
+            nonlocal shared_training_client
+            if shared_training_client is None:
+                start_ckpt = last_ckpt or _seed_adapter_ref(workspace)
+                shared_training_client = self.create_training_client(
+                    workspace, checkpoint=start_ckpt
+                )
+            return shared_training_client
+
         for stage in stages:
             if not stage.get("enabled", True):
                 continue
             stype = stage.get("type")
-            if stype != "sft":
-                # Non-SFT stages are no-ops for PR7; PR9+ owns RL paths.
-                continue
             remaining = budget.seconds - (time.time() - start) if budget.seconds else None
+
+            if stype == "synth_generate":
+                # Teacher distillation. Emits a JSONL + stats.json under
+                # ``data/synth/`` and appends it to ``data/sources.yaml`` so
+                # subsequent SFT stages see the new prompts.
+                out_path, synth_stats = run_synth_stage(
+                    workspace,
+                    stage,
+                    smoke=self.mock,
+                    budget_seconds=remaining,
+                )
+                aggregated["stage_metrics"].append(
+                    {"stage": stage.get("name"), "type": "synth_generate",
+                     "out_path": str(out_path), **synth_stats}
+                )
+                continue
+
+            if stype == "rl":
+                # GSPO / DAPO RL. The rollout phase needs vLLM + the rollout
+                # adapter; the update phase needs HF + PEFT on the SAME GPU.
+                # To fit on one GPU we:
+                #   (a) build only the sampling client first,
+                #   (b) defer the training-client build to a factory that
+                #       run_gspo_stage calls AFTER tearing down vLLM,
+                #   (c) seed the training client from the same starting
+                #       adapter as the rollout.
+                sampling_ckpt = last_ckpt or _seed_adapter_ref(workspace)
+                if sampling_ckpt is None:
+                    raise RuntimeError(
+                        "rl stage needs a starting adapter but none was produced "
+                        "by an earlier SFT stage and model/adapter.yaml has no "
+                        "seed_adapter_path set."
+                    )
+
+                if self.mock:
+                    training_client = _ensure_training_client()
+                    sampling_client = self.create_sampling_client(workspace, sampling_ckpt)
+                    ckpt, rl_metrics = run_gspo_stage(
+                        workspace,
+                        stage,
+                        sampling_client=sampling_client,
+                        training_client_factory=lambda: training_client,
+                        benchmark=self._current_benchmark,
+                        budget_seconds=remaining,
+                        smoke=True,
+                        training_client=training_client,
+                    )
+                else:
+                    # Non-mock: training client is built lazily, after
+                    # sampling_client.close() inside run_gspo_stage.
+                    if shared_training_client is not None:
+                        # Tear down any pre-existing training client so the
+                        # rollout phase has the full GPU.
+                        close = getattr(shared_training_client, "close", None)
+                        if close is not None:
+                            close()
+                        shared_training_client = None
+                    sampling_client = self.create_sampling_client(workspace, sampling_ckpt)
+
+                    def _build_training_client() -> Any:
+                        nonlocal shared_training_client
+                        shared_training_client = self.create_training_client(
+                            workspace, checkpoint=sampling_ckpt
+                        )
+                        return shared_training_client
+
+                    ckpt, rl_metrics = run_gspo_stage(
+                        workspace,
+                        stage,
+                        sampling_client=sampling_client,
+                        training_client_factory=_build_training_client,
+                        benchmark=self._current_benchmark,
+                        budget_seconds=remaining,
+                        smoke=False,
+                    )
+                aggregated["stage_metrics"].append(rl_metrics)
+                last_ckpt = ckpt
+                continue
+
+            if stype != "sft":
+                continue
+
             # Smoke path still uses the mock Datum iterable; real path pulls
             # its tokenized dataset from ``render_hf_dataset`` inside
             # ``train_worker`` and ignores the ``datums`` arg.
@@ -183,9 +306,17 @@ class SingleNodeTinkerLiteBackend:
                 optimizer=optimizer,
                 smoke=self.mock,
                 budget_seconds=remaining,
+                training_client=None if self.mock else _ensure_training_client(),
             )
             aggregated["stage_metrics"].append(stage_metrics)
             last_ckpt = ckpt
+
+        # Tear down the shared client so the subsequent vLLM eval has GPU
+        # memory headroom. Mock clients have no close().
+        if shared_training_client is not None:
+            close = getattr(shared_training_client, "close", None)
+            if close is not None:
+                close()
 
         if last_ckpt is None:
             # No SFT stage ran — emit a shell checkpoint so downstream eval

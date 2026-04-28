@@ -1,12 +1,14 @@
-# Real SFT training pipeline. MCGS forks this workspace per cycle and the
-# LRBagMutationProposer overwrites ``train/optimizer.yaml::lr``.
+# Real training pipeline. MCGS forks this workspace per cycle; mutators
+# overwrite evolvable stage/optimizer knobs.
 #
-# ``max_steps`` caps training at N optimizer steps; at effective batch 32
-# (per_device_bs=1 × grad_accum=32), 8 steps ≈ 256 examples, roughly E-05/3.5.
-# Each step on a 30B hybrid-Mamba model with grad checkpointing is ~3.5 min
-# on one H200 → ~30 min/cycle. Set ``max_steps: null`` (or delete) to train
-# for full ``epochs``.
+# Stages run top-to-bottom. ``synth_generate`` emits a JSONL + stats.json
+# under ``data/synth/`` and appends it to ``data/sources.yaml`` so the next
+# SFT stage sees the new prompts. SFT's ``max_steps`` caps optimizer steps
+# at N (effective batch 32 ≈ ~3.5 min/step on 1× H200).
 stages:
+  - name: teacher_distill
+    type: synth_generate
+    enabled: false  # flip to true (or patch via mutator) to run teacher-gen
   - name: sft_warmup
     type: sft
     epochs: 2
@@ -16,7 +18,25 @@ stages:
     enabled: true
   - name: rl_gspo
     type: rl
-    steps: 0
+    # ── GSPO knobs (consumed by agent_evolve.training.runners.rl_worker).
+    #    Mutators may overwrite any of these.
     loss: importance_sampling
     rollout: default
     enabled: false
+    prompts_csv: /fsx/zzsamshi/nemotron-auto-research/data/splits/train_local.csv
+    domains: [bits, cipher]
+    per_domain: 25       # prompts per domain per iteration
+    n_samples: 4         # G = rollouts per prompt (for group normalization)
+    max_tokens: 2560     # vLLM generate cap during rollout
+    seed: 11
+    epochs: 1
+    grad_accum: 8
+    lr: 1.0e-5
+    eps_low: 3.0e-4      # GSPO clip — paper defaults for Qwen3-30B
+    eps_high: 4.0e-4
+    advantage_mode: group     # group | loop | domain
+    length_penalty_lambda: 0.0
+    length_penalty_cap: 2500
+    dapo_token_level: false   # true → switch to DAPO token-level ratio
+    max_len: 2800        # drop rollouts whose prompt+completion exceeds this
+    log_every: 4

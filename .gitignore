@@ -47,6 +47,7 @@ inspect_evals/
 # Logs
 *.log
 /logs/
+/wiki_log/
 !/docs/
 /docs/*
 !/docs/skillbench-setup.md

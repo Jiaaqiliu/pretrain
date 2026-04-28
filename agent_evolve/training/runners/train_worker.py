@@ -4,14 +4,16 @@ Two paths:
 
 * **smoke** — uses :class:`MockTrainingClient`, no torch. Used by PR8 seed and
   unit tests.
-* **real** — builds an HF/PEFT pipeline: load base model in bf16 with
-  ``trust_remote_code=True``, wrap with LoRA, run HF ``Trainer`` over the
-  tokenized dataset, save adapter. Matches the verified recipe in
-  ``../nemotron-auto-research/scripts/train_sft_lora.py``.
+* **real** — drives an :class:`HFTrainingClient` via the
+  ``TrainingClient`` protocol (``forward_backward("cross_entropy") +
+  optim_step()``). Matches the verified recipe in
+  ``../nemotron-auto-research/scripts/train_sft_lora.py`` without going
+  through :class:`transformers.Trainer`.
 """
 
 from __future__ import annotations
 
+import random
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -19,6 +21,10 @@ from typing import Any, Iterable
 import yaml
 
 from ...backends.tinkerlite.base import AdamParams, Datum, ModelInput
+from ...backends.tinkerlite.hf_clients import (
+    HFTrainingClient,
+    build_hf_client_from_workspace,
+)
 from ...backends.tinkerlite.mock_clients import MockTrainingClient
 from ..types import CheckpointRef
 
@@ -33,11 +39,23 @@ def run_sft_stage(
     optimizer: dict | None = None,
     smoke: bool = True,
     budget_seconds: float | None = None,
+    training_client: HFTrainingClient | None = None,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
-    """Run one SFT stage. Returns the checkpoint plus a metrics dict."""
+    """Run one SFT stage. Returns the checkpoint plus a metrics dict.
+
+    ``training_client`` is optional: if provided, the real path reuses it (so
+    the model is loaded once across multiple stages in the same trial). If
+    omitted, the real path constructs one from workspace YAML.
+    """
     if smoke:
         return _run_smoke_stage(workspace, stage, datums or [], optimizer, budget_seconds)
-    return _run_real_stage(workspace, stage, optimizer, budget_seconds)
+    return _run_real_stage(
+        workspace,
+        stage,
+        optimizer,
+        budget_seconds,
+        training_client=training_client,
+    )
 
 
 # ── Smoke path (no torch) ────────────────────────────────────────────────
@@ -73,136 +91,149 @@ def _run_smoke_stage(
     }
 
 
-# ── Real path (HF + PEFT LoRA) ───────────────────────────────────────────
+# ── Real path (driven through TrainingClient protocol) ──────────────────
 
 def _run_real_stage(
     workspace: Any,
     stage: dict,
     optimizer: dict | None,
-    budget_seconds: float | None,  # noqa: ARG001 — HF Trainer owns its own budget
+    budget_seconds: float | None,
+    *,
+    training_client: HFTrainingClient | None,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
-    # Deferred imports so smoke tests don't pay a torch/peft import.
-    import torch
-    from peft import LoraConfig, get_peft_model
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        Trainer,
-        TrainingArguments,
-    )
+    """Drive ``TrainingClient.forward_backward("cross_entropy") + optim_step``.
 
-    from .data_worker import PadToLongest, render_hf_dataset
+    Dataset is produced by :func:`render_hf_dataset` (same tokenization as
+    before); each row becomes a :class:`Datum` with ``attention_mask`` and
+    ``labels`` (``-100``-masked prompt) packed into ``loss_fn_inputs``.
+    Grad-accumulation, batching and LR warmup are applied in this runner
+    (HF Trainer is no longer in the loop).
+    """
+    from .data_worker import render_hf_dataset
 
     cfg = _load_real_stage_config(workspace, stage, optimizer)
 
-    # ── Tokenizer + dataset ─────────────────────────────────────────
-    print(f"[sft] loading tokenizer from {cfg['model_path']}")
-    tokenizer = AutoTokenizer.from_pretrained(cfg["model_path"], trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    client = training_client or build_hf_client_from_workspace(workspace)
 
-    ds = render_hf_dataset(workspace, tokenizer, max_len=cfg["max_seq_len"])
+    print(f"[sft] using tokenizer from client ({cfg['model_path']})")
+    ds = render_hf_dataset(workspace, client.tokenizer, max_len=cfg["max_seq_len"])
     ds = ds.shuffle(seed=cfg["seed"])
     print(f"[sft] dataset size: {len(ds)}; lr={cfg['lr']}; epochs={cfg['epochs']}")
 
-    # ── Model ───────────────────────────────────────────────────────
-    print("[sft] loading base model in bf16")
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg["model_path"],
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="eager",  # mamba layers unaffected; attn prefers eager here
-    )
-    model.config.use_cache = False
-    model.gradient_checkpointing_enable()
-
-    lora_config = LoraConfig(
-        r=cfg["rank"],
-        lora_alpha=cfg["alpha"],
-        lora_dropout=cfg["dropout"],
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=cfg["target_modules"],
-    )
-    model = get_peft_model(model, lora_config)
-    try:
-        model.print_trainable_parameters()
-    except Exception:  # pragma: no cover — print-only helper
-        pass
-
-    # ── TrainingArguments ───────────────────────────────────────────
-    outdir = Path(workspace.root) / "checkpoints" / "adapters" / stage["name"]
-    outdir.mkdir(parents=True, exist_ok=True)
-
+    per_device_bs = int(cfg["per_device_bs"])
+    grad_accum = int(cfg["grad_accum"])
     max_steps = int(cfg["max_steps"]) if cfg["max_steps"] is not None else -1
+    warmup_ratio = float(cfg["warmup_ratio"])
+    base_lr = float(cfg["lr"])
+    epochs = int(cfg["epochs"])
+    log_every = max(1, int(cfg["log_every"]))
 
-    targs = TrainingArguments(
-        output_dir=str(outdir),
-        num_train_epochs=cfg["epochs"] if max_steps <= 0 else 1,
-        max_steps=max_steps,
-        per_device_train_batch_size=cfg["per_device_bs"],
-        gradient_accumulation_steps=cfg["grad_accum"],
-        learning_rate=cfg["lr"],
-        warmup_ratio=cfg["warmup_ratio"],
-        lr_scheduler_type="cosine",
-        logging_steps=cfg["log_every"],
-        save_strategy="no",  # we call save_model() manually at the end
-        bf16=True,
-        seed=cfg["seed"],
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        optim="adamw_torch_fused",
-        report_to="none",
-        remove_unused_columns=False,
-        ddp_find_unused_parameters=False,
+    rng = random.Random(cfg["seed"])
+
+    def _iter_epoch() -> Iterable[list[int]]:
+        order = list(range(len(ds)))
+        rng.shuffle(order)
+        for chunk_start in range(0, len(order), per_device_bs):
+            yield order[chunk_start : chunk_start + per_device_bs]
+
+    total_micro = max(1, (len(ds) // per_device_bs) * epochs)
+    total_opt_steps = max(1, total_micro // grad_accum)
+    if max_steps > 0:
+        total_opt_steps = min(total_opt_steps, max_steps)
+    warmup_steps = max(1, int(total_opt_steps * warmup_ratio))
+
+    print(
+        f"[sft] total_opt_steps={total_opt_steps}, warmup_steps={warmup_steps}, "
+        f"grad_accum={grad_accum}"
     )
-
-    collator = PadToLongest(pad_token_id=tokenizer.pad_token_id)
-    trainer = Trainer(model=model, args=targs, train_dataset=ds, data_collator=collator)
 
     t0 = time.time()
-    train_output = trainer.train()
+    micro = 0
+    opt_step = 0
+    accum_loss = 0.0
+    losses: list[float] = []
+
+    def _current_lr(step: int) -> float:
+        if step < warmup_steps:
+            return base_lr * (step + 1) / max(1, warmup_steps)
+        # Cosine decay from base_lr → 0 over remaining steps.
+        import math
+
+        progress = (step - warmup_steps) / max(1, total_opt_steps - warmup_steps)
+        progress = min(1.0, max(0.0, progress))
+        return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    stop = False
+    for epoch in range(epochs):
+        if stop:
+            break
+        for batch_idx in _iter_epoch():
+            if budget_seconds is not None and (time.time() - t0) > budget_seconds:
+                print(f"[sft] budget {budget_seconds}s exceeded — stopping")
+                stop = True
+                break
+            batch = [_row_to_datum(ds[i]) for i in batch_idx]
+            result = client.forward_backward(
+                batch,
+                loss_fn="cross_entropy",
+                loss_config={"grad_accum": grad_accum},
+            )
+            accum_loss += float(result.loss)
+            micro += 1
+            if micro % grad_accum == 0:
+                lr = _current_lr(opt_step)
+                client.optim_step(AdamParams(learning_rate=lr))
+                opt_step += 1
+                mean_loss = accum_loss / grad_accum
+                losses.append(mean_loss)
+                accum_loss = 0.0
+                if opt_step == 1 or opt_step % log_every == 0:
+                    elapsed = (time.time() - t0) / 60.0
+                    print(
+                        f"  step {opt_step}/{total_opt_steps} "
+                        f"loss={mean_loss:.4f} lr={lr:.2e} "
+                        f"elapsed={elapsed:.1f}min"
+                    )
+                if max_steps > 0 and opt_step >= max_steps:
+                    stop = True
+                    break
+
     wall_seconds = time.time() - t0
+    ckpt = client.save_weights_for_sampler(stage.get("name", "sft"))
+    print(f"[sft] saved adapter to {ckpt.path} in {wall_seconds:.1f}s")
 
-    trainer.save_model(str(outdir))
-    tokenizer.save_pretrained(str(outdir))
-    print(f"[sft] saved adapter to {outdir} in {wall_seconds:.1f}s")
+    # If we own the client, release GPU memory so the subsequent vLLM eval
+    # has headroom. If the caller owns it (passed in), they decide when to
+    # close — don't tear it down out from under them.
+    if training_client is None:
+        client.close()
 
-    # Clean up GPU memory so the subsequent vLLM eval has headroom.
-    # HF Trainer holds references to the model, optimizer, scheduler, and
-    # cached activation buffers; dropping them one at a time + collecting +
-    # flushing the allocator cache is what frees the ~60 GB back to the pool.
-    import gc
-
-    try:
-        del trainer
-    except Exception:  # pragma: no cover
-        pass
-    try:
-        del model
-    except Exception:  # pragma: no cover
-        pass
-    gc.collect()
-    try:
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-    except Exception:  # pragma: no cover
-        pass
-
+    avg_loss = sum(losses) / max(1, len(losses))
     return (
         CheckpointRef(
             name=stage.get("name", "sft"),
-            path=str(outdir),
+            path=ckpt.path,
             kind="adapter",
-            metadata={"lr": cfg["lr"], "rank": cfg["rank"]},
+            metadata={"lr": base_lr, "rank": cfg["rank"]},
         ),
         {
-            "total_steps": int(getattr(train_output, "global_step", 0)),
-            "avg_loss": float(getattr(train_output, "training_loss", 0.0) or 0.0),
+            "total_steps": opt_step,
+            "avg_loss": avg_loss,
             "stage": stage.get("name"),
             "loss_fn": stage.get("loss", "cross_entropy"),
-            "lr": cfg["lr"],
+            "lr": base_lr,
             "wall_seconds": wall_seconds,
+        },
+    )
+
+
+def _row_to_datum(row: dict[str, Any]) -> Datum:
+    """Convert a :func:`render_hf_dataset` row into a ``Datum``."""
+    return Datum(
+        model_input=ModelInput.from_ints(list(row["input_ids"])),
+        loss_fn_inputs={
+            "attention_mask": list(row["attention_mask"]),
+            "labels": list(row["labels"]),
         },
     )
 
