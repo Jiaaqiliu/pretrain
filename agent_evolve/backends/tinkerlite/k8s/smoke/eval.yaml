@@ -1,0 +1,52 @@
+# Eval smoke — run_eval_smoke.py with limit=4, TP=1. Uses the adapter
+# produced by the SFT smoke (or any adapter under AE_SMOKE_ADAPTER).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aevolve-eval-smoke
+  namespace: default
+  labels:
+    app: a-evolve
+    role: smoke-eval
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H200
+  containers:
+    - name: eval
+      image: 801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:latest
+      imagePullPolicy: Always
+      workingDir: /fsx/zzsamshi/a-evolve
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -e
+          python agent_evolve/backends/tinkerlite/k8s/smoke/run_eval_smoke.py \
+                 /fsx/zzsamshi/a-evolve-smoke/sft/sft_adapter
+      env:
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+        - name: WANDB_DISABLED
+          value: "true"
+        - name: PYTHONPATH
+          value: "/fsx/zzsamshi/a-evolve"
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - name: fsx
+          mountPath: /fsx
+        - name: dshm
+          mountPath: /dev/shm
+  volumes:
+    - name: fsx
+      persistentVolumeClaim:
+        claimName: fsx-pvc
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 32Gi

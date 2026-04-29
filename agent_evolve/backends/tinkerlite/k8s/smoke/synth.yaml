@@ -1,0 +1,51 @@
+# Teacher distill smoke — TP=4 on 120B FP8, 4 prompts, min_tokens=1.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aevolve-synth-smoke
+  namespace: default
+  labels:
+    app: a-evolve
+    role: smoke-synth
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H200
+  containers:
+    - name: synth
+      image: 801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:latest
+      imagePullPolicy: Always
+      workingDir: /fsx/zzsamshi/a-evolve
+      command: ["python"]
+      args:
+        - "-m"
+        - "agent_evolve.training.runners.synth_worker"
+        - "--config"
+        - "/fsx/zzsamshi/a-evolve/agent_evolve/backends/tinkerlite/k8s/smoke/synth_cfg.json"
+      env:
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+        - name: WANDB_DISABLED
+          value: "true"
+        - name: PYTHONPATH
+          value: "/fsx/zzsamshi/a-evolve"
+      resources:
+        limits:
+          nvidia.com/gpu: "8"
+        requests:
+          nvidia.com/gpu: "8"
+      volumeMounts:
+        - name: fsx
+          mountPath: /fsx
+        - name: dshm
+          mountPath: /dev/shm
+  volumes:
+    - name: fsx
+      persistentVolumeClaim:
+        claimName: fsx-pvc
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 64Gi

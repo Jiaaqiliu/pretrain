@@ -17,59 +17,58 @@ Public API:
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ...training.types import CheckpointRef
+from .common_cfg import (
+    _common_config,
+    build_gspo_cfg,
+    build_sft_cfg,
+    default_world_size as _default_world_size,
+)
 
 
-def _default_world_size() -> int:
-    """Number of GPUs to use for DDP. Honors CUDA_VISIBLE_DEVICES if set."""
-    cvd = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if cvd:
-        return len([x for x in cvd.split(",") if x.strip()])
-    # Query torch for the physical count without importing torch at module-load.
+# ── Stage-runner override hook ─────────────────────────────────────────
+#
+# Default spawn is a local ``torchrun`` subprocess (_spawn_torchrun below).
+# An alternate backend (e.g. the k8s elastic scheduler) can swap in a
+# different runner via ``override_stage_runner(fn)`` — ``fn`` must ensure
+# ``.ddp_result.json`` exists at the cfg's ``out_result_path`` before
+# returning. Signature: ``fn(cfg_path, world_size, log_prefix) -> None``.
+#
+# Scoped via ContextVar so parallel callers (async fan-out) don't bleed
+# into each other.
+
+StageRunner = Callable[[Path, int, str], None]
+_stage_runner_cv: "contextvars.ContextVar[StageRunner | None]" = contextvars.ContextVar(
+    "ae_ddp_stage_runner", default=None,
+)
+
+
+@contextlib.contextmanager
+def override_stage_runner(fn: StageRunner):
+    """Context manager: route DDP stage spawns through ``fn`` instead of
+    the default local torchrun subprocess."""
+    token = _stage_runner_cv.set(fn)
     try:
-        import torch
-
-        return max(1, torch.cuda.device_count())
-    except Exception:
-        return 1
+        yield
+    finally:
+        _stage_runner_cv.reset(token)
 
 
-def _common_config(
-    workspace: Any,
-    stage: dict,
-    *,
-    base_cfg: dict,
-    adapter_cfg: dict,
-    optimizer_cfg: dict,
-) -> dict:
-    """Collect the subset of config that's shared between SFT and GSPO."""
-    model_path = base_cfg.get("path") or os.environ.get("AE_BASE_MODEL_PATH")
-    if not model_path:
-        raise RuntimeError(
-            "ddp_launcher requires model/base.yaml::path or AE_BASE_MODEL_PATH"
-        )
-    return {
-        "model_path": str(model_path),
-        "lora_rank": int(adapter_cfg.get("rank", 16)),
-        "lora_alpha": int(adapter_cfg.get("alpha", 32)),
-        "lora_dropout": float(adapter_cfg.get("dropout", 0.05)),
-        "target_modules": list(
-            adapter_cfg.get(
-                "target_modules",
-                ["q_proj", "k_proj", "v_proj", "o_proj", "in_proj", "out_proj"],
-            )
-        ),
-        "lr": float(optimizer_cfg.get("lr", 5e-5)),
-        "workspace_root": str(workspace.root),
-        "ae_root": str(Path(__file__).resolve().parents[3]),
-    }
+def _dispatch_stage(cfg_path: Path, world_size: int, log_prefix: str) -> None:
+    runner = _stage_runner_cv.get()
+    if runner is not None:
+        runner(cfg_path, world_size, log_prefix)
+        return
+    _spawn_torchrun(cfg_path, world_size, log_prefix)
 
 
 def _spawn_torchrun(cfg_path: Path, world_size: int, log_prefix: str) -> None:
@@ -121,28 +120,16 @@ def run_sft_ddp(
     result_path = outdir / ".ddp_result.json"
     cfg_path = outdir / ".ddp_config.json"
 
-    common = _common_config(
-        workspace, stage, base_cfg=base_cfg, adapter_cfg=adapter_cfg,
-        optimizer_cfg=optimizer_cfg,
+    sft_cfg = build_sft_cfg(
+        workspace, stage,
+        base_cfg=base_cfg, adapter_cfg=adapter_cfg,
+        optimizer_cfg=optimizer_cfg, batching_cfg=batching_cfg,
+        outdir=outdir, result_path=result_path,
+        start_adapter_path=start_adapter_path,
+        budget_seconds=budget_seconds,
     )
-    sft_cfg = {
-        **common,
-        "kind": "sft",
-        "start_adapter_path": start_adapter_path,
-        "epochs": int(stage.get("epochs", 2)),
-        "max_steps": stage.get("max_steps"),
-        "per_device_bs": int(batching_cfg.get("per_device_bs", 1)),
-        "grad_accum": int(batching_cfg.get("grad_accum", 8)),
-        "max_seq_len": int(batching_cfg.get("max_seq_len", 2560)),
-        "seed": int(stage.get("seed", 42)),
-        "log_every": int(batching_cfg.get("log_every", 5)),
-        "warmup_ratio": float(optimizer_cfg.get("warmup_ratio", 0.03)),
-        "out_adapter_dir": str(outdir),
-        "out_result_path": str(result_path),
-        "budget_seconds": budget_seconds,
-    }
     cfg_path.write_text(json.dumps(sft_cfg, indent=2))
-    _spawn_torchrun(cfg_path, ws, log_prefix="sft-ddp")
+    _dispatch_stage(cfg_path, ws, log_prefix="sft-ddp")
     if not result_path.is_file():
         raise RuntimeError(f"DDP worker did not emit {result_path}")
     result = json.loads(result_path.read_text())
@@ -182,31 +169,17 @@ def run_gspo_ddp(
     result_path = outdir / ".ddp_result.json"
     cfg_path = outdir / ".ddp_config.json"
 
-    common = _common_config(
-        workspace, stage, base_cfg=base_cfg, adapter_cfg=adapter_cfg,
+    full_cfg = build_gspo_cfg(
+        workspace, stage,
+        base_cfg=base_cfg, adapter_cfg=adapter_cfg,
         optimizer_cfg=optimizer_cfg,
+        rollouts_path=rollouts_path,
+        start_adapter_path=start_adapter_path,
+        gspo_cfg=gspo_cfg,
+        outdir=outdir, result_path=result_path,
     )
-    # GSPO LR overrides the optimizer.yaml default.
-    common["lr"] = float(gspo_cfg["lr"])
-
-    full_cfg = {
-        **common,
-        "kind": "gspo",
-        "start_adapter_path": start_adapter_path,
-        "rollouts_path": str(rollouts_path),
-        "epochs": int(gspo_cfg.get("epochs", 1)),
-        "grad_accum": int(gspo_cfg.get("grad_accum", 8)),
-        "eps_low": float(gspo_cfg.get("eps_low", 3e-4)),
-        "eps_high": float(gspo_cfg.get("eps_high", 4e-4)),
-        "dapo_token_level": bool(gspo_cfg.get("dapo_token_level", False)),
-        "max_steps": gspo_cfg.get("max_steps"),
-        "log_every": int(gspo_cfg.get("log_every", 4)),
-        "seed": int(gspo_cfg.get("seed", 11)),
-        "out_adapter_dir": str(outdir),
-        "out_result_path": str(result_path),
-    }
     cfg_path.write_text(json.dumps(full_cfg, indent=2))
-    _spawn_torchrun(cfg_path, ws, log_prefix="gspo-ddp")
+    _dispatch_stage(cfg_path, ws, log_prefix="gspo-ddp")
     if not result_path.is_file():
         raise RuntimeError(f"DDP worker did not emit {result_path}")
     result = json.loads(result_path.read_text())
@@ -223,4 +196,9 @@ def run_gspo_ddp(
     }
 
 
-__all__ = ["run_sft_ddp", "run_gspo_ddp"]
+__all__ = [
+    "run_sft_ddp",
+    "run_gspo_ddp",
+    "override_stage_runner",
+    "StageRunner",
+]

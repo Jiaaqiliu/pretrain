@@ -1,0 +1,90 @@
+# Plumbing smoke — minimum-viable pod to verify k8s <-> FSx <-> a-evolve path.
+#
+# Mounts fsx-pvc at /fsx (not /fsx-shared, because the worker code has
+# /fsx/... paths baked into configs generated on the host). Requests 1 GPU
+# so GPU plumbing (device plugin, NCCL) is also exercised.
+#
+# Apply with:
+#   kubectl apply -f plumbing.yaml
+#   kubectl wait --for=condition=Ready pod/aevolve-plumbing --timeout=5m
+#   kubectl logs aevolve-plumbing -f
+#   kubectl delete pod aevolve-plumbing
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aevolve-plumbing
+  namespace: default
+  labels:
+    app: a-evolve
+    role: smoke-plumbing
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H200
+  containers:
+    - name: probe
+      image: 801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:latest
+      imagePullPolicy: Always
+      workingDir: /fsx/zzsamshi/a-evolve
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -e
+          echo "== env =="
+          hostname
+          echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+          echo "PYTHONPATH=${PYTHONPATH}"
+          echo
+          echo "== FSx mount =="
+          df -hT /fsx | tail -1
+          ls /fsx/zzsamshi/a-evolve/agent_evolve/__init__.py || { echo "MISSING: a-evolve code"; exit 1; }
+          ls /fsx/models/Nemotron-3-Nano-30B-A3B-BF16/config.json || { echo "MISSING: base model"; exit 1; }
+          echo
+          echo "== GPU =="
+          nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader
+          echo
+          echo "== imports =="
+          python - <<'PY'
+          import torch, transformers, peft, vllm
+          print(f"torch={torch.__version__}  cuda={torch.version.cuda}  gpus={torch.cuda.device_count()}")
+          print(f"transformers={transformers.__version__}")
+          print(f"peft={peft.__version__}")
+          print(f"vllm={vllm.__version__}")
+          import agent_evolve
+          from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend
+          from agent_evolve.training.runners.train_worker_ddp import main as worker_main
+          print(f"agent_evolve OK ({agent_evolve.__file__})")
+          print(f"K8sTinkerLiteBackend OK ({K8sTinkerLiteBackend.name})")
+          PY
+          echo
+          echo "== worker --help =="
+          python -m agent_evolve.training.runners.train_worker_ddp --help | head -5
+          echo
+          echo "PLUMBING OK"
+      env:
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+        - name: WANDB_DISABLED
+          value: "true"
+        - name: NCCL_DEBUG
+          value: "WARN"
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - name: fsx
+          mountPath: /fsx
+        - name: dshm
+          mountPath: /dev/shm
+  volumes:
+    - name: fsx
+      persistentVolumeClaim:
+        claimName: fsx-pvc
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 16Gi

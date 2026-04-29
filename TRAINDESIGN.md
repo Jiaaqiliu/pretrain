@@ -61,7 +61,21 @@ agent_evolve/
 ├── backends/tinkerlite/
 │   ├── base.py                   TinkerLiteBackend Protocol + Datum/ModelInput/SamplingParams
 │   ├── single_node.py            SingleNodeTinkerLiteBackend (mock & real paths)
-│   └── mock_clients.py           MockTrainingClient / MockSamplingClient
+│   ├── mock_clients.py           MockTrainingClient / MockSamplingClient
+│   ├── hf_clients.py             HF+PEFT TrainingClient (real single-GPU path)
+│   ├── vllm_sampling.py          VLLMSamplingClient (real eval path)
+│   ├── common_cfg.py             Pure .ddp_config.json builder (single source of truth)
+│   ├── ddp_launcher.py           torchrun spawner + override_stage_runner ContextVar hook
+│   └── k8s/
+│       ├── backend.py            K8sTinkerLiteBackend (extends SingleNode; elastic scheduler)
+│       ├── scheduler.py          ElasticScheduler + FanoutCapacity (k8s-first, local fallback)
+│       ├── compute_target.py     ComputeTarget Protocol + CapacityReport
+│       ├── k8s_target.py         K8sComputeTarget (batch/v1 Job submit / poll / log tail)
+│       ├── local_target.py       LocalComputeTarget (torchrun subprocess + GPU lock)
+│       ├── gpu_lock.py           flock-based GPU reservation, stale-PID cleanup
+│       ├── job_manifest.py       batch/v1 Job manifest builder
+│       ├── Dockerfile            thin trainer image (code mounted via FSx PVC)
+│       └── README.md             prereqs + debugging
 └── benchmarks/
     ├── training_base.py          TrainingBenchmarkAdapter Protocol
     └── nemo_reasoner.py          NemoReasonerBenchmark — smoke + Kaggle modes
@@ -126,14 +140,23 @@ The backend's shape mirrors Tinker's training API:
 
 Non-smoke training at 30B scale bypasses the `TrainingClient` abstraction and goes directly through HF `Trainer` + PEFT `LoraConfig` — because the Tinker abstractions are designed for in-process step-by-step control whereas HF `Trainer` owns the inner loop. The shape stays useful for RL (future work).
 
-## 6. The two backends: smoke vs real
+## 6. The backends: smoke vs real, local vs cluster
+
+Two registry keys, three execution modes:
+
+| Key | Class | Execution |
+|---|---|---|
+| `h200_single_node` | `SingleNodeTinkerLiteBackend` | Always local: mock (CPU) or real (1×8-GPU DDP via torchrun subprocess) |
+| `k8s_h200` | `K8sTinkerLiteBackend` (extends SingleNode) | Elastic: k8s cluster first, local fallback |
 
 `SingleNodeTinkerLiteBackend(mock: bool)`:
 
-- `mock=True` → `MockTrainingClient` for training, deterministic metrics.json stub for eval. Used by all 66 unit tests and the `--smoke` CLI path.
-- `mock=False` → real HF Trainer + LoRA load from `/fsx/models/Nemotron-3-Nano-30B-A3B-BF16`, real vLLM + LoRA eval on 951-row Kaggle dev CSV.
+- `mock=True` → `MockTrainingClient` for training, deterministic metrics.json stub for eval. Used by all unit tests and the `--smoke` CLI path.
+- `mock=False` → real HF Trainer + LoRA load from `/fsx/models/Nemotron-3-Nano-30B-A3B-BF16`, real vLLM + LoRA eval on 951-row Kaggle dev CSV. Multi-GPU DDP kicks in when `AE_TRAIN_DDP=1` or when `ddp_launcher.run_sft_ddp` is called directly — a `torchrun --nproc_per_node=N` subprocess spawns the DDP worker.
 
-The flag propagates from `TrainingEvolveConfig.smoke` through `TrainingEvolver._resolve_backend` to `backend.mock` so `--smoke` on the CLI actually controls the real/mock split.
+`K8sTinkerLiteBackend` **inherits** from `SingleNodeTinkerLiteBackend` and reuses the full pipeline orchestration (§3). The only seam is the DDP spawn boundary: `ddp_launcher.override_stage_runner(fn)` is a ContextVar-scoped hook that replaces the local `torchrun` subprocess with a caller-supplied runner. The k8s backend installs a runner that routes each stage through an `ElasticScheduler` (§14) which picks between k8s and local targets per availability. Pod and local subprocess both read the same byte-identical `.ddp_config.json` and run the same `train_worker_ddp.py`.
+
+The `mock` flag propagates from `TrainingEvolveConfig.smoke` through `TrainingEvolver._resolve_backend` to `backend.mock` so `--smoke` on the CLI actually controls the real/mock split.
 
 Two escape hatches for real cycles:
 
@@ -225,7 +248,7 @@ TRAINING_ALGORITHMS = {
 
 TRAINING_BACKENDS = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
-    "k8s_h200": "agent_evolve.backends.tinkerlite.k8s.K8sTinkerLiteBackend",   # not shipped
+    "k8s_h200":         "agent_evolve.backends.tinkerlite.k8s.K8sTinkerLiteBackend",
 }
 ```
 
@@ -270,9 +293,11 @@ python -m agent_evolve.training.run --smoke --cycles 1 \
 1. **Example-driven mutator** — `mutator.propose(parent, graph)` ignores `parent.error_buckets` and `memory.retrieve(...)`. All that data is on disk; the rule-based mutators just don't consume it.
 2. **LLM-driven mutator** — sibling of (1); reads bucket examples + past successes, writes the next YAML patch. Would plug in as a drop-in `propose()` implementation.
 3. **Real RL stages** — the `rl_gspo` stage in `pipeline.yaml` is currently `enabled: false`. The Tinker-style `sample / compute_logprobs / forward_backward("importance_sampling")` protocol is in `backends/tinkerlite/base.py`; the GSPO loss implementation lives in `../nemotron-auto-research/scripts/gspo_update.py` and could be ported.
-4. **k8s backend** — PR9 in the original plan. Skeleton file `k8s.py` is not yet shipped.
-5. **Persistent vLLM engine across cycles** — currently torn down and reloaded every cycle (~2 min overhead / cycle). A module-level singleton + `load_lora` per cycle would save ~6 min across 4 cycles.
-6. **Auto-submit to Kaggle** — the repo sits next to `../nemotron-auto-research/scripts/auto_submit.py` but nothing wires MCGS's incumbent into a submission. Submissions are gated on user judgment because the 5/day quota is tight and the CLAUDE.md-documented dev→LB correlation break (E-33 regressed despite +0.89 dev) means auto-submission would burn quota on noise.
+4. **k8s eval stage** — the k8s backend runs training on cluster pods but eval (`run_eval_plan` → vLLM + LoRA) still executes on the local host. Cloudifying eval would need a second `ComputeTarget` variant that routes vLLM Jobs through k8s, plus a way for the driver to pull `metrics.json` back.
+5. **Cross-node DDP (>8-GPU trials)** — `K8sComputeTarget` submits single-pod DDP (`nproc_per_node=world_size`). Training a single trial across 2+ H200 nodes needs a different orchestrator (PyTorchJob / MPIJob with gang scheduling). Orthogonal to the current "elastic fan-out" need.
+6. **Persistent vLLM engine across cycles** — currently torn down and reloaded every cycle (~2 min overhead / cycle). A module-level singleton + `load_lora` per cycle would save ~6 min across 4 cycles.
+7. **Auto-submit to Kaggle** — the repo sits next to `../nemotron-auto-research/scripts/auto_submit.py` but nothing wires MCGS's incumbent into a submission. Submissions are gated on user judgment because the 5/day quota is tight and the CLAUDE.md-documented dev→LB correlation break (E-33 regressed despite +0.89 dev) means auto-submission would burn quota on noise.
+8. **MCGS-aware concurrency** — the fan-out fast path (§14) is a driver-level pattern (`submit_stage_async` + `wait_any`). MCGS's `run_cycle` is still serial. A future `run_cycle_parallel(ctx, max_inflight=N)` hooked to `backend.probe_fanout_capacity` would let the search itself expand siblings concurrently. Algorithm-layer change, decoupled from backend.
 
 ## 13. Invariants (enforced in tests)
 
@@ -283,3 +308,125 @@ python -m agent_evolve.training.run --smoke --cycles 1 \
 5. Every shared dataclass lives in `training/types.py` and is imported elsewhere — no duplicate definitions.
 6. Protected workspace layers cannot be mutated by MCGS (`test_workspace_mutation.py`).
 7. Graph survives a JSON round-trip (`test_mcgs_save_reload.py`).
+8. `.ddp_config.json` produced by `ddp_launcher` (local) and by the k8s backend is byte-identical for the same inputs — both paths import `common_cfg.build_sft_cfg` / `build_gspo_cfg` (`test_common_cfg.py`, `test_override_stage_runner.py`).
+9. `K8sTinkerLiteBackend` is a subclass of `SingleNodeTinkerLiteBackend`; the `k8s_h200` registry entry resolves to a class whose `name` attribute equals `"k8s_h200"` (`test_registry.py`).
+
+## 14. Elastic execution: k8s-first with local fallback
+
+### Why
+
+The local H200 box is one machine; the shared k8s cluster is N unknown. Single-trial deep training fits the box; batch sweeps and parallel MCGS want the cluster. But the cluster is shared — capacity is unpredictable, and sometimes zero. `K8sTinkerLiteBackend` handles all of this in one backend.
+
+### Layer cake
+
+```
+MCGS / driver
+     │
+     ▼
+K8sTinkerLiteBackend  (extends SingleNode; re-exposes run_trial + async extras)
+     │
+     ▼  override_stage_runner(fn) injects fn at each DDP stage
+ElasticScheduler                     ← FanoutCapacity.probe_capacity(world_size)
+     │
+     ├──▶ K8sComputeTarget   (priority 0: batch/v1 Job, PVC-mounted code)
+     └──▶ LocalComputeTarget (priority 10: torchrun subprocess + GPU lock)
+                                       ← both write the same .ddp_result.json
+                                       ← both run the same train_worker_ddp.py
+```
+
+### Scheduling policy (ElasticScheduler.run_stage)
+
+Per DDP stage, the scheduler is strict priority-first:
+
+1. Probe every target. If **primary (k8s)** `can_run_now` → submit + wait.
+2. Else if **primary** `can_queue` → submit, tolerate `Pending` up to `queue_timeout_secs` (default 600s), cancel + fall back on `PendingTimeout`.
+3. Else walk fallback targets in priority order; submit to the first one that can run-now or queue.
+4. Else raise `CapacityExhausted`. MCGS surfaces this as a trial failure; the driver can decide to retry later.
+
+Once a Job transitions to `Running`, no stage-level timeout is imposed — `TrialBudget` already governs wall-clock bounds at the MCGS level.
+
+Key design point: `can_queue=False` when the cluster has **zero matching H200 nodes**. The scheduler then skips the queue wait entirely and goes straight to local, so a dead cluster doesn't waste 10 minutes of every cycle on hope.
+
+### Fan-out fast path
+
+Drivers that want to dispatch multiple trials concurrently (LR sweep, MCGS root expansion) use the backend's async API:
+
+```python
+cap = backend.probe_fanout_capacity(world_size=8)
+# FanoutCapacity(recommended=N, breakdown={...}, reason=...)
+max_inflight = min(len(trials), max(1, cap.recommended))
+
+# Submit up to max_inflight non-blocking
+inflight = [backend.submit_stage_async(cfg_path=..., world_size=8, log_dir=...)
+            for _ in range(max_inflight)]
+
+# Drain + refill
+while inflight or pending:
+    handle, result = backend.wait_any([h for h in inflight])
+    inflight.remove(handle)
+    if pending:
+        inflight.append(backend.submit_stage_async(...))
+```
+
+The fan-out formula (`ElasticScheduler.probe_capacity`):
+
+```
+recommended = k8s_run_now + (k8s_queue_budget if k8s.can_queue else 0) + local_run_now
+            where *_run_now = available_gpus // world_size
+            and k8s_queue_budget defaults to 4 (constructor kwarg)
+```
+
+Example capacities at `world_size=8`, `k8s_queue_budget=4`:
+
+| Situation | k8s_run_now | queue_budget | local_run_now | recommended |
+|---|---|---|---|---|
+| Cluster idle (16 GPU free) + local idle | 2 | 4 | 1 | **7** |
+| Cluster saturated but queueing + local idle | 0 | 4 | 1 | **5** |
+| Zero H200 nodes + local idle | 0 | 0 | 1 | **1** |
+| Cluster saturated + local locked | 0 | 4 | 0 | **4** |
+| Nothing free, but primary can queue | 0 | 0 | 0 | **1** (fallback) |
+| Nothing available anywhere | 0 | 0 | 0 | **0** (driver should back off) |
+
+`k8s_queue_budget=0` is the friendly-to-other-tenants mode — the backend only dispatches what can actually run immediately and never holds Pending pods.
+
+### Local GPU bookkeeping
+
+Multiple driver processes (or MCGS + an interactive shell) can coexist on one node. `LocalComputeTarget` coordinates via `flock` on `/fsx/.ae_locks/gpu_{0..7}.lock`:
+
+- `acquire_gpus(count, pool)` grabs N locks non-blockingly, writes `pid=<ours>` into each file, returns a `GpuLease`. On subprocess exit (or lease `.release()`), flocks drop and files unlink.
+- `capacity_probe` unions OS flock state with `nvidia-smi --query-gpu=memory.free`. If `nvidia-smi` is missing (CI), falls back to lock state alone.
+- Stale-PID sweep: lock files left by a crashed process (flock released but file lingers) are reclaimed on the next probe via `os.kill(pid, 0)` check.
+
+Not a replacement for SLURM — single-node coordination only.
+
+### Deployment prereqs
+
+- PVC named `fsx-zzsamshi` that maps to the same FSx filesystem accessible at `/fsx` on the host (code, models, checkpoints all via the shared mount).
+- Image built from [`k8s/Dockerfile`](agent_evolve/backends/tinkerlite/k8s/Dockerfile) and pushed to a registry the cluster can pull from. The image is deliberately **thin** — it contains torch+transformers+peft+vllm+kubernetes and nothing else. Application code is mounted via the PVC so iteration is "save file → resubmit Job" with no rebuild.
+- `pip install 'a-evolve[k8s]'` (adds `kubernetes>=31.0`).
+- Optional: node label `nvidia.com/gpu.product=H200` so `node_selector` can target the right nodes. Construct with `node_selector={"nvidia.com/gpu.product": "H200"}`.
+
+If `kubernetes` is missing or no kubeconfig is reachable, `K8sComputeTarget` fails to construct and the backend logs a warning, falling back to local-only. This means `backend="k8s_h200"` is always safe to specify — it degrades gracefully.
+
+### Graceful degradation matrix
+
+| Local H200 | K8s kubeconfig | Behavior |
+|---|---|---|
+| Available | Available | Elastic: k8s priority, local fallback on `PendingTimeout` |
+| Available | Missing / unreachable | Local-only (k8s target fails to construct; backend logs warning) |
+| Disabled via `local_enabled=False` | Available | K8s-only (block on queue indefinitely) |
+| Disabled | Missing | `RuntimeError` at backend construction |
+
+### Test coverage
+
+44 unit tests under `tests/backends/tinkerlite/k8s/`:
+- `test_gpu_lock.py` — flock correctness, stale-PID reclaim, partial-allocation rollback
+- `test_local_target_probe.py` — capacity probe under nvidia-smi/lock state combinations
+- `test_job_manifest.py` — Job manifest structure (GPU limits match world_size, PVC mount, env vars, no restart)
+- `test_scheduler.py` — priority-first routing, queue fallback, zero-node skip, capacity exhaustion
+- `test_fanout_capacity.py` — the `recommended` formula under 7 scenarios
+- `test_override_stage_runner.py` — the ContextVar hook actually intercepts `run_sft_ddp` and releases on scope exit
+- `test_common_cfg.py` — k8s path and local path generate byte-identical `.ddp_config.json`
+- `test_registry.py` — `k8s_h200` dotted path resolves; subclass relationship preserved
+
+All tests run CPU-only — no k8s cluster, no kubeconfig, no GPUs required. Existing 117 training/backends tests continue to pass (zero regressions).

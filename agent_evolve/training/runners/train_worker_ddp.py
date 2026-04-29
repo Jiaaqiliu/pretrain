@@ -81,7 +81,9 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",
     )
-    base = base.to(f"cuda:{rank}")
+    # After CUDA_VISIBLE_DEVICES masking in main(), each rank sees exactly
+    # one GPU (exposed as cuda:0). Physical mapping is local_rank → cuda:0.
+    base = base.to("cuda:0")
     base.config.use_cache = False
 
     start_adapter = cfg.get("start_adapter_path")
@@ -120,10 +122,11 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
     # DDP wrap. Only LoRA params are trainable; wrap the full model so DDP
     # sees them through .parameters(). find_unused_parameters=True is needed
     # because LoRA adds params only on some modules (others stay frozen).
+    # Each rank sees exactly one GPU (cuda:0 after the CVD mask).
     ddp_model = DDP(
         model,
-        device_ids=[rank],
-        output_device=rank,
+        device_ids=[0],
+        output_device=0,
         find_unused_parameters=True,
         gradient_as_bucket_view=True,
     )
@@ -135,8 +138,8 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]))
     optimizer.zero_grad()
 
-    _print(rank, f"model ready on cuda:{rank}, trainable params: "
-                 f"{sum(p.numel() for p in trainable) / 1e6:.1f}M")
+    _print(rank, f"model ready (cuda:0 after CVD mask), "
+                 f"trainable params: {sum(p.numel() for p in trainable) / 1e6:.1f}M")
     return ddp_model, tokenizer, optimizer
 
 
@@ -205,7 +208,7 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
         progress = min(1.0, max(0.0, progress))
         return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
-    device = f"cuda:{rank}"
+    device = "cuda:0"  # after CVD mask, each rank sees one GPU
     t0 = time.time()
     micro = 0
     opt_step = 0
@@ -281,7 +284,7 @@ def _run_gspo(cfg: dict, rank: int, world_size: int) -> dict:
     import torch
 
     ddp_model, tokenizer, optimizer = _build_model_and_optim(cfg, rank, world_size)
-    device = f"cuda:{rank}"
+    device = "cuda:0"  # after CVD mask, each rank sees one GPU
 
     # Load rollouts — all ranks read the same file but process disjoint shards.
     rollouts_path = Path(cfg["rollouts_path"])
@@ -402,13 +405,30 @@ def main() -> int:
     with open(args.config) as f:
         cfg = json.load(f)
 
-    import torch
-    import torch.distributed as dist
-
+    # Rank isolation: mask CUDA_VISIBLE_DEVICES to this rank's physical GPU
+    # BEFORE any torch import. Without this, transformers/accelerate/NCCL
+    # init paths create ~520 MiB CUDA contexts on every *other* GPU (because
+    # from_pretrained implicitly touches cuda:0 during module init, and NCCL
+    # opens handles to all peers). With the mask, each rank sees exactly one
+    # GPU (as cuda:0), so it can't leak contexts onto sibling ranks' GPUs.
+    # NCCL still works: torchrun's master_addr/master_port are socket-based,
+    # independent of CUDA visibility.
     rank = int(os.environ.get("RANK", "0"))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     local_rank = int(os.environ.get("LOCAL_RANK", rank))
-    torch.cuda.set_device(local_rank)
+    # If torchrun already set CUDA_VISIBLE_DEVICES (rare), respect it; otherwise
+    # narrow to this rank's physical GPU.
+    if "CUDA_VISIBLE_DEVICES" not in os.environ or "," in os.environ.get("CUDA_VISIBLE_DEVICES", ""):
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+
+    import torch
+    import torch.distributed as dist
+
+    # After masking, there's exactly one visible GPU per rank — cuda:0. All
+    # downstream ``cuda:{rank}``-style calls in this worker must be rewritten
+    # to ``cuda:0``. Use a module-level attribute that ``_build_model_and_optim``
+    # reads, keeping the rest of the code device-agnostic.
+    torch.cuda.set_device(0)
 
     # IMPORTANT: we do NOT init the process group yet. PEFT's
     # `set_peft_model_state_dict` checks ``dist.is_initialized()`` and, if

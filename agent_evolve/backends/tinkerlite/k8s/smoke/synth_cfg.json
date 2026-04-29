@@ -1,0 +1,19 @@
+{
+  "teacher_model_path": "/fsx/models/NVIDIA-Nemotron-3-Super-120B-A12B-FP8",
+  "student_model_path": "/fsx/models/Nemotron-3-Nano-30B-A3B-BF16",
+  "prompts_csv": "/fsx/zzsamshi/nemotron-auto-research/data/splits/train_local.csv",
+  "domains": ["cipher", "bits"],
+  "per_domain": 2,
+  "n_samples": 1,
+  "min_tokens": 1,
+  "max_tokens": 256,
+  "temperature": 0.8,
+  "top_p": 0.95,
+  "seed": 17,
+  "tp": 8,
+  "max_num_seqs": 4,
+  "gpu_memory_utilization": 0.85,
+  "enforce_eager": true,
+  "out_path": "/fsx/zzsamshi/a-evolve-smoke/synth/teacher_traces.jsonl",
+  "stage_name": "teacher_distill_smoke"
+}
