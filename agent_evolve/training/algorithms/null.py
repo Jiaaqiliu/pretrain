@@ -1,4 +1,15 @@
-"""Null search algorithm — a no-op used by PR3 tests before MCGS lands."""
+"""Null object for the training search-algorithm Protocol.
+
+Used by loop/backend integration tests to exercise infrastructure
+(cycle counting, report persistence, workspace fork plumbing) without
+dragging in MCGS's selection/mutation/reward logic. If a loop-level
+invariant breaks, the NullSearchAlgorithm-based tests fail first —
+cleanly separating "loop bug" from "algorithm bug".
+
+Also doubles as the minimum viable reference implementation for anyone
+adding a new search algorithm: the ~20 lines below show the entire
+Protocol surface (``run_cycle(ctx) -> MCGSCycleReport``).
+"""
 
 from __future__ import annotations
 
@@ -10,7 +21,10 @@ from ..types import MCGSCycleReport
 
 @dataclass
 class NullSearchAlgorithm:
-    """Simple algorithm for scaffolding tests. Does nothing on each cycle."""
+    """No-op search algorithm. Increments a counter per cycle, returns
+    an empty ``MCGSCycleReport`` (no parent, no trials, no incumbent).
+    Never forks the workspace, never calls the backend. Intended purely
+    for scaffolding / infrastructure tests."""
 
     cycle: int = 0
     calls: list[dict[str, Any]] = field(default_factory=list)
