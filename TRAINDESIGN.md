@@ -53,11 +53,20 @@ agent_evolve/
 │   │       ├── promotion.py      PromotionPolicy (incumbent + tie-breakers)
 │   │       ├── memory.py         NodeMemoryStore (BM25-lite retrieval, JSONL on disk)
 │   │       └── fusion.py         FusionPolicy (cross-branch recombination on stagnation)
+│   ├── data/                     Benchmark-agnostic data-generation primitives (§15)
+│   │   ├── base.py               Solver / Verifier / CoTRenderer / DataSynthGenerator Protocols
+│   │   ├── recipe.py             DataRecipe YAML loader + validator (evolvable surface)
+│   │   ├── dedup.py              Deterministic dedup key + per-source upsample
+│   │   ├── cot_template.py       Force \boxed{answer} + inject [verify]: PASS, idempotent
+│   │   └── verifier_gate.py     Shared correctness filter (answer + marker + token cap)
 │   └── runners/
 │       ├── data_worker.py        render_datums (smoke) + render_hf_dataset (real)
 │       ├── train_worker.py       MockTrainingClient (smoke) OR HF+PEFT Trainer (real)
 │       ├── eval_worker.py        run_eval_plan: smoke stub OR vLLM + LoRA
-│       └── pack_adapter_worker.py  Only used by smoke path
+│       ├── pack_adapter_worker.py  Only used by smoke path
+│       ├── synth_worker.py       Teacher-LLM distillation (+ verifier_gate intent flag)
+│       ├── solver_distill_worker.py  Stage: deterministic per-category solver → CoT JSONL
+│       └── data_merge_worker.py  Stage: dedup + upsample + register in data/sources.yaml
 ├── backends/tinkerlite/
 │   ├── base.py                   TinkerLiteBackend Protocol + Datum/ModelInput/SamplingParams
 │   ├── single_node.py            SingleNodeTinkerLiteBackend (mock & real paths)
@@ -290,14 +299,16 @@ python -m agent_evolve.training.run --smoke --cycles 1 \
 
 ## 12. What's deliberately not done yet
 
-1. **Example-driven mutator** — `mutator.propose(parent, graph)` ignores `parent.error_buckets` and `memory.retrieve(...)`. All that data is on disk; the rule-based mutators just don't consume it.
+1. **Example-driven mutator** — `mutator.propose(parent, graph)` ignores `parent.error_buckets` and `memory.retrieve(...)`. All that data is on disk; the rule-based mutators just don't consume it. §15 ships the *data-side* infrastructure a mutator needs (per-category recipe YAML, solver_distill stage, verifier_gate filter); what's missing is the proposer class that reads `error_buckets[cat]` and emits a `WorkspacePatch` on `data/recipes/default.yaml`.
 2. **LLM-driven mutator** — sibling of (1); reads bucket examples + past successes, writes the next YAML patch. Would plug in as a drop-in `propose()` implementation.
-3. **Real RL stages** — the `rl_gspo` stage in `pipeline.yaml` is currently `enabled: false`. The Tinker-style `sample / compute_logprobs / forward_backward("importance_sampling")` protocol is in `backends/tinkerlite/base.py`; the GSPO loss implementation lives in `../nemotron-auto-research/scripts/gspo_update.py` and could be ported.
-4. **k8s eval stage** — the k8s backend runs training on cluster pods but eval (`run_eval_plan` → vLLM + LoRA) still executes on the local host. Cloudifying eval would need a second `ComputeTarget` variant that routes vLLM Jobs through k8s, plus a way for the driver to pull `metrics.json` back.
-5. **Cross-node DDP (>8-GPU trials)** — `K8sComputeTarget` submits single-pod DDP (`nproc_per_node=world_size`). Training a single trial across 2+ H200 nodes needs a different orchestrator (PyTorchJob / MPIJob with gang scheduling). Orthogonal to the current "elastic fan-out" need.
-6. **Persistent vLLM engine across cycles** — currently torn down and reloaded every cycle (~2 min overhead / cycle). A module-level singleton + `load_lora` per cycle would save ~6 min across 4 cycles.
-7. **Auto-submit to Kaggle** — the repo sits next to `../nemotron-auto-research/scripts/auto_submit.py` but nothing wires MCGS's incumbent into a submission. Submissions are gated on user judgment because the 5/day quota is tight and the CLAUDE.md-documented dev→LB correlation break (E-33 regressed despite +0.89 dev) means auto-submission would burn quota on noise.
-8. **MCGS-aware concurrency** — the fan-out fast path (§14) is a driver-level pattern (`submit_stage_async` + `wait_any`). MCGS's `run_cycle` is still serial. A future `run_cycle_parallel(ctx, max_inflight=N)` hooked to `backend.probe_fanout_capacity` would let the search itself expand siblings concurrently. Algorithm-layer change, decoupled from backend.
+3. **Per-category solvers for nemo_reasoner** — §15 defines the Protocol but no `Solver` / `Verifier` / `CoTRenderer` instances ship yet. Prior art (Kaggle public solutions we've read) has drop-in algorithms for all six categories: bit_manipulation per-bit boolean enumeration (konbu17, ~75% solve rate), cryptarithm brute-force digit/op assignment (kimberleyduran, +0.01 LB), gravity/unit/roman/cipher as 4-10 line regex+algebra (nicbarthelemy1). Until these land, `data/recipes/default.yaml` ships every category `solver: disabled` and `solver_distill` is a no-op.
+4. **Real RL stages** — the `rl_gspo` stage in `pipeline.yaml` is currently `enabled: false`. The Tinker-style `sample / compute_logprobs / forward_backward("importance_sampling")` protocol is in `backends/tinkerlite/base.py`; the GSPO loss implementation lives in `../nemotron-auto-research/scripts/gspo_update.py` and could be ported.
+5. **k8s eval stage** — the k8s backend runs training on cluster pods but eval (`run_eval_plan` → vLLM + LoRA) still executes on the local host. Cloudifying eval would need a second `ComputeTarget` variant that routes vLLM Jobs through k8s, plus a way for the driver to pull `metrics.json` back.
+6. **Cross-node DDP (>8-GPU trials)** — `K8sComputeTarget` submits single-pod DDP (`nproc_per_node=world_size`). Training a single trial across 2+ H200 nodes needs a different orchestrator (PyTorchJob / MPIJob with gang scheduling). Orthogonal to the current "elastic fan-out" need.
+7. **Persistent vLLM engine across cycles** — currently torn down and reloaded every cycle (~2 min overhead / cycle). A module-level singleton + `load_lora` per cycle would save ~6 min across 4 cycles.
+8. **Auto-submit to Kaggle** — the repo sits next to `../nemotron-auto-research/scripts/auto_submit.py` but nothing wires MCGS's incumbent into a submission. Submissions are gated on user judgment because the 5/day quota is tight and the CLAUDE.md-documented dev→LB correlation break (E-33 regressed despite +0.89 dev) means auto-submission would burn quota on noise.
+9. **MCGS-aware concurrency** — the fan-out fast path (§14) is a driver-level pattern (`submit_stage_async` + `wait_any`). MCGS's `run_cycle` is still serial. A future `run_cycle_parallel(ctx, max_inflight=N)` hooked to `backend.probe_fanout_capacity` would let the search itself expand siblings concurrently. Algorithm-layer change, decoupled from backend.
+10. **OOD synth + teacher verifier gate** — §15 Phase 3. `DataSynthGenerator` Protocol exists but no `ood_augment` stage worker yet. Teacher `synth_generate` stage records `verifier_gate: true` intent in stats but doesn't yet re-read its own rollout JSONL to drop wrong answers (the teacher output schema is `prompt_rendered` / `completion`, distinct from `GeneratedRow` — deferred to a follow-up to keep the proven E-28 distill path untouched).
 
 ## 13. Invariants (enforced in tests)
 
@@ -310,6 +321,9 @@ python -m agent_evolve.training.run --smoke --cycles 1 \
 7. Graph survives a JSON round-trip (`test_mcgs_save_reload.py`).
 8. `.ddp_config.json` produced by `ddp_launcher` (local) and by the k8s backend is byte-identical for the same inputs — both paths import `common_cfg.build_sft_cfg` / `build_gspo_cfg` (`test_common_cfg.py`, `test_override_stage_runner.py`).
 9. `K8sTinkerLiteBackend` is a subclass of `SingleNodeTinkerLiteBackend`; the `k8s_h200` registry entry resolves to a class whose `name` attribute equals `"k8s_h200"` (`test_registry.py`).
+10. Every row emitted by `solver_distill` contains `\boxed{gt_answer}` exactly (CoT post-processor overrides whatever the renderer wrote — model never trains on a CoT whose final answer drifts from the ground truth) and, when the recipe requires it, exactly one `[verify]: PASS` marker (`test_cot_template.py`, `test_workers_end_to_end.py`).
+11. `data_merge` is deterministic under the stable-order dedup contract: rows from input N are evaluated before input N+1, first-seen wins. This preserves upstream priority — solver rows beat teacher rows for the same prompt when both are supplied (`test_dedup.py::test_dedup_preserves_input_order_for_stable_upstream_priority`).
+12. A benchmark without `solvers()` / `verifiers()` / `cot_renderers()` still works — `solver_distill` emits an empty JSONL + a diagnostic `drop_reasons={"no_solvers_registered": 1}` rather than crashing. This guarantees the data pipeline is opt-in per benchmark (`test_workers_end_to_end.py::test_solver_distill_empty_benchmark_emits_empty_with_warning`).
 
 ## 14. Elastic execution: k8s-first with local fallback
 
@@ -430,3 +444,185 @@ If `kubernetes` is missing or no kubeconfig is reachable, `K8sComputeTarget` fai
 - `test_registry.py` — `k8s_h200` dotted path resolves; subclass relationship preserved
 
 All tests run CPU-only — no k8s cluster, no kubeconfig, no GPUs required. Existing 117 training/backends tests continue to pass (zero regressions).
+
+## 15. Data-generation pipeline
+
+### Why
+
+Teacher-LLM distillation (the existing `synth_generate` stage) is the easy path to CoT training data but has two known failure modes:
+
+1. **Label noise.** The teacher hallucinates a wrong answer; the CoT that ships as "gold" diverges from the training-row `answer` column. Kaggle public code shows the resulting LoRA learning to ignore its own CoT and guess.
+2. **LB overfit.** Public notebook report: a synthetic-CoT pipeline hit 98.9% on bit_manipulation locally but *dropped* on the leaderboard — adding single-category volume without structural diversity over-specializes the adapter.
+
+The cheapest fix shipped repeatedly across public notebooks (konbu17, kimberleyduran, nicbarthelemy1): **use deterministic per-category solvers to produce verified gold CoT, with ground truth baked in as the only label source**. Rank-16 LoRA on ~6k verified rows beats the teacher-only path on LB while costing zero GPU-hours for data generation.
+
+This section documents the *infrastructure* for that path. Concrete solver implementations for nemo_reasoner are a follow-up (§12 item 3).
+
+### Layered architecture
+
+```
+benchmark-agnostic (training/data/)                       benchmark-specific
+                                                          (benchmarks/<name>/)
+  Solver     ─────────────┐                              ┌─ BitManipSolver
+  Verifier   ─ Protocols ─┤                              ├─ CryptarithmSolver
+  CoTRenderer ────────────┤   ← benchmark wires          ├─ BitManipVerifier
+  DataSynthGenerator ─────┘     implementations via      ├─ BitManipRenderer
+                                 solvers() / verifiers() ├─ ... (per category)
+                                 / cot_renderers()       └─ iter_training_rows
+  GeneratedRow (JSONL wire format: id, prompt, answer, category, cot, source, metadata)
+  DataRecipe   (YAML: categories × solver on/off × upsample × filters)
+
+  solver_distill_worker ─▶ runs solver, verifies, renders, post-processes CoT
+  data_merge_worker     ─▶ dedup + upsample + register in data/sources.yaml
+
+  cot_template          ─▶ forces \boxed{answer}, injects [verify]: PASS
+  verifier_gate         ─▶ drops wrong answer / missing marker / over-long CoT
+  dedup                 ─▶ prompt_hash | prompt_and_source_hash
+```
+
+### Pipeline shape
+
+Two new stages in `train/pipeline.yaml`, fully independent of `synth_generate`:
+
+```yaml
+stages:
+  - name: solver_distill
+    type: solver_distill
+    enabled: false                 # flip when solvers land
+    recipe: data/recipes/default.yaml
+    out_subdir: data/generated/solver_distill
+
+  - name: teacher_distill
+    type: synth_generate           # existing; unchanged
+    enabled: false
+    # verifier_gate: true          # Phase 2 — intent field, not yet enforced
+
+  - name: data_merge
+    type: data_merge
+    enabled: false
+    recipe: data/recipes/default.yaml
+    inputs:
+      - data/generated/solver_distill
+      # - data/synth   # teacher output (when enabled)
+    out_subdir: data/generated/data_merge
+    upsample_from_recipe: true
+    register_in_sources: true
+    source_format: jsonl_cot
+
+  - name: sft_warmup
+    type: sft
+    enabled: true                  # unchanged — consumes data/sources.yaml
+    ...
+```
+
+Per cycle, `single_node._run_pipeline` dispatches `solver_distill` → `data_merge` → `sft`. The data-stage output subdirs live under `data/generated/`, which `manifest.yaml` lists as an artifact layer — they're regenerated each trial, never committed.
+
+### Recipe schema (evolvable)
+
+`data/recipes/default.yaml` is added to `evolvable_layers` — MCGS mutators target it:
+
+```yaml
+recipe_name: solver_first_v1
+categories:
+  bit_manipulation:
+    solver: enabled               # enabled | disabled
+    solver_upsample: 3            # per-source upsample at merge time
+    teacher_upsample: 1
+    cot_template: verify_pass_v1
+  cryptarithm:
+    solver: enabled
+    solver_upsample: 12           # +0.01 LB ratio per kimberleyduran
+filters:
+  require_verify_pass: true       # drop rows missing [verify]: PASS
+  max_cot_tokens: 7600            # Nemotron-3-Nano budget per konbu17
+  dedup_by: prompt_and_source_hash
+```
+
+Unknown fields on a category are preserved under `extra` so benchmark-specific knobs (`ood_ratio`, `ood_operators`, ...) can ride along without a schema bump.
+
+### CoT post-processing — the load-bearing guarantee
+
+Every row emitted by `solver_distill` (and every row a future `ood_augment` stage emits) passes through `cot_template.postprocess_cot`:
+
+1. Replace any `\boxed{...}` in the CoT with `\boxed{<ground-truth answer>}`. If none exists, append one.
+2. Inject `[verify]: PASS` immediately before the final box (unless one is already present).
+3. Strip trailing whitespace.
+
+The function is idempotent — running it twice is the same as running it once (`test_cot_template.py::test_postprocess_idempotent`). It also sidesteps the `re.sub` backslash-escape trap (`\b` in a replacement becomes `\x08`, silently corrupting data) via a lambda replacement. SFT invariant: the label the model is trained against is exactly the ground truth from `train.csv`, regardless of what the generator hallucinated.
+
+### Verifier gate (shared across generators)
+
+`verifier_gate.apply_verifier_gate(rows, verifiers, filters)` is the single checkpoint every `GeneratedRow` source will pass through before `data_merge`:
+
+- extracts `\boxed{...}` from the CoT,
+- calls `verifier[row.category].check(pred, row.answer)`,
+- drops rows missing `[verify]: PASS` when `filters.require_verify_pass`,
+- drops rows whose CoT exceeds `filters.max_cot_tokens` (whitespace token count by default; benchmarks can inject a real tokenizer counter).
+
+Stats report `kept`, `dropped_wrong_answer`, `dropped_missing_verify_mark`, `dropped_cot_too_long`, plus `per_category_kept` / `per_category_dropped` counters so a driver can attribute dataset loss per category without re-deriving it.
+
+`solver_distill_worker` applies its own inline correctness check (solver + verifier, pre-render) — the gate function exists for `synth_generate` and future stages that generate first and filter second.
+
+### Dedup + upsample
+
+`data_merge` loads every input directory's `rows.jsonl` in order, runs `dedup.dedup(rows, filters)` (first-seen wins, stable iteration), then `dedup.upsample(deduped, recipe)` which multiplies by `{source}_upsample` per-category. The merged JSONL registers in `data/sources.yaml` as one more entry with `format: jsonl_cot` — the SFT loader dispatches on format.
+
+Dedup mode is a recipe knob, not a hardcoded choice:
+- `prompt_hash`: the same prompt produced by any source collapses to one row. Use when the teacher has nothing to add over the solver.
+- `prompt_and_source_hash` (default): same prompt from different sources survives. Use when training on *both* solver-gold and teacher-gold gives the adapter a richer signal.
+
+Input order matters: a duplicate prompt present in both `solver_distill` and `teacher_distill` outputs is kept from whichever appears first in the `inputs:` list. Convention is solver first — solver rows are more trustworthy.
+
+### Protocol extensions on `TrainingBenchmarkAdapter`
+
+Five new *optional* methods were added to the benchmark Protocol (`benchmarks/training_base.py`). Presence is checked at runtime by the stage workers — a benchmark without them keeps working (teacher-only via `synth_generate`):
+
+| Method | Purpose |
+|---|---|
+| `iter_training_rows(workspace)` | Yield `TrainingExample` over the benchmark's training corpus |
+| `classify_category(prompt)` | Deterministic prompt → category key (regex / keyword) |
+| `solvers()` | `dict[cat, Solver]` — per-category deterministic solver |
+| `verifiers()` | `dict[cat, Verifier]` — per-category answer checker |
+| `cot_renderers()` | `dict[cat, CoTRenderer]` — per-category trace → CoT |
+| `data_synth_generators()` | `dict[cat, DataSynthGenerator]` — Phase 3 OOD generation |
+
+### MCGS interface — the evolvable axes
+
+The recipe YAML is *the* surface for data-mix mutators:
+
+```python
+# Example mutator (follow-up PR)
+class SolverUpsampleMutationProposer:
+    bag = (1, 2, 3, 8, 12)
+    def propose(self, parent, graph):
+        weakest = self._weakest_category(parent.error_buckets)
+        new_val = self._bag_rotate(parent, weakest)
+        return WorkspaceMutation(patch=WorkspacePatch(operations=[
+            PatchOperation("replace", "data/recipes/default.yaml",
+                           key_path=["categories", weakest, "solver_upsample"],
+                           value=new_val),
+        ]))
+```
+
+Axes a mutator can target without schema churn:
+- `categories.<cat>.solver: enabled|disabled` — on/off per category
+- `categories.<cat>.solver_upsample` / `teacher_upsample` — per-source weight
+- `categories.<cat>.cot_template` — switch template version
+- `categories.<cat>.extra.*` — benchmark-specific (`ood_ratio`, `ood_operators`, ...)
+- `filters.require_verify_pass` / `max_cot_tokens` / `dedup_by` — filter strictness
+
+Error-bucket connection: `analyze_errors` returns a `dict[bucket_key, count]`. For the data pipeline to be usefully steered by MCGS, the key convention is `<category>__<error_mode>` (e.g. `bit_manipulation__wrong_shift`, `cryptarithm__unsolved`). The mutator reads `parent.error_buckets`, finds the largest category contribution, and patches that category's recipe entry. Recipe-change → fork → new trial → new buckets: a closed loop between evaluation signal and data recipe.
+
+### Test coverage
+
+46 unit tests under `tests/training/data/`:
+
+- `test_base_protocols.py` — Protocol conformance + `GeneratedRow.to_dict` / `from_dict` round-trips
+- `test_recipe.py` — schema validation (bad solver value, non-int upsample, unknown dedup mode) + seed recipe parses + extras preserved
+- `test_dedup.py` — key determinism, first-seen semantics, per-source upsample, unknown-source default + extras fallback
+- `test_cot_template.py` — force-box + inject-verify + idempotence + re.sub backslash trap regression guard
+- `test_verifier_gate.py` — drops on wrong answer / missing marker / over-long CoT, stats accuracy
+- `test_workers_end_to_end.py` — solver_distill happy path + wrong-answer drop + empty-benchmark graceful degradation + data_merge dedup+upsample+sources.yaml registration + missing-input resilience
+- `test_end_to_end_smoke.py` — full pipeline dispatcher round-trip through `SingleNodeTinkerLiteBackend._run_pipeline` in mock mode
+
+All CPU-only, no GPU, no network. Full suite: 242 pass, 2 skipped, zero regression.
