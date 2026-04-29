@@ -6,9 +6,33 @@
 # SFT stage sees the new prompts. SFT's ``max_steps`` caps optimizer steps
 # at N (effective batch 32 ≈ ~3.5 min/step on 1× H200).
 stages:
+  # Data-generation stages (Phase 1/2). All disabled by default; a mutator or
+  # a driver flips them on. Recipe at ``data/recipes/default.yaml`` controls
+  # upsample ratios, filter strictness, and which categories run.
+  - name: solver_distill
+    type: solver_distill
+    enabled: false
+    recipe: data/recipes/default.yaml
+    out_subdir: data/generated/solver_distill
+
   - name: teacher_distill
     type: synth_generate
     enabled: false  # flip to true (or patch via mutator) to run teacher-gen
+    # verifier_gate: true   # uncomment once the benchmark registers verifiers
+                            # to drop teacher rollouts that fail correctness
+
+  - name: data_merge
+    type: data_merge
+    enabled: false
+    recipe: data/recipes/default.yaml
+    inputs:
+      - data/generated/solver_distill
+      # - data/synth   # add teacher_distill output subdir here if enabled
+    out_subdir: data/generated/data_merge
+    upsample_from_recipe: true
+    register_in_sources: true
+    source_format: jsonl_cot
+
   - name: sft_warmup
     type: sft
     epochs: 2

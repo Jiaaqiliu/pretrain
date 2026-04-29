@@ -117,6 +117,16 @@ def _run_real_synth(workspace: Any, stage: dict) -> tuple[Path, dict[str, Any]]:
             f"synth stage did not produce {stats_path} — check teacher-subprocess log"
         )
     stats = json.loads(stats_path.read_text())
+
+    # Optional verifier_gate: defer actual filtering to a follow-up because
+    # teacher-output JSONL has its own row schema (prompt_rendered /
+    # completion) distinct from GeneratedRow. For now we just record that
+    # the gate was requested so pipelines / stats consumers know the
+    # intent and can detect misconfiguration (gate on but no verifiers
+    # registered on the benchmark).
+    if stage.get("verifier_gate"):
+        stats["verifier_gate_requested"] = True
+
     _append_to_sources(workspace, out_path)
     return out_path, stats
 
@@ -189,6 +199,11 @@ def _run_real_synth_inproc(cfg: dict) -> None:
     )
 
     print(f"[synth] loading teacher {cfg['teacher_model_path']} (TP={cfg['tp']})")
+    # enforce_eager skips torch.compile + inductor autotune. Required on nodes
+    # whose NVIDIA driver predates torch 2.10's cu128 kernel targets (observed
+    # on EKS driver 570 — triggers "device kernel image is invalid" during
+    # FP8 MoE autotuning). The perf cost is ~10% at rollout time on BF16 but
+    # matters less for FP8 MoE where kernel selection is already specialized.
     llm = LLM(
         model=cfg["teacher_model_path"],
         tensor_parallel_size=cfg["tp"],
@@ -198,6 +213,7 @@ def _run_real_synth_inproc(cfg: dict) -> None:
         dtype="auto",
         trust_remote_code=True,
         enable_prefix_caching=False,  # prompts are unique
+        enforce_eager=bool(cfg.get("enforce_eager", False)),
     )
     teacher_tok = llm.get_tokenizer()
 

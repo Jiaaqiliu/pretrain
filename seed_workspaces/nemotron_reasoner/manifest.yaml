@@ -11,6 +11,7 @@ evolvable_layers:
   - data/curriculum.yaml
   - data/generators
   - data/filters
+  - data/recipes          # solver_distill / data_merge recipe (MCGS may mutate)
   - train/pipeline.yaml
   - train/optimizer.yaml
   - train/loss.yaml
@@ -31,3 +32,4 @@ artifact_layers:
   - memory
   - checkpoints
   - evolution
+  - data/generated        # stage-produced JSONLs (solver_distill / data_merge)

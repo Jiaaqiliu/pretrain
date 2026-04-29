@@ -1,0 +1,50 @@
+# Data-recipe v1 for nemo_reasoner.
+#
+# Evolvable layer: MCGS mutators may patch `solver_upsample`, `teacher_upsample`,
+# individual `solver` toggles, or `filters` knobs. The recipe name is informational.
+#
+# `solver: enabled` is a claim that the benchmark has registered a Solver +
+# Verifier + CoTRenderer for that category via its `solvers()/verifiers()/
+# cot_renderers()` methods. Absent any of the three, the stage worker logs
+# the missing piece and skips rows — safer than silently training garbage.
+recipe_name: solver_first_v1
+
+categories:
+  bit_manipulation:
+    solver: disabled          # flip once BitSolver ships
+    solver_upsample: 1
+    teacher_upsample: 1
+    cot_template: verify_pass_v1
+  cryptarithm:
+    solver: disabled          # flip once CryptarithmSolver ships
+    solver_upsample: 12       # the +0.01 LB ratio from kimberleyduran
+    teacher_upsample: 1
+    cot_template: verify_pass_v1
+  gravity:
+    solver: disabled
+    solver_upsample: 1
+    teacher_upsample: 1
+  unit_conversion:
+    solver: disabled
+    solver_upsample: 1
+    teacher_upsample: 1
+  roman_numerals:
+    solver: disabled
+    solver_upsample: 1
+    teacher_upsample: 1
+  text_encryption:
+    solver: disabled
+    solver_upsample: 1
+    teacher_upsample: 1
+  equation_transformation:
+    solver: disabled
+    solver_upsample: 1
+    teacher_upsample: 1
+
+filters:
+  # Require CoT to contain `[verify]: PASS` before accepting. cot_template.postprocess_cot
+  # injects this marker automatically if the renderer doesn't; dedup_by controls the
+  # uniqueness key used by data_merge.
+  require_verify_pass: true
+  max_cot_tokens: 7600        # Nemotron-3-Nano tokenizer budget (konbu17)
+  dedup_by: prompt_and_source_hash

@@ -18,7 +18,9 @@ import yaml
 from ...training.runners.data_worker import render_datums
 from ...training.runners.eval_worker import run_eval_plan as _run_eval_plan
 from ...training.runners.pack_adapter_worker import pack_adapter
+from ...training.runners.data_merge_worker import run_data_merge_stage
 from ...training.runners.rl_worker import run_gspo_stage
+from ...training.runners.solver_distill_worker import run_solver_distill_stage
 from ...training.runners.synth_worker import run_synth_stage
 from ...training.runners.train_worker import run_sft_stage
 from ...training.types import (
@@ -227,6 +229,33 @@ class SingleNodeTinkerLiteBackend:
                 aggregated["stage_metrics"].append(
                     {"stage": stage.get("name"), "type": "synth_generate",
                      "out_path": str(out_path), **synth_stats}
+                )
+                continue
+
+            if stype == "solver_distill":
+                # Deterministic per-category solvers. CPU only; emits a JSONL
+                # under ``data/generated/<stage>/rows.jsonl`` for a later
+                # ``data_merge`` stage to pick up.
+                out_path, sd_stats = run_solver_distill_stage(
+                    workspace,
+                    stage,
+                    benchmark=self._current_benchmark,
+                    smoke=self.mock,
+                )
+                aggregated["stage_metrics"].append(
+                    {"stage": stage.get("name"), "type": "solver_distill",
+                     "out_path": str(out_path), **sd_stats}
+                )
+                continue
+
+            if stype == "data_merge":
+                # Dedup + upsample across earlier data-stage outputs; appends
+                # the merged JSONL to ``data/sources.yaml`` so SFT stages
+                # downstream consume it uniformly.
+                out_path, dm_stats = run_data_merge_stage(workspace, stage)
+                aggregated["stage_metrics"].append(
+                    {"stage": stage.get("name"), "type": "data_merge",
+                     "out_path": str(out_path), **dm_stats}
                 )
                 continue
 
