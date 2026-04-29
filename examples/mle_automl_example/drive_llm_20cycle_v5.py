@@ -71,6 +71,7 @@ def main():
         model_id="us.anthropic.claude-opus-4-7",
         region="us-west-2",
         verbose=True,
+        workspace_root=project_root / "seed_workspaces" / "mle_automl",
     )
     ensemble_rule = EnsembleMutationProposer(top_k=3, strategy="voting_soft")
 

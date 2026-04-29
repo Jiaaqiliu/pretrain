@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -20,6 +21,102 @@ from ...types import (
     WorkspaceMutation,
     WorkspacePatch,
 )
+
+
+def _compute_dataset_profile(
+    workspace_root: Path,
+    train_filename: str = "train.csv",
+    target_column: str | None = None,
+    id_column: str | None = None,
+) -> dict:
+    """Compute objective dataset statistics from train.csv.
+
+    Returns an empty dict if the file can't be loaded (profile is optional
+    context for the LLM, not required). Uses only observable properties of
+    the data — no dataset name, no Kaggle metadata — so the LLM can't use
+    prior knowledge of a specific competition.
+    """
+    try:
+        import pandas as pd
+        import numpy as np
+
+        train_path = workspace_root / "data" / train_filename
+        if not train_path.exists():
+            return {}
+        df = pd.read_csv(train_path)
+
+        profile: dict = {"n_train_rows": int(len(df))}
+
+        # Target stats
+        if target_column and target_column in df.columns:
+            y = df[target_column]
+            profile["target_column"] = target_column
+            profile["target_dtype"] = str(y.dtype)
+            if pd.api.types.is_numeric_dtype(y):
+                n_unique = int(y.nunique())
+                if n_unique <= 20:
+                    # Classification-like: show class counts
+                    vc = y.value_counts(normalize=True).sort_index()
+                    profile["n_classes"] = n_unique
+                    profile["target_class_balance"] = {
+                        str(k): round(float(v), 4) for k, v in vc.items()
+                    }
+                else:
+                    # Regression-like: range + skew
+                    profile["target_mean"] = round(float(y.mean()), 4)
+                    profile["target_std"] = round(float(y.std()), 4)
+                    profile["target_min"] = round(float(y.min()), 4)
+                    profile["target_max"] = round(float(y.max()), 4)
+                    try:
+                        profile["target_skew"] = round(float(y.skew()), 3)
+                    except Exception:
+                        pass
+            df_features = df.drop(columns=[target_column])
+        else:
+            df_features = df
+
+        # Drop likely ID column for feature stats
+        if id_column and id_column in df_features.columns:
+            df_features = df_features.drop(columns=[id_column])
+
+        profile["n_features"] = int(df_features.shape[1])
+
+        # Dtype breakdown
+        numeric_cols = df_features.select_dtypes(include=[np.number]).columns.tolist()
+        cat_cols = df_features.select_dtypes(include=["object", "category", "string"]).columns.tolist()
+        bool_cols = df_features.select_dtypes(include=["bool"]).columns.tolist()
+        profile["n_numeric_features"] = len(numeric_cols)
+        profile["n_categorical_features"] = len(cat_cols)
+        profile["n_boolean_features"] = len(bool_cols)
+
+        # Missing rate
+        missing_per_col = df_features.isna().mean()
+        profile["missing_rate_overall"] = round(float(missing_per_col.mean()), 4)
+        profile["features_with_missing"] = int((missing_per_col > 0).sum())
+        top_missing = missing_per_col[missing_per_col > 0].sort_values(ascending=False).head(5)
+        if len(top_missing) > 0:
+            profile["top_missing_features"] = {
+                k: round(float(v), 4) for k, v in top_missing.items()
+            }
+
+        # Numeric skew summary (informs log_transform_skewed decisions)
+        if numeric_cols:
+            skews = df_features[numeric_cols].skew().abs()
+            high_skew = (skews > 1.0).sum()
+            profile["numeric_high_skew_count"] = int(high_skew)
+            profile["numeric_max_skew"] = round(float(skews.max()), 3)
+
+        # Categorical cardinality summary (informs target_encoding decisions)
+        if cat_cols:
+            cards = df_features[cat_cols].nunique()
+            profile["categorical_max_cardinality"] = int(cards.max())
+            profile["categorical_mean_cardinality"] = round(float(cards.mean()), 1)
+            profile["high_card_categorical_count"] = int((cards >= 5).sum())
+
+        return profile
+    except Exception:
+        # Profile is optional; never fail proposer because of it
+        return {}
 
 
 # Default seed config for spaceship-titanic (matches workspace manifest)
@@ -199,10 +296,30 @@ class LLMHyperparameterProposer:
         model_id: str = "us.anthropic.claude-opus-4-7",
         region: str = "us-west-2",
         verbose: bool = True,
+        workspace_root: str | Path | None = None,
     ):
         self.bedrock = boto3.client("bedrock-runtime", region_name=region)
         self.model_id = model_id
         self.verbose = verbose
+        # Path to seed workspace for loading train.csv to compute dataset profile.
+        # Profile is objective stats (no competition name) injected into prompt.
+        self._workspace_root = Path(workspace_root) if workspace_root else None
+        self._cached_profile: dict | None = None
+
+    def _get_dataset_profile(self, parent_config: dict) -> dict:
+        """Lazy-load and cache dataset profile from workspace."""
+        if self._cached_profile is not None:
+            return self._cached_profile
+        if self._workspace_root is None:
+            self._cached_profile = {}
+            return self._cached_profile
+        self._cached_profile = _compute_dataset_profile(
+            workspace_root=self._workspace_root,
+            train_filename=parent_config.get("train_data", "train.csv"),
+            target_column=parent_config.get("target_column"),
+            id_column=parent_config.get("id_column"),
+        )
+        return self._cached_profile
 
     def propose(self, parent: Any, graph: Any) -> WorkspaceMutation:
         """Propose hyperparameter mutation using LLM reasoning.
@@ -358,6 +475,22 @@ You MUST propose something DIFFERENT. Consider:
             fingerprint = _config_fingerprint(full_cfg)
             tried_fingerprints.add(fingerprint)
 
+        # Derive competition/dataset info from parent_config — keeps prompt
+        # competition-agnostic and avoids hard-coding spaceship-titanic.
+        competition_id = parent_config.get("competition_id", "unknown")
+        task_type = parent_config.get("task_type", "classification")
+        fe_flags = (
+            parent_config.get("feature_engineering", {}).get("flags", {}) or {}
+        )
+        # Separate generic (base) FE flags from domain-specific ones
+        GENERIC_FLAGS = {
+            "drop_ids", "fill_numeric_median", "fill_categorical_mode",
+            "fill_boolean_false", "log_transform_skewed", "target_encoding",
+            "standard_scale", "label_encode_categoricals",
+        }
+        available_generic = [k for k in fe_flags.keys() if k in GENERIC_FLAGS]
+        available_domain = [k for k in fe_flags.keys() if k not in GENERIC_FLAGS]
+
         return {
             "parent_config": parent_config,
             "parent_metric": parent.metric if hasattr(parent, "metric") else None,
@@ -367,6 +500,13 @@ You MUST propose something DIFFERENT. Consider:
             "crashed_configs": crashed_configs,
             "num_cycles_completed": len(valid_nodes),
             "search_space": self.PARAM_SPACE,
+            # task_type is a user-provided label (classification|regression), not
+            # a dataset identifier; safe to pass.
+            "task_type": task_type,
+            "generic_fe_flags": available_generic,
+            "domain_fe_flags": available_domain,
+            # Objective data-derived profile (no competition name)
+            "dataset_profile": self._get_dataset_profile(parent_config),
         }
 
     def _build_prompt(self, context: dict) -> str:
@@ -413,70 +553,83 @@ You MUST propose something DIFFERENT. Consider:
             for h in failures_below_best[-5:]  # last 5 failures
         )
 
-        return f"""You are an expert AutoML system optimizing a Kaggle Spaceship Titanic model.
+        # Build dataset-agnostic hints from context
+        domain_flags_str = (
+            "Domain-specific FE flags available: " + ", ".join(context["domain_fe_flags"])
+            if context["domain_fe_flags"]
+            else "No domain-specific FE flags for this competition — use only generic flags."
+        )
+        generic_flags_str = ", ".join(context["generic_fe_flags"]) if context["generic_fe_flags"] else "(none)"
+
+        # Format dataset profile as JSON (empty dict renders cleanly if no profile)
+        profile = context.get("dataset_profile") or {}
+        profile_str = (
+            json.dumps(profile, indent=2) if profile else "(not available)"
+        )
+
+        return f"""You are an expert AutoML system optimizing a tabular ML model.
 
 ## Task
-Binary classification. Score range: 0-1 (higher is better). Current best: {context['best_metric']}.
+Task type: {context['task_type']}. Higher metric is better. Current best: {context['best_metric']}.
 
-## 📏 Two metrics — how to read them
+## Dataset profile (objective statistics from the training data)
+{profile_str}
 
-The `metric` field is the **primary**: accuracy on the mlebench local holdout (~870 rows).
-This is what MCGS optimizes and the Kaggle grader reports.
+Use these statistics to guide proposals. Examples:
+- Many high-skew numeric features → enable `log_transform_skewed`.
+- High-cardinality categoricals → enable `target_encoding`.
+- No missing values → fill strategy flags have no effect.
+- Large imbalance in target_class_balance → consider sampling/weight tricks.
+- Very few features but many rows → deeper trees may overfit less.
+
+## 📏 Metric interpretation
+
+The `metric` field is the **primary**: the official competition metric computed on
+the mlebench test holdout. This is what MCGS optimizes.
 
 When `secondary.cv_mean_accuracy` / `secondary.cv_std` appear in history, they are
-**K-fold out-of-fold accuracy on the full training set** (from `eval/cv.yaml`). They
-live on a different scale than the primary metric (typically ~0.02–0.03 lower because
-the holdout sample is easier than the full-train distribution). Use them as a
+**K-fold out-of-fold metric on the full training set** (from `eval/cv.yaml`). They
+live on a different scale than the primary (typically lower, because the holdout
+subsample can be easier/harder than the full train distribution). Use them as a
 robustness signal, not as a replacement:
 
 - **Primary↑ AND CV↑** → real improvement, trust it.
-- **Primary↑ BUT CV↓ or CV-std↑** → likely overfitting the 870-row holdout; be skeptical.
-- **Primary flat BUT CV↑** → genuine generalization gain; worth keeping even if
-  holdout didn't reflect it.
-- **High CV-std (>0.01)** → the config is unstable across folds — prefer configs with
-  tighter CV-std at the same or slightly lower CV-mean.
+- **Primary↑ BUT CV↓ or CV-std↑** → likely overfitting the holdout; be skeptical.
+- **Primary flat BUT CV↑** → genuine generalization gain; worth keeping.
+- **High CV-std** → the config is unstable across folds — prefer tighter CV-std.
 
 **Do NOT** interpret `cv.enabled=True` configs as "worse" just because their primary
 metric is unchanged — CV's value is the `secondary` signal, not a primary-metric shift.
 
-## 📊 Dataset Info
-- Spaceship Titanic: predict if passenger was "Transported" to another dimension
-- Train: ~8693 rows, Test: ~4277 rows
-- Target: ~50% balanced binary classification
-- Key signal: CryoSleep passengers (in cryogenic sleep) generally transported, no spending activity
+## ⚠️ What NOT to do
+Recent losers:
+{failures_summary if failures_summary else "  (none yet)"}
 
-## ⚠️ NOISE LEVEL
-Test set has ~4277 rows. **Score differences < 0.002 are within noise** (~10 rows).
-Do NOT over-react to a 0.816 vs 0.818 gap — they might be equivalent.
-Focus on changes that could yield >0.003 improvement.
-
-## ⚠️ CRITICAL: What NOT to do
-The BEST configs use DEFAULT hyperparameters (lr=0.1, n_estimators=100, max_depth=6).
-Many attempts to "improve" via slow-learning (lower lr + more trees) have FAILED:
-{failures_summary}
-
-**Stop proposing "lr=0.01, n_estimators=1000"** — that region is exhausted and underperforms!
+Avoid proposals that repeat a nearby region of a recent loser.
 
 ## 🎯 UNEXPLORED REGIONS WITH HIGH POTENTIAL
 1. **Ensembles** (`ensemble.enabled=True`, path `train/ensemble.yaml`):
-   - Typically adds +0.005 to +0.015 vs single model — this is the Kaggle top-10 move.
-   - Populate `ensemble.members` with 3-5 entries. Each entry has
-     `model_type`, `random_state`, `hyperparameters`. Diversity across model_type
-     and/or random_state is what makes voting work.
+   - Typically adds +0.005 to +0.015 vs single model. Populate `ensemble.members`
+     with 3-5 entries (each has `model_type`, `random_state`, `hyperparameters`).
+     Diversity across model_type and/or random_state is what makes voting work.
    - See Example 3 below for the exact members list shape.
-   - Strategies: voting_soft (default, stable), stacking (meta-learner on OOF preds).
-2. **Group-level aggregates** (`feature_engineering.flags.group_aggregates=True`):
-   - Adds GroupSpendMean/Std/Max, GroupCryoRate, GroupAgeMean — same-group passengers
-     share fate, so within-group stats are strong signal (Kaggle top-20 rely on this).
-3. **Cross-validation** (`cv.enabled=True`, path `eval/cv.yaml`):
+   - Strategies: voting_soft (stable), stacking (meta-learner on OOF).
+
+2. **Cross-validation** (`cv.enabled=True`, path `eval/cv.yaml`):
    - Robustness signal via secondary metrics — does NOT improve primary directly.
    - Use when you want to confirm a jump is real vs. holdout noise.
-4. **Other FE flags**:
-   - `interactions=True`: CryoSleep*HasSpending, Age*Spent, VIP*Spent
-   - `log_transform_spending=True`: fixes skewed spending distribution
-   - `target_encoding=True`: smoothed mean-target encoding for categoricals
-5. **Model diversity** + **multi-parameter combos**: ensemble of lightgbm+xgboost
-   with different seeds is often the single biggest win above 0.82.
+
+3. **Feature engineering flags** (path `model/config.yaml`, key `feature_engineering.flags`):
+   - Generic flags (available for ANY competition): {generic_flags_str}
+     * `log_transform_skewed` — add log1p columns for high-skew numeric features.
+     * `target_encoding` — smoothed mean-target encoding for high-cardinality categoricals.
+     * `standard_scale` — z-score numeric columns (useful for linear models).
+   - {domain_flags_str}
+   - **IMPORTANT**: only toggle flags that exist in `parent_config.feature_engineering.flags`.
+     Proposing a flag not in the parent config is a no-op.
+
+4. **Model diversity + multi-parameter combos**: ensemble of lightgbm+xgboost with
+   different seeds is often the single biggest win once single-model has plateaued.
 
 ## Search Space (pick values from these)
 {json.dumps(context['search_space'], indent=2)}
@@ -515,13 +668,13 @@ Return a JSON object with:
     - "key_path": list of keys into that YAML (e.g. ["hyperparameters", "n_estimators"])
     - "value": the new value
 
-Example 1 (Enable group aggregates — strongest known unexplored signal):
+Example 1 (Enable a generic FE flag — low-risk, available for any competition):
 {{
-  "reasoning": "Best is LightGBM defaults (0.81839). group_aggregates=False is the biggest unexplored lever — same-group passengers share fate and GroupSpendMean/CryoRate captures this directly. Enabling should give a meaningful bump.",
+  "reasoning": "Parent LightGBM is plateaued. log_transform_skewed=True applies log1p to high-skew numeric columns, often helps tree splits pick smoother thresholds. It's a generic flag available for any tabular task.",
   "base_node_id": "node-5a44e50433",
-  "description": "LightGBM + group_aggregates=True",
+  "description": "LightGBM + log_transform_skewed=True (generic FE)",
   "operations": [
-    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "group_aggregates"], "value": true}}
+    {{"op": "replace", "path": "model/config.yaml", "key_path": ["feature_engineering", "flags", "log_transform_skewed"], "value": true}}
   ]
 }}
 

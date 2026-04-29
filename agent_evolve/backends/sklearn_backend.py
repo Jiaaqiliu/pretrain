@@ -65,17 +65,24 @@ class EnsembleModel:
         self.meta_learner = meta_learner  # fitted only when strategy=stacking
         self.member_specs = member_specs or []  # for introspection
 
+    @property
+    def _is_regression(self) -> bool:
+        # Members without predict_proba are regressors.
+        return not hasattr(self.members[0], "predict_proba")
+
     def predict_proba(self, X):
+        if self._is_regression:
+            # Regression: no probabilities. Caller should use .predict() instead.
+            raise AttributeError(
+                "EnsembleModel: regression members do not support predict_proba"
+            )
         if self.strategy in ("voting_soft", "voting_hard"):
-            # Both strategies use proba-average internally; predict() distinguishes them
             probas = np.mean([m.predict_proba(X) for m in self.members], axis=0)
             return probas
         elif self.strategy == "stacking":
-            # Stacking: meta-learner consumes member proba predictions
             meta_features = self._stack_features(X)
             if hasattr(self.meta_learner, "predict_proba"):
                 return self.meta_learner.predict_proba(meta_features)
-            # Fallback: turn predictions into pseudo-proba
             preds = self.meta_learner.predict(meta_features)
             proba = np.zeros((len(preds), 2))
             proba[np.arange(len(preds)), preds.astype(int)] = 1.0
@@ -84,28 +91,34 @@ class EnsembleModel:
             raise ValueError(f"Unknown ensemble strategy: {self.strategy}")
 
     def predict(self, X):
+        if self._is_regression:
+            # Mean of regressor outputs (voting_soft / voting_hard collapse to the same op)
+            return np.mean([m.predict(X) for m in self.members], axis=0)
         if self.strategy == "voting_hard":
-            # Majority vote on class labels from each member
-            member_preds = np.array([m.predict(X) for m in self.members])  # (M, N)
-            # Mode per column
+            member_preds = np.array([m.predict(X) for m in self.members])
             from scipy.stats import mode
             return mode(member_preds, axis=0, keepdims=False).mode
-        # voting_soft and stacking use predict_proba threshold
+        # voting_soft and stacking use predict_proba threshold (classification)
         probas = self.predict_proba(X)
         if probas.ndim == 2 and probas.shape[1] == 2:
             return (probas[:, 1] > 0.5).astype(int)
         return np.argmax(probas, axis=1)
 
     def _stack_features(self, X):
-        """Build meta-features for stacking: concatenate each member's proba of positive class."""
+        """Build meta-features for stacking."""
         cols = []
         for m in self.members:
-            p = m.predict_proba(X)
-            # For binary: use proba of class 1 as a single feature
-            if p.ndim == 2 and p.shape[1] == 2:
-                cols.append(p[:, 1:2])
+            if hasattr(m, "predict_proba"):
+                p = m.predict_proba(X)
+                # Binary: proba of class 1; multi-class: full matrix
+                if p.ndim == 2 and p.shape[1] == 2:
+                    cols.append(p[:, 1:2])
+                else:
+                    cols.append(p)
             else:
-                cols.append(p)  # multi-class: full proba matrix
+                # Regressor meta-feature: its prediction as a single column
+                preds = m.predict(X)
+                cols.append(preds.reshape(-1, 1))
         return np.hstack(cols)
 
 
@@ -142,6 +155,9 @@ class SklearnBackend:
             config = self._load_ml_config(workspace)
             cv_config = self._load_cv_config(workspace)
             ensemble_config = self._load_ensemble_config(workspace)
+
+            # Explicit task_type from config takes precedence over heuristics
+            self._task_type = config.get("task_type")  # "classification" | "regression" | None
 
             # 2. Load and prepare data
             X_train, y_train, X_test = self._load_data(workspace, config)
@@ -369,11 +385,27 @@ class SklearnBackend:
         return X_train, X_test, None
 
     def _train_model(self, config: Dict, X_train, y_train):
-        """Train ML model based on config."""
+        """Train ML model based on config.
+
+        GPU is auto-enabled for xgboost/lightgbm when:
+          - config.get("use_gpu") is True (explicit), OR
+          - training set has >= 50k rows (heuristic; GPU pays off at scale)
+        GPU can be force-disabled with config["use_gpu"] = False.
+        """
         model_type = config.get("model_type", "random_forest")
-        hyperparams = config.get("hyperparameters", {})
+        hyperparams = dict(config.get("hyperparameters", {}))  # copy; we may inject GPU params
+
+        # GPU auto-enable heuristic
+        use_gpu_explicit = config.get("use_gpu", None)
+        if use_gpu_explicit is True:
+            gpu = True
+        elif use_gpu_explicit is False:
+            gpu = False
+        else:
+            gpu = len(X_train) >= 50_000
 
         if model_type == "random_forest":
+            # No GPU support in sklearn RF
             if self._is_classification(y_train):
                 model = RandomForestClassifier(**hyperparams)
             else:
@@ -381,6 +413,10 @@ class SklearnBackend:
 
         elif model_type == "xgboost":
             import xgboost as xgb
+            if gpu:
+                # xgboost >= 2.0 uses device="cuda"; older uses tree_method="gpu_hist"
+                hyperparams.setdefault("device", "cuda")
+                hyperparams.setdefault("tree_method", "hist")
             if self._is_classification(y_train):
                 model = xgb.XGBClassifier(**hyperparams)
             else:
@@ -388,6 +424,8 @@ class SklearnBackend:
 
         elif model_type == "lightgbm":
             import lightgbm as lgb
+            if gpu:
+                hyperparams.setdefault("device_type", "gpu")
             if self._is_classification(y_train):
                 model = lgb.LGBMClassifier(**hyperparams)
             else:
@@ -548,8 +586,18 @@ class SklearnBackend:
         return meta
 
     def _is_classification(self, y):
-        """Detect if task is classification or regression."""
-        # Simple heuristic
+        """Detect if task is classification or regression.
+
+        Precedence:
+          1. self._task_type (set from config.yaml::task_type if present)
+          2. Heuristic: low unique ratio or object dtype
+        """
+        task_type = getattr(self, "_task_type", None)
+        if task_type == "classification":
+            return True
+        if task_type == "regression":
+            return False
+        # Fallback heuristic
         unique_ratio = len(np.unique(y)) / len(y)
         return unique_ratio < 0.05 or y.dtype == "object"
 

@@ -1,0 +1,3 @@
+# Data mixing (not used by sklearn backend)
+default:
+  weights: {}

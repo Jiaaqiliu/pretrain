@@ -1,0 +1,9 @@
+# Data paths (protected - set by MLE-Bench preparation)
+
+# These are populated after running: mlebench prepare --competition <comp_id>
+mle_bench_cache: ~/.cache/mlebench
+
+# Paths are relative to: {mle_bench_cache}/competitions/{competition_id}/prepared/public/
+train_path: train.csv
+test_path: test.csv
+sample_submission_path: sample_submission.csv

@@ -1,0 +1,22 @@
+name: mle_automl_tps
+contract_version: train-1.0
+
+defaults:
+  benchmark: mle_bench
+  algorithm: mcgs
+  backend: sklearn_backend
+
+evolvable_layers:
+  - model/config.yaml
+  - model/feature_engineering.yaml
+  - train/ensemble.yaml
+  - eval/cv.yaml
+
+protected_layers:
+  - data/paths.yaml
+  - eval/competition.yaml
+
+artifact_layers:
+  - memory
+  - checkpoints
+  - evolution

@@ -1,0 +1,5 @@
+enabled: false
+n_splits: 5
+strategy: stratified_kfold
+shuffle: true
+random_state: 42

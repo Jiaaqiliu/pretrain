@@ -1,0 +1,14 @@
+# Competition metadata (protected)
+
+competition_id: spaceship-titanic
+task_type: binary_classification
+metric: accuracy
+
+# Column names
+id_column: PassengerId
+target_column: Transported
+
+# Evaluation settings
+cv_folds: 5
+test_size: 0.2
+random_state: 42
