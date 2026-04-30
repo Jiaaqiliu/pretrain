@@ -14,6 +14,7 @@ from .types import TrainingRegistryError
 TRAINING_BENCHMARKS: dict[str, str] = {
     "nemo_reasoner": "agent_evolve.benchmarks.nemo_reasoner.NemoReasonerBenchmark",
     "mle_bench": "agent_evolve.benchmarks.mle_bench.mle_bench.MLEBenchAdapter",
+    "posttrain_bench": "agent_evolve.benchmarks.posttrain_bench.PosttrainBenchmark",
 }
 
 TRAINING_ALGORITHMS: dict[str, str] = {

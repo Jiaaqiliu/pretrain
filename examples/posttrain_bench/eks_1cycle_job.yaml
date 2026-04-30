@@ -1,0 +1,93 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: posttrain-evolver-1cycle
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: posttrain-evolver
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: evolver
+        image: 801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/star1-repro:latest
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+          echo "=== posttrain_bench TrainingEvolver 1-cycle on EKS ==="
+          nvidia-smi -L
+
+          export WANDB_MODE=disabled
+          export NCCL_NVLS_ENABLE=0
+          export HF_HUB_OFFLINE=1
+          export TRANSFORMERS_OFFLINE=1
+          export PYTHONPATH=/fsx/bnghe/continual_learning/A-EVOLVE-V2
+
+          cd /fsx/bnghe/continual_learning/A-EVOLVE-V2
+
+          python -c "
+          import os, sys
+          from pathlib import Path
+          AE = Path('/fsx/bnghe/continual_learning/A-EVOLVE-V2')
+          sys.path.insert(0, str(AE))
+
+          from agent_evolve.training.algorithms.mcgs.mutation import LRBagMutationProposer
+          from agent_evolve.training.algorithms.mcgs.search import MCGSSearch
+          from agent_evolve.training.api import TrainingEvolver
+          from agent_evolve.training.types import TrainingEvolveConfig
+
+          class RootFanoutSelector:
+              def __init__(self, fanout=1): self.fanout = fanout
+              def select(self, graph, *, cycle):
+                  return graph.root()
+
+          algo = MCGSSearch(
+              mutator=LRBagMutationProposer(bag=(1e-5,)),
+              selector=RootFanoutSelector(fanout=1),
+          )
+          evolver = TrainingEvolver(
+              workspace=AE / 'seed_workspaces' / 'posttrain_bench',
+              benchmark='posttrain_bench',
+              algorithm=algo,
+              backend='h200_single_node',
+              config=TrainingEvolveConfig(smoke=False, max_cycles=1, trial_budget_seconds=7200),
+              work_dir=AE / 'runs' / 'posttrain-evolver-eks-1cycle',
+          )
+          result = evolver.run(cycles=1)
+          print(f'\n=== EKS 1-Cycle Result ===')
+          print(f'cycles_completed: {result.cycles_completed}')
+          print(f'incumbent_node_id: {result.incumbent_node_id}')
+          print(f'best_metric: {result.best_metric}')
+          "
+          echo "=== Done ==="
+        env:
+        - name: NCCL_NVLS_ENABLE
+          value: "0"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            nvidia.com/gpu: 8
+            memory: "256Gi"
+            cpu: "48"
+        volumeMounts:
+        - name: fsx
+          mountPath: /fsx
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx-pvc
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 128Gi
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"

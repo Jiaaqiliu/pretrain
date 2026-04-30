@@ -1,0 +1,5 @@
+name: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+path: /fsx/models/DeepSeek-R1-Distill-Qwen-1.5B
+dtype: bfloat16
+context_window: 8192
+architecture: qwen2

@@ -1,0 +1,4 @@
+sources:
+  - path: data/star1_train.jsonl
+    split: train
+    format: jsonl

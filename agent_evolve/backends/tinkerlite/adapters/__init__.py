@@ -16,12 +16,14 @@ from .base import (
     resolve_adapter,
     ADAPTERS,
 )
+from .full_deepspeed import FullDeepspeedAdapter
 from .lora import LoRAAdapter
 
 __all__ = [
     "ModelAdapter",
     "ATTACH_MODE_WRAP",
     "ATTACH_MODE_INPLACE",
+    "FullDeepspeedAdapter",
     "LoRAAdapter",
     "register_adapter",
     "resolve_adapter",

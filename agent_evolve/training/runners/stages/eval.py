@@ -5,14 +5,22 @@ Two paths:
 * **smoke** — writes a deterministic ``metrics.json`` + ``predictions.jsonl``
   derived from ``eval/local_holdout_small.jsonl``. Used by the PR8 seed
   workspace and all unit tests.
-* **non-smoke** — loads the base model + LoRA adapter via vLLM and scores the
-  dev split using a pluggable benchmark scorer. This is what the
-  ``kaggle_nemo_reasoner`` workspace invokes for real H200 runs.
+* **non-smoke** — loads the model via vLLM and scores the dev split using a
+  pluggable benchmark scorer. This is what the ``kaggle_nemo_reasoner``
+  workspace invokes for real H200 runs.
 
-The non-smoke path is tightly coupled to vLLM + the Kaggle host contract (chat
-template, max_model_len 4096, max_lora_rank 32, temperature 1.0, top_p 1.0,
-max_tokens 3584). Matching those knobs verbatim is what lets the dev score
-correlate with the leaderboard.
+Checkpoint dispatch (non-smoke): :attr:`CheckpointRef.kind` determines how
+vLLM loads the candidate.
+
+* ``"adapter"`` — load base model + LoRA adapter via ``LoRARequest`` (the
+  default; what every LoRA / DoRA / IA³ ``ModelAdapter`` produces).
+* ``"full_state"`` — load ``checkpoint.path`` directly as the model; no
+  ``LoRARequest``. Produced by full-parameter adapters
+  (:class:`FullDeepspeedAdapter`).
+
+The Kaggle host contract (chat template, max_model_len 4096, max_lora_rank
+32, temperature 1.0, top_p 1.0, max_tokens 3584) is preserved on the LoRA
+path so the dev score still correlates with the leaderboard.
 """
 
 from __future__ import annotations
@@ -96,11 +104,20 @@ def _run_vllm_eval(
     workspace: Any | None,
     split: str | None,
 ) -> Path:
-    """Load base model + LoRA via vLLM and score the dev split.
+    """Load the candidate via vLLM and score the dev split.
+
+    Branches on ``plan.checkpoint.kind``:
+
+    * ``"full_state"`` — load ``checkpoint.path`` as the model. Tokenizer is
+      loaded from the same dir (the full-param adapter saved it there).
+    * Anything else (default ``"adapter"``) — load the base model
+      (``plan.generation_config['model_path']``) and apply the LoRA
+      ``LoRARequest`` per generate call.
 
     The caller must pass a ``benchmark`` that exposes ``load_dev_rows`` and
-    ``score_predictions`` (see
-    :class:`agent_evolve.benchmarks.nemo_reason.kaggle.KaggleNemoReasonerBenchmark`).
+    ``score_predictions``. Optional benchmark hooks: ``build_eval_prompt``
+    overrides the legacy Kaggle / boxed-answer suffix per
+    :func:`benchmarks.helpers.build_eval_prompt`.
     """
     if benchmark is None or workspace is None:
         raise RuntimeError(
@@ -109,7 +126,8 @@ def _run_vllm_eval(
 
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
-    from vllm.lora.request import LoRARequest
+
+    from ....benchmarks.helpers import build_eval_prompt as _resolve_prompt
 
     cfg = dict(plan.generation_config or {})
     model_path = cfg.get("model_path")
@@ -117,42 +135,69 @@ def _run_vllm_eval(
         raise RuntimeError(
             "plan.generation_config['model_path'] is required for non-smoke eval."
         )
+
+    checkpoint_path = plan.checkpoint.path
+    if not Path(checkpoint_path).exists():
+        raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
+
+    is_full_model = plan.checkpoint.kind == "full_state"
+
     limit = cfg.get("limit")
     tp = int(cfg.get("tensor_parallel_size", 1))
     seed = int(cfg.get("seed", 0))
     max_model_len = int(cfg.get("max_model_len", 4096))
-    max_lora_rank = int(cfg.get("max_lora_rank", 32))
     gpu_memory_utilization = float(cfg.get("gpu_memory_utilization", 0.85))
 
-    adapter_path = plan.checkpoint.path
-    if not Path(adapter_path).exists():
-        raise FileNotFoundError(f"adapter not found: {adapter_path}")
+    if is_full_model:
+        # Full-state checkpoint: vLLM loads it directly as the model.
+        # Tokenizer comes from the same dir (saved by FullDeepspeedAdapter).
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint_path, trust_remote_code=True)
+        engine_kwargs = dict(
+            model=checkpoint_path,
+            tensor_parallel_size=tp,
+            seed=seed,
+            max_model_len=max_model_len,
+            max_num_seqs=int(cfg.get("max_num_seqs", 128)),
+            gpu_memory_utilization=gpu_memory_utilization,
+            dtype="auto",
+            trust_remote_code=True,
+        )
+    else:
+        # LoRA adapter: vLLM loads the base model with LoRA support enabled.
+        max_lora_rank = int(cfg.get("max_lora_rank", 32))
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        engine_kwargs = dict(
+            model=model_path,
+            tensor_parallel_size=tp,
+            seed=seed,
+            max_model_len=max_model_len,
+            max_lora_rank=max_lora_rank,
+            max_num_seqs=int(cfg.get("max_num_seqs", 128)),
+            gpu_memory_utilization=gpu_memory_utilization,
+            enable_lora=True,
+            enable_prefix_caching=True,
+            enable_chunked_prefill=True,
+            dtype="auto",
+            trust_remote_code=True,
+        )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-
-    engine_kwargs = dict(
-        model=model_path,
-        tensor_parallel_size=tp,
-        seed=seed,
-        max_model_len=max_model_len,
-        max_lora_rank=max_lora_rank,
-        max_num_seqs=int(cfg.get("max_num_seqs", 128)),
-        gpu_memory_utilization=gpu_memory_utilization,
-        enable_lora=True,
-        enable_prefix_caching=True,
-        enable_chunked_prefill=True,
-        dtype="auto",
-        trust_remote_code=True,
+    logger.info(
+        "[eval] loading vLLM engine (full_model=%s): %s",
+        is_full_model,
+        {k: v for k, v in engine_kwargs.items() if k != "model"},
     )
-    logger.info("[eval] loading vLLM engine: %s", {k: v for k, v in engine_kwargs.items() if k != "model"})
     llm = LLM(**engine_kwargs)
 
-    sampling = SamplingParams(
+    sampling_kwargs: dict[str, Any] = dict(
         temperature=float(cfg.get("temperature", 1.0)),
         top_p=float(cfg.get("top_p", 1.0)),
         max_tokens=int(cfg.get("max_tokens", 3584)),
         seed=seed,
     )
+    rep_penalty = cfg.get("repetition_penalty")
+    if rep_penalty is not None:
+        sampling_kwargs["repetition_penalty"] = float(rep_penalty)
+    sampling = SamplingParams(**sampling_kwargs)
 
     split_name = split or plan.split
     dev_rows = benchmark.load_dev_rows(workspace, split_name)
@@ -160,12 +205,32 @@ def _run_vllm_eval(
         dev_rows = dev_rows[: int(limit)]
     logger.info("[eval] %d dev rows on split=%s", len(dev_rows), split_name)
 
-    prompts = [_build_prompt(row.prompt, tokenizer) for row in dev_rows]
+    # Prefer ``benchmark.build_eval_prompt(row, tokenizer)`` if implemented;
+    # falls back to the legacy nemo_reasoner Kaggle suffix builder.
+    prompts = [_resolve_prompt(benchmark, row, tokenizer) for row in dev_rows]
 
-    lora_request = LoRARequest(plan.checkpoint.name or "candidate", 1, adapter_path)
+    generate_kwargs: dict[str, Any] = {"sampling_params": sampling}
+    if not is_full_model:
+        from vllm.lora.request import LoRARequest
+        from ....backends.tinkerlite.adapters import resolve_adapter
+
+        # Use the registered adapter's request builder when adapter.yaml::type
+        # is known (LoRA today; future DoRA / IA³ may want different
+        # request shapes). Falls back to plain LoRARequest for legacy
+        # workspaces that don't declare a type.
+        adapter_kind = _read_adapter_kind(workspace)
+        lora_request = None
+        if adapter_kind:
+            try:
+                lora_request = resolve_adapter(adapter_kind).vllm_lora_request(plan.checkpoint)
+            except KeyError:
+                lora_request = None
+        if lora_request is None:
+            lora_request = LoRARequest(plan.checkpoint.name or "candidate", 1, checkpoint_path)
+        generate_kwargs["lora_request"] = lora_request
 
     t0 = time.time()
-    outputs = llm.generate(prompts, sampling_params=sampling, lora_request=lora_request)
+    outputs = llm.generate(prompts, **generate_kwargs)
     elapsed = time.time() - t0
     logger.info("[eval] generate done in %.1f min", elapsed / 60.0)
 
@@ -178,7 +243,8 @@ def _run_vllm_eval(
         "per_domain": _per_domain(metrics.secondary),
         "n_eval": int(metrics.secondary.get("n_eval", len(dev_rows))),
         "seed": seed,
-        "adapter": adapter_path,
+        "checkpoint": checkpoint_path,
+        "checkpoint_kind": plan.checkpoint.kind,
         "model_path": model_path,
         "eval_seconds": elapsed,
     }
@@ -195,22 +261,25 @@ def _run_vllm_eval(
     return out
 
 
-def _build_prompt(raw_prompt: str, tokenizer: Any) -> str:
-    # Mirror the Kaggle host prompt: raw_prompt + boxed-instruction suffix,
-    # wrapped in the model's chat template with add_generation_prompt=True.
-    user_content = raw_prompt + (
-        "\nPlease put your final answer inside `\\boxed{}`. "
-        "For example: `\\boxed{your answer}`"
-    )
+def _read_adapter_kind(workspace: Any) -> str | None:
+    """Read ``model/adapter.yaml::type`` if present; ``None`` otherwise.
+
+    Pure helper — kept here (not in helpers.dataset) to avoid importing
+    yaml in the hot path of LoRA-only callers; this only fires once per
+    eval invocation.
+    """
+    import yaml as _yaml
+
+    path = Path(workspace.root) / "model" / "adapter.yaml"
+    if not path.is_file():
+        return None
     try:
-        return tokenizer.apply_chat_template(
-            [{"role": "user", "content": user_content}],
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=True,
-        )
-    except Exception:
-        return user_content
+        with open(path) as f:
+            data = _yaml.safe_load(f) or {}
+    except Exception:  # pragma: no cover — best-effort config load
+        return None
+    kind = data.get("type")
+    return str(kind) if kind else None
 
 
 def _per_domain(secondary: dict[str, float]) -> dict[str, dict[str, float]]:

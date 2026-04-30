@@ -1,0 +1,8 @@
+stages:
+  - name: sft_safety
+    type: sft
+    epochs: 5
+    max_steps: null
+    loss: cross_entropy
+    data_mix: default
+    enabled: true
