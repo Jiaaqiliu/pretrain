@@ -20,10 +20,10 @@ from typing import Any, Iterable, Protocol
 
 import yaml
 
-from ...backends.tinkerlite.base import AdamParams, Datum, ModelInput, TrainingClient
-from ...backends.tinkerlite.clients.hf import build_hf_client_from_workspace
-from ...backends.tinkerlite.clients.mock import MockTrainingClient
-from ..types import CheckpointRef
+from ....backends.tinkerlite.base import AdamParams, Datum, ModelInput, TrainingClient
+from ....backends.tinkerlite.clients.hf import build_hf_client_from_workspace
+from ....backends.tinkerlite.clients.mock import MockTrainingClient
+from ...types import CheckpointRef
 
 
 class SFTTrainingClient(TrainingClient, Protocol):
@@ -122,7 +122,7 @@ def _run_real_stage(
     if _os.environ.get("AE_TRAIN_DDP", "0") == "1" and training_client is None:
         return _run_real_stage_ddp(workspace, stage, optimizer, budget_seconds)
 
-    from .data_worker import render_hf_dataset
+    from ..helpers.dataset import render_hf_dataset
 
     cfg = _load_real_stage_config(workspace, stage, optimizer)
 
@@ -312,7 +312,7 @@ def _run_real_stage_ddp(
     Falls back to the in-process HFTrainingClient path only if the caller
     explicitly passes a training_client (which it wouldn't under DDP mode).
     """
-    from ...backends.tinkerlite.single_node.ddp_launcher import run_sft_ddp
+    from ....backends.tinkerlite.single_node.ddp_launcher import run_sft_ddp
 
     root = Path(workspace.root)
     base_cfg = _load_yaml_safely(root / "model" / "base.yaml")
@@ -339,3 +339,37 @@ def _run_real_stage_ddp(
         start_adapter_path=start_adapter,
         budget_seconds=budget_seconds,
     )
+
+
+# ── StageRegistry adapter ────────────────────────────────────────────────
+#
+# Thin unpack of ``StageContext`` → ``run_sft_stage(...)``. See
+# ``training/stage_registry.py`` and ``INTEGRATION.md`` §2.
+
+from ...stage_registry import StageContext, StageResult, register_stage  # noqa: E402
+
+
+@register_stage("sft")
+def _sft_stage_adapter(ctx: StageContext) -> StageResult:
+    import os as _os
+    from ..helpers.dataset import render_datums
+
+    # Smoke path feeds mock Datums; real path loads its tokenized dataset
+    # inside run_sft_stage via render_hf_dataset. DDP dispatch defers
+    # training-client construction to the torchrun subprocess.
+    datums = list(render_datums(ctx.workspace, smoke=ctx.smoke)) if ctx.smoke else None
+    use_ddp = (not ctx.smoke) and _os.environ.get("AE_TRAIN_DDP", "0") == "1"
+    client = None
+    if ctx.training_client_fn is not None and not (ctx.smoke or use_ddp):
+        client = ctx.training_client_fn()
+
+    ckpt, metrics = run_sft_stage(
+        ctx.workspace,
+        ctx.stage,
+        datums,
+        optimizer=ctx.optimizer,
+        smoke=ctx.smoke,
+        budget_seconds=ctx.budget_seconds,
+        training_client=client,
+    )
+    return StageResult(checkpoint=ckpt, metrics=metrics)

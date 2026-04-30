@@ -35,7 +35,7 @@ from typing import Any
 
 import yaml
 
-from ...backends.tinkerlite.base import (
+from ....backends.tinkerlite.base import (
     AdamParams,
     Datum,
     ModelInput,
@@ -44,12 +44,12 @@ from ...backends.tinkerlite.base import (
     SamplingParams,
     TrainingClient,
 )
-from ...benchmarks.nemo_reasoner import (
+from ....benchmarks.nemo_reasoner import (
     build_eval_prompt,
     extract_final_answer,
     verify,
 )
-from ..types import CheckpointRef
+from ...types import CheckpointRef
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +539,7 @@ def _run_gspo_update_ddp(
     rollouts_path: Path,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Write post-advantage records to disk, launch torchrun DDP worker."""
-    from ...backends.tinkerlite.single_node.ddp_launcher import run_gspo_ddp
+    from ....backends.tinkerlite.single_node.ddp_launcher import run_gspo_ddp
 
     outdir = Path(workspace.root) / "evolution" / "rl" / stage.get("name", "rl_gspo")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -608,3 +608,62 @@ def _run_gspo_update_ddp(
 
 
 __all__ = ["run_gspo_stage", "group_normalize_advantages"]
+
+
+# ── StageRegistry adapter ────────────────────────────────────────────────
+#
+# RL is the one stage with a GPU-lifecycle dance: the rollout phase needs
+# vLLM + the starting adapter; the update phase needs HF + PEFT on the same
+# GPU. We build the sampling client eagerly, pass a factory for the training
+# client so it constructs AFTER the sampling client is torn down. The
+# ``close_training_client_fn`` hook lets us release any pre-existing client
+# owned by the dispatcher before we boot vLLM. See ``INTEGRATION.md`` §2.
+
+from ...stage_registry import StageContext, StageResult, register_stage  # noqa: E402
+
+
+@register_stage("rl")
+def _rl_stage_adapter(ctx: StageContext) -> StageResult:
+    from ....backends.tinkerlite.single_node.backend import _seed_adapter_ref
+
+    sampling_ckpt = ctx.last_ckpt or _seed_adapter_ref(ctx.workspace)
+    if sampling_ckpt is None:
+        raise RuntimeError(
+            "rl stage needs a starting adapter but none was produced by an "
+            "earlier SFT stage and model/adapter.yaml has no seed_adapter_path."
+        )
+    if ctx.sampling_client_fn is None or ctx.training_client_fn is None:
+        raise RuntimeError("rl stage requires training_client_fn + sampling_client_fn")
+
+    if ctx.smoke:
+        training_client = ctx.training_client_fn()
+        sampling_client = ctx.sampling_client_fn(sampling_ckpt)
+        ckpt, metrics = run_gspo_stage(
+            ctx.workspace,
+            ctx.stage,
+            sampling_client=sampling_client,
+            training_client_factory=lambda: training_client,
+            benchmark=ctx.benchmark,
+            budget_seconds=ctx.budget_seconds,
+            smoke=True,
+            training_client=training_client,
+        )
+    else:
+        # Tear down any pre-existing shared training client before vLLM
+        # boots, so the rollout phase gets a whole GPU.
+        if ctx.close_training_client_fn is not None:
+            ctx.close_training_client_fn()
+        sampling_client = ctx.sampling_client_fn(sampling_ckpt)
+        # Defer training-client construction until after run_gspo_stage
+        # tears down vLLM.
+        training_client_factory = ctx.training_client_fn
+        ckpt, metrics = run_gspo_stage(
+            ctx.workspace,
+            ctx.stage,
+            sampling_client=sampling_client,
+            training_client_factory=training_client_factory,
+            benchmark=ctx.benchmark,
+            budget_seconds=ctx.budget_seconds,
+            smoke=False,
+        )
+    return StageResult(checkpoint=ckpt, metrics=metrics)

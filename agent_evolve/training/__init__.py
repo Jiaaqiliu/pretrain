@@ -1,6 +1,7 @@
 """Training evolution subsystem for A-Evolve."""
 
 from .api import TrainingEvolver
+from .runner_protocol import TrainingJobRunner
 from .types import (
     CheckpointRef,
     ErrorBuckets,
@@ -27,6 +28,7 @@ from .workspace import TrainingWorkspace
 
 __all__ = [
     "TrainingEvolver",
+    "TrainingJobRunner",
     "TrainingWorkspace",
     "TrainingEvolveConfig",
     "TrainingEvolutionResult",

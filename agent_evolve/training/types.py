@@ -102,7 +102,11 @@ class CheckpointRef:
 
     name: str
     path: str
-    kind: Literal["full_state", "sampler_weights", "adapter"] = "adapter"
+    # ``adapter``        — PEFT LoRA / QLoRA / DoRA directory (adapter_config.json).
+    # ``full_weights``   — full-model snapshot (config.json + model.safetensors).
+    # ``sampler_weights``— mock path's marker (MockTrainingClient).
+    # ``full_state``     — full optimizer+model state (not currently emitted).
+    kind: Literal["full_state", "sampler_weights", "adapter", "full_weights"] = "adapter"
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

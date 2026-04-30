@@ -13,8 +13,8 @@ import pytest
 import yaml
 
 from agent_evolve.training.data.base import TrainingExample
-from agent_evolve.training.runners.data_merge_worker import run_data_merge_stage
-from agent_evolve.training.runners.solver_distill_worker import (
+from agent_evolve.training.runners.stages.data_merge import run_data_merge_stage
+from agent_evolve.training.runners.stages.solver_distill import (
     run_solver_distill_stage,
 )
 

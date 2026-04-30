@@ -1,6 +1,6 @@
 """Multi-rank DDP training worker for SFT and GSPO update.
 
-Spawned as ``torchrun --nproc_per_node=N -m agent_evolve.training.runners.train_worker_ddp``
+Spawned as ``torchrun --nproc_per_node=N -m agent_evolve.training.runners.ddp_worker``
 by the parent process (single Python process running the MCGS driver). Each rank:
 
   1. Reads ``--config`` (a JSON with stage kind, paths, hyperparameters).
@@ -163,7 +163,7 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
 
     # Lazy import so single-process tests don't pull in datasets when unused.
     sys.path.insert(0, str(Path(cfg["ae_root"])))
-    from agent_evolve.training.runners.data_worker import PadToLongest, render_hf_dataset
+    from agent_evolve.training.runners.helpers.dataset import PadToLongest, render_hf_dataset
     from agent_evolve.training.workspace import TrainingWorkspace
 
     ws = TrainingWorkspace.load(cfg["workspace_root"])

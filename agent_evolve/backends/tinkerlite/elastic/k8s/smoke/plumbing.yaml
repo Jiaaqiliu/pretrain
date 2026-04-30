@@ -52,13 +52,13 @@ spec:
           print(f"vllm={vllm.__version__}")
           import agent_evolve
           from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend
-          from agent_evolve.training.runners.train_worker_ddp import main as worker_main
+          from agent_evolve.training.runners.ddp_worker import main as worker_main
           print(f"agent_evolve OK ({agent_evolve.__file__})")
           print(f"K8sTinkerLiteBackend OK ({K8sTinkerLiteBackend.name})")
           PY
           echo
           echo "== worker --help =="
-          python -m agent_evolve.training.runners.train_worker_ddp --help | head -5
+          python -m agent_evolve.training.runners.ddp_worker --help | head -5
           echo
           echo "PLUMBING OK"
       env:

@@ -16,14 +16,17 @@ from typing import Any
 
 import yaml
 
-from ....training.runners.data_worker import render_datums
-from ....training.runners.eval_worker import run_eval_plan as _run_eval_plan
-from ....training.runners.pack_adapter_worker import pack_adapter
-from ....training.runners.data_merge_worker import run_data_merge_stage
-from ....training.runners.rl_worker import run_gspo_stage
-from ....training.runners.solver_distill_worker import run_solver_distill_stage
-from ....training.runners.synth_worker import run_synth_stage
-from ....training.runners.train_worker import run_sft_stage
+# Importing ``runners`` triggers @register_stage side-effects for all
+# built-in stage types. We also pull a few direct entrypoints (pack_adapter
+# + eval) that the dispatcher and run_eval_plan use outside the registry.
+from ....training.runners import (  # noqa: F401 — import for side-effects
+    pack_adapter,
+    render_datums,
+    run_eval_plan as _run_eval_plan,
+    run_sft_stage,
+    run_synth_stage,
+)
+from ....training.stage_registry import StageContext, resolve_stage
 from ....training.types import (
     CheckpointRef,
     EvalMetrics,
@@ -212,150 +215,63 @@ class SingleNodeTinkerLiteBackend:
                 )
             return shared_training_client
 
+        def _close_shared_training_client() -> None:
+            """RL calls this (via StageContext) to release the GPU before
+            booting vLLM. Dispatcher also calls it after the loop for
+            eval-headroom. Safe to call multiple times."""
+            nonlocal shared_training_client
+            if shared_training_client is not None:
+                close = getattr(shared_training_client, "close", None)
+                if close is not None:
+                    close()
+                shared_training_client = None
+
         for stage in stages:
             if not stage.get("enabled", True):
                 continue
             stype = stage.get("type")
+            if stype is None:
+                continue
             remaining = budget.seconds - (time.time() - start) if budget.seconds else None
 
-            if stype == "synth_generate":
-                # Teacher distillation. Emits a JSONL + stats.json under
-                # ``data/synth/`` and appends it to ``data/sources.yaml`` so
-                # subsequent SFT stages see the new prompts.
-                out_path, synth_stats = run_synth_stage(
-                    workspace,
-                    stage,
-                    smoke=self.mock,
-                    budget_seconds=remaining,
-                )
-                aggregated["stage_metrics"].append(
-                    {"stage": stage.get("name"), "type": "synth_generate",
-                     "out_path": str(out_path), **synth_stats}
-                )
+            try:
+                stage_adapter = resolve_stage(stype)
+            except KeyError:
+                # Unknown stage type — stays silent (historical ladder also
+                # just dropped anything that wasn't one of the known types).
+                # Log once so surprises are visible.
+                logger.warning("Unknown stage type %r; skipping.", stype)
                 continue
 
-            if stype == "solver_distill":
-                # Deterministic per-category solvers. CPU only; emits a JSONL
-                # under ``data/generated/<stage>/rows.jsonl`` for a later
-                # ``data_merge`` stage to pick up.
-                out_path, sd_stats = run_solver_distill_stage(
-                    workspace,
-                    stage,
-                    benchmark=self._current_benchmark,
-                    smoke=self.mock,
-                )
-                aggregated["stage_metrics"].append(
-                    {"stage": stage.get("name"), "type": "solver_distill",
-                     "out_path": str(out_path), **sd_stats}
-                )
-                continue
+            # RL consumes a sampling client keyed by the starting adapter.
+            # Provide a factory so stages only build one when they need it.
+            def _sampling_client_fn(ckpt: CheckpointRef) -> Any:
+                return self.create_sampling_client(workspace, ckpt)
 
-            if stype == "data_merge":
-                # Dedup + upsample across earlier data-stage outputs; appends
-                # the merged JSONL to ``data/sources.yaml`` so SFT stages
-                # downstream consume it uniformly.
-                out_path, dm_stats = run_data_merge_stage(workspace, stage)
-                aggregated["stage_metrics"].append(
-                    {"stage": stage.get("name"), "type": "data_merge",
-                     "out_path": str(out_path), **dm_stats}
-                )
-                continue
-
-            if stype == "rl":
-                # GSPO / DAPO RL. The rollout phase needs vLLM + the rollout
-                # adapter; the update phase needs HF + PEFT on the SAME GPU.
-                # To fit on one GPU we:
-                #   (a) build only the sampling client first,
-                #   (b) defer the training-client build to a factory that
-                #       run_gspo_stage calls AFTER tearing down vLLM,
-                #   (c) seed the training client from the same starting
-                #       adapter as the rollout.
-                sampling_ckpt = last_ckpt or _seed_adapter_ref(workspace)
-                if sampling_ckpt is None:
-                    raise RuntimeError(
-                        "rl stage needs a starting adapter but none was produced "
-                        "by an earlier SFT stage and model/adapter.yaml has no "
-                        "seed_adapter_path set."
-                    )
-
-                if self.mock:
-                    training_client = _ensure_training_client()
-                    sampling_client = self.create_sampling_client(workspace, sampling_ckpt)
-                    ckpt, rl_metrics = run_gspo_stage(
-                        workspace,
-                        stage,
-                        sampling_client=sampling_client,
-                        training_client_factory=lambda: training_client,
-                        benchmark=self._current_benchmark,
-                        budget_seconds=remaining,
-                        smoke=True,
-                        training_client=training_client,
-                    )
-                else:
-                    # Non-mock: training client is built lazily, after
-                    # sampling_client.close() inside run_gspo_stage.
-                    if shared_training_client is not None:
-                        # Tear down any pre-existing training client so the
-                        # rollout phase has the full GPU.
-                        close = getattr(shared_training_client, "close", None)
-                        if close is not None:
-                            close()
-                        shared_training_client = None
-                    sampling_client = self.create_sampling_client(workspace, sampling_ckpt)
-
-                    def _build_training_client() -> Any:
-                        nonlocal shared_training_client
-                        shared_training_client = self.create_training_client(
-                            workspace, checkpoint=sampling_ckpt
-                        )
-                        return shared_training_client
-
-                    ckpt, rl_metrics = run_gspo_stage(
-                        workspace,
-                        stage,
-                        sampling_client=sampling_client,
-                        training_client_factory=_build_training_client,
-                        benchmark=self._current_benchmark,
-                        budget_seconds=remaining,
-                        smoke=False,
-                    )
-                aggregated["stage_metrics"].append(rl_metrics)
-                last_ckpt = ckpt
-                continue
-
-            if stype != "sft":
-                continue
-
-            # Smoke path still uses the mock Datum iterable; real path pulls
-            # its tokenized dataset from ``render_hf_dataset`` inside
-            # ``train_worker`` and ignores the ``datums`` arg.
-            #
-            # DDP dispatch: when AE_TRAIN_DDP=1, we pass training_client=None
-            # so train_worker._run_real_stage branches to the torchrun-based
-            # DDP worker (which owns its own model load across 8 ranks).
-            # Without this, the in-process HFTrainingClient would be built
-            # here on cuda:0 only, defeating the multi-GPU plan.
-            datums = list(render_datums(workspace, smoke=self.mock)) if self.mock else None
-            use_ddp = not self.mock and os.environ.get("AE_TRAIN_DDP", "0") == "1"
-            client = None if (self.mock or use_ddp) else _ensure_training_client()
-            ckpt, stage_metrics = run_sft_stage(
-                workspace,
-                stage,
-                datums,
-                optimizer=optimizer,
-                smoke=self.mock,
+            ctx = StageContext(
+                workspace=workspace,
+                stage=stage,
+                benchmark=self._current_benchmark,
                 budget_seconds=remaining,
-                training_client=client,
+                smoke=self.mock,
+                last_ckpt=last_ckpt,
+                optimizer=optimizer,
+                training_client_fn=_ensure_training_client,
+                close_training_client_fn=_close_shared_training_client,
+                sampling_client_fn=_sampling_client_fn,
             )
-            aggregated["stage_metrics"].append(stage_metrics)
-            last_ckpt = ckpt
+            result = stage_adapter(ctx)
+
+            metrics = dict(result.metrics)
+            metrics.setdefault("stage", stage.get("name"))
+            metrics.setdefault("type", stype)
+            aggregated["stage_metrics"].append(metrics)
+            if result.checkpoint is not None:
+                last_ckpt = result.checkpoint
 
         # Tear down the shared client so the subsequent vLLM eval has GPU
         # memory headroom. Mock clients have no close().
-        if shared_training_client is not None:
-            close = getattr(shared_training_client, "close", None)
-            if close is not None:
-                close()
+        _close_shared_training_client()
 
         if last_ckpt is None:
             # No SFT stage ran — emit a shell checkpoint so downstream eval
@@ -375,14 +291,17 @@ class SingleNodeTinkerLiteBackend:
                 metadata={"pipeline_stages": len(stages)},
             )
         else:
-            # Validity guard: the real trainer must have produced an adapter
-            # directory with ``adapter_config.json``. Missing either is a
-            # hard failure — raise so ``run_trial`` catches and flips the
+            # Validity guard: the real trainer must have produced either a
+            # PEFT adapter dir (``adapter_config.json``) or a full-weight
+            # checkpoint (``config.json`` + model weights). Missing both is
+            # a hard failure — raise so ``run_trial`` catches and flips the
             # trial status to ``train_failed``.
             adapter_dir = Path(last_ckpt.path)
-            if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
+            has_adapter = (adapter_dir / "adapter_config.json").is_file()
+            has_full = (adapter_dir / "config.json").is_file()
+            if not adapter_dir.is_dir() or not (has_adapter or has_full):
                 raise RuntimeError(
-                    f"Expected adapter_config.json under {adapter_dir} after real SFT"
+                    f"Expected adapter_config.json OR config.json under {adapter_dir} after real SFT"
                 )
             adapter = last_ckpt
         aggregated["total_seconds"] = time.time() - start

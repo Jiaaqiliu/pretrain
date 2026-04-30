@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..types import CheckpointRef
+from ...types import CheckpointRef
 
 
 def pack_adapter(

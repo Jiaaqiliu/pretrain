@@ -29,9 +29,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from ..data.base import GeneratedRow, SolverResult
-from ..data.cot_template import CoTPostprocessConfig, postprocess_cot
-from ..data.recipe import DataRecipe, load_recipe
+from ...data.base import GeneratedRow, SolverResult
+from ...data.cot_template import CoTPostprocessConfig, postprocess_cot
+from ...data.recipe import DataRecipe, load_recipe
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +277,19 @@ def _write_jsonl(path: Path, rows: list[GeneratedRow]) -> None:
 
 
 __all__ = ["run_solver_distill_stage"]
+
+
+# ── StageRegistry adapter ────────────────────────────────────────────────
+
+from ...stage_registry import StageContext, StageResult, register_stage  # noqa: E402
+
+
+@register_stage("solver_distill")
+def _solver_distill_stage_adapter(ctx: StageContext) -> StageResult:
+    out_path, stats = run_solver_distill_stage(
+        ctx.workspace, ctx.stage, benchmark=ctx.benchmark, smoke=ctx.smoke,
+    )
+    return StageResult(
+        checkpoint=None,
+        metrics={"type": "solver_distill", "out_path": str(out_path), **stats},
+    )

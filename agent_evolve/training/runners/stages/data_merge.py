@@ -25,9 +25,9 @@ from typing import Any
 
 import yaml
 
-from ..data.base import GeneratedRow
-from ..data.dedup import dedup, upsample
-from ..data.recipe import DataRecipe, load_recipe
+from ...data.base import GeneratedRow
+from ...data.dedup import dedup, upsample
+from ...data.recipe import DataRecipe, load_recipe
 
 logger = logging.getLogger(__name__)
 
@@ -162,3 +162,17 @@ def _append_to_sources(workspace: Any, jsonl_path: Path, *, fmt: str) -> None:
 
 
 __all__ = ["run_data_merge_stage"]
+
+
+# ── StageRegistry adapter ────────────────────────────────────────────────
+
+from ...stage_registry import StageContext, StageResult, register_stage  # noqa: E402
+
+
+@register_stage("data_merge")
+def _data_merge_stage_adapter(ctx: StageContext) -> StageResult:
+    out_path, stats = run_data_merge_stage(ctx.workspace, ctx.stage)
+    return StageResult(
+        checkpoint=None,
+        metrics={"type": "data_merge", "out_path": str(out_path), **stats},
+    )

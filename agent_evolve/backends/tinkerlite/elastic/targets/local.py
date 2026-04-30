@@ -154,7 +154,7 @@ class LocalComputeTarget:
             f"--nproc_per_node={world_size}",
             "--master_addr=127.0.0.1",
             f"--master_port={29500 + (hash(str(cfg_path)) % 1000)}",
-            "-m", "agent_evolve.training.runners.train_worker_ddp",
+            "-m", "agent_evolve.training.runners.ddp_worker",
             "--config", str(cfg_path),
         ]
         log_path = log_dir / f"{stage_label}.local.log"

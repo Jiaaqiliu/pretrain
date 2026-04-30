@@ -104,5 +104,40 @@ class TrainingBenchmarkAdapter(Protocol):
         consumed by a future ``ood_augment`` stage. Safe to leave empty."""
         ...
 
+    # ── Optional: LLM-pipeline hooks ──────────────────────────────────
+    #
+    # Benchmarks that use ``teacher_distill`` and/or ``rl`` stages
+    # implement these to tell the stage workers how to build prompts,
+    # extract answers, and verify correctness. If missing, the current
+    # stage workers fall back to ``benchmarks.nemo_reasoner`` imports
+    # (legacy behavior). New benchmarks should implement these — see
+    # ``INTEGRATION.md`` §5.
+
+    def build_eval_prompt(self, row: Any, tokenizer: Any = None) -> str:
+        """Return the full chat-templated prompt string for one row.
+        Consumed by ``runners/stages/eval.py`` and ``rl.py``."""
+        ...
+
+    def extract_final_answer(self, text: str | None) -> str:
+        """Parse the final answer from a model completion. Returns a
+        canonical string (``"NOT_FOUND"`` on failure). Consumed by
+        ``teacher_distill`` and ``rl``."""
+        ...
+
+    def verify(self, pred: str, gt: str) -> bool:
+        """Return True iff ``pred`` matches ``gt`` under this benchmark's
+        correctness rule (relative-tolerance numeric, exact string, etc.)."""
+        ...
+
+    def load_distill_prompts(self, workspace: Any, stage: dict) -> Iterable[Any]:
+        """Yield prompts for ``teacher_distill``. Replaces the
+        legacy hard-coded ``data/splits/train_local.csv`` path."""
+        ...
+
+    def load_rl_prompts(self, workspace: Any, stage: dict) -> Iterable[Any]:
+        """Yield prompts for ``rl`` rollouts. Replaces the legacy
+        hard-coded ``data/splits/train_local.csv`` path."""
+        ...
+
 
 __all__ = ["TrainingBenchmarkAdapter"]

@@ -35,7 +35,7 @@ def test_command_uses_torchrun_module() -> None:
     # k8s vs. local.
     assert "-m" in cmd and "torch.distributed.run" in cmd
     assert "--nproc_per_node=4" in cmd
-    assert "-m" in cmd and "agent_evolve.training.runners.train_worker_ddp" in cmd
+    assert "-m" in cmd and "agent_evolve.training.runners.ddp_worker" in cmd
     assert "--config" in cmd
     assert cmd[cmd.index("--config") + 1] == "/fsx/zzsamshi/a-evolve/runs/foo/.ddp_config.json"
 

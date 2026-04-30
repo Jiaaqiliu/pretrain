@@ -1,11 +1,12 @@
 """Parent-side launcher for single-node DDP training stages.
 
 Dispatches ``torchrun --nproc_per_node=N -m
-agent_evolve.training.runners.train_worker_ddp`` as a subprocess. The parent
+agent_evolve.training.runners.ddp_worker`` as a subprocess. The parent
 process stays single-threaded; the subprocess spawns ``world_size`` ranks.
 
-Mirrors the pattern already used by ``synth_worker.py`` (subprocess-isolated
-120B teacher distill) — subprocess exit frees all CUDA state cleanly.
+Mirrors the pattern already used by ``stages/teacher_distill.py``
+(subprocess-isolated 120B teacher distill) — subprocess exit frees all CUDA
+state cleanly.
 
 Public API:
     run_sft_ddp(workspace, stage, optimizer_cfg, batching_cfg, adapter_cfg,
@@ -91,7 +92,7 @@ def _spawn_torchrun(cfg_path: Path, world_size: int, log_prefix: str) -> None:
         # per-stage so concurrent cycles (if ever) don't collide.
         f"--master_port={29500 + (hash(str(cfg_path)) % 1000)}",
         "-m",
-        "agent_evolve.training.runners.train_worker_ddp",
+        "agent_evolve.training.runners.ddp_worker",
         "--config",
         str(cfg_path),
     ]

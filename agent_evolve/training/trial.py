@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .runner_protocol import TrainingJobRunner
 from .types import (
     TrainingSearchNode,
     TrainingTrialResult,
@@ -21,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class TrialRunner:
-    def __init__(self, backend: Any, benchmark: Any):
+    def __init__(self, backend: TrainingJobRunner, benchmark: Any):
+        # ``backend`` is any ``TrainingJobRunner`` — LLM backend, sklearn
+        # runner, etc. See ``INTEGRATION.md`` §1.
         self.backend = backend
         self.benchmark = benchmark
 

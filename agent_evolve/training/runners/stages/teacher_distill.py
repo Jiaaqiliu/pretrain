@@ -16,7 +16,7 @@ gen_teacher_traces.py``:
 Loading the teacher (even at TP=4) leaves residual CUDA state on every worker
 GPU that PyTorch does not release on ``del llm + empty_cache()``. To keep the
 subsequent SFT stage from OOMing on GPU 0, real synth runs in a SUBPROCESS
-by default (via ``python -m agent_evolve.training.runners.synth_worker``),
+by default (via ``python -m agent_evolve.training.runners.stages.teacher_distill``),
 so the OS reclaims the teacher's CUDA state when the subprocess exits. Set
 ``AE_SYNTH_SUBPROCESS=0`` to force in-process (e.g. for standalone debugging).
 """
@@ -35,7 +35,7 @@ from typing import Any
 
 import yaml
 
-from ...benchmarks.nemo_reasoner import (
+from ....benchmarks.nemo_reasoner import (
     EVAL_INSTRUCTION_SUFFIX,
     build_eval_prompt,
     extract_final_answer,
@@ -157,7 +157,7 @@ def _run_real_synth_subprocess(cfg: dict) -> None:
     cmd = [
         sys.executable,
         "-m",
-        "agent_evolve.training.runners.synth_worker",
+        "agent_evolve.training.runners.stages.teacher_distill",
         "--config",
         str(cfg_path),
     ]
@@ -400,3 +400,24 @@ def _main_cli() -> int:
 
 if __name__ == "__main__":
     sys.exit(_main_cli())
+
+
+# ── StageRegistry adapter ────────────────────────────────────────────────
+# Pipeline YAML key is still ``synth_generate`` (user-facing, kept for
+# backward compat). The module was renamed; the config string stays.
+
+from ...stage_registry import StageContext, StageResult, register_stage  # noqa: E402
+
+
+@register_stage("synth_generate")
+def _synth_generate_stage_adapter(ctx: StageContext) -> StageResult:
+    out_path, stats = run_synth_stage(
+        ctx.workspace,
+        ctx.stage,
+        smoke=ctx.smoke,
+        budget_seconds=ctx.budget_seconds,
+    )
+    return StageResult(
+        checkpoint=None,
+        metrics={"type": "synth_generate", "out_path": str(out_path), **stats},
+    )

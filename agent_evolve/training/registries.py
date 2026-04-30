@@ -19,10 +19,16 @@ TRAINING_ALGORITHMS: dict[str, str] = {
     "mcgs": "agent_evolve.training.algorithms.mcgs.search.MCGSSearch",
 }
 
-TRAINING_BACKENDS: dict[str, str] = {
+# The authoritative name is ``TRAINING_JOB_RUNNERS`` (implements
+# ``TrainingJobRunner`` Protocol in ``runner_protocol.py``). A registered
+# value can be a non-LLM job (sklearn, JAX) as easily as the default LLM
+# backends. ``TRAINING_BACKENDS`` is kept as a backward-compat alias that
+# mutates through the same dict.
+TRAINING_JOB_RUNNERS: dict[str, str] = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
     "k8s_h200": "agent_evolve.backends.tinkerlite.elastic.K8sTinkerLiteBackend",
 }
+TRAINING_BACKENDS = TRAINING_JOB_RUNNERS  # deprecated alias; use TRAINING_JOB_RUNNERS
 
 
 def _import_class(dotted_path: str) -> type:
@@ -58,7 +64,11 @@ def resolve_algorithm(value: Any) -> Any:
     return value
 
 
-def resolve_backend(value: Any) -> Any:
+def resolve_job_runner(value: Any) -> Any:
     if isinstance(value, str):
-        return _resolve(value, TRAINING_BACKENDS, "backend")
+        return _resolve(value, TRAINING_JOB_RUNNERS, "job_runner")
     return value
+
+
+# Backward-compat alias. New code should call ``resolve_job_runner``.
+resolve_backend = resolve_job_runner

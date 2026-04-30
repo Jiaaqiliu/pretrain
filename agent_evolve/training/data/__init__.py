@@ -30,10 +30,21 @@ from .base import (
     TrainingExample,
     Verifier,
 )
+from .generator import (
+    DATA_GENERATORS,
+    DataGenerator,
+    register_data_generator,
+    resolve_data_generator,
+)
 from .recipe import DataRecipe, load_recipe
+
+# Import built-in generators for their @register_data_generator side effects.
+from . import generators  # noqa: F401
 
 __all__ = [
     "CoTRenderer",
+    "DATA_GENERATORS",
+    "DataGenerator",
     "DataRecipe",
     "DataSynthGenerator",
     "GeneratedRow",
@@ -42,4 +53,6 @@ __all__ = [
     "TrainingExample",
     "Verifier",
     "load_recipe",
+    "register_data_generator",
+    "resolve_data_generator",
 ]

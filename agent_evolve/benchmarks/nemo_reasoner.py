@@ -143,6 +143,25 @@ class NemoReasonerBenchmark:
     def __init__(self) -> None:
         self._cached_dev: tuple[Path, list[DevRow]] | None = None
 
+    # ── LLM-pipeline hooks (see TrainingBenchmarkAdapter) ──────────
+    #
+    # These thin wrappers expose the module-level helpers as instance
+    # methods so stage workers can route through ``benchmark.*`` and
+    # eventually drop the direct ``from ...benchmarks.nemo_reasoner``
+    # imports. See ``benchmarks/helpers.py`` for the fallback shim.
+
+    def build_eval_prompt(self, row: Any, tokenizer: Any = None) -> str:
+        raw_prompt = getattr(row, "prompt", None) if not isinstance(row, str) else row
+        if raw_prompt is None and isinstance(row, dict):
+            raw_prompt = row.get("prompt", "")
+        return build_eval_prompt(raw_prompt, tokenizer)
+
+    def extract_final_answer(self, text: str | None) -> str:
+        return extract_final_answer(text)
+
+    def verify(self, pred: str, gt: str) -> bool:
+        return verify(gt, pred)
+
     # ── Spec ────────────────────────────────────────────────────────
 
     def primary_metric(self, workspace: Any | None = None) -> MetricSpec:

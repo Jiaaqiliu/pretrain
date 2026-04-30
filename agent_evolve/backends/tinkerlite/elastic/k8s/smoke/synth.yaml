@@ -19,7 +19,7 @@ spec:
       command: ["python"]
       args:
         - "-m"
-        - "agent_evolve.training.runners.synth_worker"
+        - "agent_evolve.training.runners.stages.teacher_distill"
         - "--config"
         - "/fsx/zzsamshi/a-evolve/agent_evolve/backends/tinkerlite/elastic/k8s/smoke/synth_cfg.json"
       env:

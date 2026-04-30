@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..types import EvalPlan
+from ...types import EvalPlan
 
 logger = logging.getLogger(__name__)
 

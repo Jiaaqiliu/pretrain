@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent_evolve.backends.tinkerlite.clients.mock import MockTrainingClient
-from agent_evolve.training.runners.rl_worker import (
+from agent_evolve.training.runners.stages.rl import (
     group_normalize_advantages,
     run_gspo_stage,
 )

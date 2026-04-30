@@ -38,7 +38,9 @@ agent_evolve/
 ├── training/
 │   ├── api.py                    TrainingEvolver facade
 │   ├── types.py                  All shared dataclasses (single source of truth)
-│   ├── registries.py             Dotted-path registry for benchmarks / algorithms / backends
+│   ├── registries.py             Dotted-path registry for benchmarks / algorithms / job runners
+│   ├── runner_protocol.py        TrainingJobRunner Protocol (§16) — root extension point
+│   ├── stage_registry.py         @register_stage decorator + StageContext/StageResult (§16)
 │   ├── schema.py                 Workspace structural validation
 │   ├── workspace.py              Fork / fingerprint / materialize_incumbent
 │   ├── loop.py                   TrainingEvolutionLoop — no accept/reject gate
@@ -59,21 +61,31 @@ agent_evolve/
 │   │       └── fusion.py         FusionPolicy (cross-branch recombination on stagnation)
 │   ├── data/                     Benchmark-agnostic data-generation primitives (§15)
 │   │   ├── base.py               Solver / Verifier / CoTRenderer / DataSynthGenerator Protocols
+│   │   ├── generator.py          DataGenerator Protocol + registry (§16) — new 4th axis
+│   │   ├── generators/           Built-in DataGenerator impls (solver_distill, teacher_llm)
 │   │   ├── recipe.py             DataRecipe YAML loader + validator (evolvable surface)
 │   │   ├── dedup.py              Deterministic dedup key + per-source upsample
 │   │   ├── cot_template.py       Force \boxed{answer} + inject [verify]: PASS, idempotent
 │   │   └── verifier_gate.py     Shared correctness filter (answer + marker + token cap)
 │   └── runners/
-│       ├── data_worker.py        render_datums (smoke) + render_hf_dataset (real)
-│       ├── train_worker.py       MockTrainingClient (smoke) OR HF+PEFT Trainer (real)
-│       ├── eval_worker.py        run_eval_plan: smoke stub OR vLLM + LoRA
-│       ├── pack_adapter_worker.py  Only used by smoke path
-│       ├── synth_worker.py       Teacher-LLM distillation (+ verifier_gate intent flag)
-│       ├── solver_distill_worker.py  Stage: deterministic per-category solver → CoT JSONL
-│       └── data_merge_worker.py  Stage: dedup + upsample + register in data/sources.yaml
+│       ├── ddp_worker.py         torchrun subprocess entrypoint (SFT + GSPO update)
+│       ├── stages/               one module per pipeline stage.type
+│       │   ├── sft.py            MockTrainingClient (smoke) OR HF+PEFT Trainer (real)
+│       │   ├── rl.py             GSPO / DAPO rollout + clipped-IS update
+│       │   ├── teacher_distill.py  Teacher-LLM distillation (stage.type=synth_generate)
+│       │   ├── solver_distill.py   Deterministic per-category solver → CoT JSONL
+│       │   ├── data_merge.py     Dedup + upsample + register in data/sources.yaml
+│       │   ├── generate.py       Unified type: generate, generator: <name> dispatcher (§16)
+│       │   └── eval.py           run_eval_plan: smoke stub OR vLLM + LoRA
+│       └── helpers/
+│           ├── dataset.py        render_datums (smoke) + render_hf_dataset (real)
+│           └── pack_adapter.py   Only used by smoke path
 ├── backends/tinkerlite/
 │   ├── base.py                   TinkerLiteBackend Protocol + Datum/ModelInput/SamplingParams
 │   ├── common_cfg.py             Pure .ddp_config.json builder (single source of truth)
+│   ├── adapters/                 ModelAdapter Protocol + registry (§16)
+│   │   ├── base.py               Protocol, register_adapter, resolve_adapter, ADAPTERS
+│   │   └── lora.py               LoRAAdapter (today's PEFT behavior; kind="lora")
 │   ├── clients/
 │   │   ├── mock.py               MockTrainingClient / MockSamplingClient
 │   │   ├── hf.py                 HF+PEFT TrainingClient (real single-GPU path)
@@ -94,7 +106,8 @@ agent_evolve/
 │           ├── image/            Docker image build (thin trainer; code mounted via FSx PVC)
 │           └── smoke/            host-side smoke drivers + manual kubectl manifests
 └── benchmarks/
-    ├── training_base.py          TrainingBenchmarkAdapter Protocol
+    ├── training_base.py          TrainingBenchmarkAdapter Protocol (+ optional LLM hooks §16)
+    ├── helpers.py                Cross-benchmark shim: prefer benchmark.*, fall back to nemo_reasoner
     └── nemo_reasoner.py          NemoReasonerBenchmark — smoke + Kaggle modes
 ```
 
@@ -125,6 +138,347 @@ TrainingEvolutionLoop.run(cycles=N)
     └─ if report.incumbent_changed:
         workspace.materialize_incumbent(node)                    → evolution/incumbent/
 ```
+
+## 3.5 Data level — how a single training row flows through the pipeline
+
+Three distinct lenses on "what happens to a row" during one cycle. Reading
+top-to-bottom, a row is: **produced** by a data-gen stage → **merged + dedup'd**
+→ **tokenized** → **consumed** as a training batch → **evaluated** (eval uses
+a different, eval-specific data path).
+
+### (a) Data-generation lane — `solver_distill` / `synth_generate` → `data_merge`
+
+```
+benchmark.iter_training_rows(workspace)                              ─┐
+  └─ yields TrainingExample(id, prompt, answer, category, metadata)  │
+                                                                     │
+  ┌───────────── solver_distill stage (CPU, per category) ───────────┤
+  │  1. solver = benchmark.solvers()[row.category]                   │
+  │  2. sr = solver.solve(row.prompt)          → SolverResult        │
+  │  3. verifier = benchmark.verifiers()[row.category]               │
+  │     if not verifier.check(sr.predicted_answer, row.answer):      │
+  │         drop; increment drop_reasons["wrong_answer"]             │
+  │  4. renderer = benchmark.cot_renderers()[row.category]           │
+  │     cot = renderer.render(row.prompt, row.answer, sr.trace_dict) │
+  │  5. cot = cot_template.postprocess_cot(cot, row.answer)          │
+  │         ↳ forces \boxed{row.answer}                              │
+  │         ↳ injects [verify]: PASS if not already present          │
+  │  6. emit GeneratedRow(id, prompt, answer, category,              │
+  │                       cot, source="solver", metadata={})         │
+  │                                                                  │
+  ├───────────── synth_generate (teacher LLM, separate subprocess) ──┤
+  │  Same shape of output: GeneratedRow(..., source="teacher_llm")   │
+  │  (verifier_gate is an intent flag today — gate not yet enforced) │
+  │                                                                  │
+  ▼                                                                  ▼
+data/generated/solver_distill/rows.jsonl       data/synth/teacher_traces.jsonl
+  stats.json                                     stats.json
+                                                                     │
+data_merge stage                                                     │
+  1. for src in stage.inputs (in order):                             ◀
+       read each rows.jsonl; parse GeneratedRow.from_dict
+  2. dedup.dedup(rows, filters.dedup_by)     first-seen wins,
+                                             stable order (solver > teacher
+                                             when both supplied)
+  3. dedup.upsample(rows, recipe)            ×recipe.categories[cat].solver_upsample
+                                             ×recipe.categories[cat].teacher_upsample
+  4. write merged.jsonl  +  stats.json
+  5. append {path: merged.jsonl, split: "train", format: "jsonl_cot"}
+     into data/sources.yaml     ◀── the SFT loader reads this
+```
+
+**Key contract on every GeneratedRow at this point:** the final `\boxed{...}`
+in `row.cot` equals `row.answer` exactly. No generator — solver, teacher,
+future OOD — can violate this; `postprocess_cot` rewrites the box
+unconditionally (see §13 invariant 10).
+
+### (b) SFT lane — `sft` stage consumes `data/sources.yaml`
+
+```
+train/pipeline.yaml::stages[sft]                                  (stage config)
+  ├─ epochs, max_steps, loss, batching.yaml, optimizer.yaml
+  ▼
+sft stage adapter  (StageRegistry dispatch — stage_registry.py:resolve_stage)
+  ▼
+run_sft_stage(workspace, stage, ...)
+  ├─ smoke: render_datums(workspace)   →  Iterable[Datum]  (mock ints)
+  │         └─ MockTrainingClient.forward_backward(batch, "cross_entropy")
+  │
+  ▼ real:
+  render_hf_dataset(workspace, tokenizer, max_len)
+    │  for src in data/sources.yaml (split="train"):
+    │    for row in open(src.path):
+    │      prompt_ids     = tokenizer.encode(row.prompt_rendered)     ┐
+    │      completion_ids = tokenizer.encode(row.completion)          │ tokenize
+    │      input_ids  = prompt_ids + completion_ids                   │ per row
+    │      labels     = [-100] * len(prompt_ids) + completion_ids     │ (prompt
+    │      attention_mask = [1] * len(input_ids)                      │  mask'd)
+    │      if len(input_ids) > max_len: left-truncate prompt          ┘
+    ▼
+  HF Dataset {input_ids, attention_mask, labels}  (one row per JSONL line)
+    │
+    ▼  shuffle(seed)  →  batched per_device_bs
+    │
+    ▼  DDP sharded via DistributedSampler (one slice per rank) — OR
+    │  single-process path via DataLoader(..., collate_fn=PadToLongest)
+    │
+    ▼  for each optim step (epoch × batches // grad_accum):
+    │    for micro_batch in range(grad_accum):
+    │      out = model(input_ids, attention_mask, labels)             (HF computes
+    │      (out.loss / grad_accum).backward()                          CE per token
+    │                                                                  w/ -100 mask)
+    │    optimizer.step(); optimizer.zero_grad()                      ← lr = cosine
+    ▼
+  resolve_adapter(adapter_cfg.type).save(model, tokenizer, outdir)   ← LoRA today;
+                                                                       DoRA / full /
+                                                                       QLoRA via §16
+    │
+    ▼  CheckpointRef(name=stage_name, path=outdir, kind="adapter" | "full_weights")
+       last_ckpt := CheckpointRef            ◀── consumed by next stage (rl/eval)
+```
+
+**Data reshape per row:** `{prompt_rendered: str, completion: str}` → tokenize
+with prompt-masking → model trains only on completion tokens. The `-100` in
+`labels` is what tells HF loss to ignore the prompt positions.
+
+### (c) RL rollout lane — `rl` stage
+
+```
+last_ckpt (from prior SFT)   +   benchmark.load_rl_prompts(workspace, stage)
+      │                                        │
+      │                                        ▼
+      │                        for prompt_row in prompts:                         ┐
+      ├──▶ sampling_client_fn(last_ckpt)       for g in range(n_samples):         │
+      │    └─ VLLMSamplingClient (LoRA adapter │   completion, logprobs_old =     │ rollout
+      │                           via          │       sampler.sample(prompt)     │  (vLLM)
+      │                           LoRARequest)  ▼   advantage = group_normalize(...) │
+      │                             rollout record {                              │
+      │                               prompt_ids, completion_tokens,              │
+      │                               logprobs_old, advantage, prompt_len,        │
+      │                             }                                             ┘
+      │                                        │
+      │                                        ▼
+      │                             rollouts.jsonl  (one record per completion)
+      │
+      ├──▶ close_training_client_fn()    ◀── release SFT client GPU
+      │                                        ▼
+      ├──▶ training_client_fn()               HFTrainingClient (fresh,
+      │                                        loaded from last_ckpt)
+      │                                        │
+      │                                        ▼
+      │    for rec in rollouts.jsonl:
+      │      x = Datum(
+      │        model_input.tokens = prompt_ids + completion_tokens,
+      │        loss_fn_inputs = {
+      │          logprobs_old, advantage, prompt_len,
+      │        },
+      │      )
+      │      forward_backward(x, "gspo"  OR  "dapo_token_level")      ← clipped
+      │      if step % grad_accum == 0: optim_step(AdamParams(lr=...))   importance
+      │                                                                  sampling
+      ▼
+  new CheckpointRef — kind="adapter", path=rl_gspo outdir
+```
+
+**Key shape twist:** RL `Datum.model_input.tokens` contains prompt+completion
+*concatenated*. The training client's GSPO loss slices at `prompt_len` to
+recover per-completion-token logits, then clips the importance ratio
+`exp(logprob_new − logprob_old)` against `eps_low/eps_high`.
+
+### (d) Eval lane — `benchmark.evaluate(workspace, checkpoint, backend, split)`
+
+Entirely independent of (a)–(c). Consumes the checkpoint produced by (b) or
+(c), does **not** consume `data/sources.yaml`.
+
+```
+benchmark.build_eval_plan(workspace, checkpoint, split)  →  EvalPlan
+  │   generation_config: {model_path, tp, max_model_len, max_tokens, limit, ...}
+  │   checkpoint: the adapter path
+  │
+  ▼
+backend.run_eval_plan(plan)  (SingleNodeTinkerLiteBackend.run_eval_plan
+                              → stages.eval.run_eval_plan)
+  ├─ smoke: read eval/local_holdout_small.jsonl; score is_correct flags
+  │         write metrics.json + predictions.jsonl
+  │
+  ▼ real:
+  benchmark.load_dev_rows(workspace, split)  →  list[DevRow]
+     (DevRow = {id, prompt, answer, domain, ...} — shape is benchmark-specific)
+  │
+  ▼  for row in dev_rows:
+  │    prompt_str = benchmark.build_eval_prompt(row, tokenizer)
+  │    ↳ for Nemotron: chat_template + "\nPlease put your final answer inside
+  │                                      \boxed{}..." suffix
+  │
+  ▼  vllm.LLM.generate(prompt_strs, SamplingParams(T,top_p,max_tokens),
+                       lora_request=adapter.vllm_lora_request(checkpoint))
+  │                                              ← resolve_adapter(...) in §16;
+  │                                                LoRA=LoRARequest, full=None
+  │
+  ▼  for row, out in zip(dev_rows, outputs):
+  │    pred = benchmark.extract_final_answer(out.text)         → canonical str
+  │    is_correct = benchmark.verify(pred, row.answer)          → bool
+  │    record row-level prediction
+  │
+  ▼  metrics, buckets, records = benchmark.score_predictions(dev_rows, raw_texts)
+  │
+  ▼  write metrics.json + predictions.jsonl + error_buckets.json
+       + raw_outputs.jsonl under evolution/eval/<ckpt>/<split>/
+```
+
+**What flows back to MCGS:** `metrics.primary_metric_value` (one float) plus
+`ErrorBuckets.counts` (dict[str,int]). Per-prediction text is on disk in
+`predictions.jsonl` but MCGS doesn't read it today (§4 — example-driven
+mutator is deliberately not wired yet).
+
+### Sources of truth at each transition
+
+| Transition | Schema | Enforced by |
+|---|---|---|
+| benchmark → generator | `TrainingExample` | [training/data/base.py](agent_evolve/training/data/base.py) |
+| generator → JSONL | `GeneratedRow` dataclass round-trip | `to_dict/from_dict` + `test_base_protocols.py` |
+| JSONL → SFT row | `{prompt_rendered, completion}` keys required | `render_hf_dataset` raises if missing |
+| SFT row → Datum | `Datum(model_input.tokens, loss_fn_inputs={attention_mask, labels})` | [backends/tinkerlite/base.py](agent_evolve/backends/tinkerlite/base.py) |
+| SFT checkpoint | `CheckpointRef.kind ∈ {"adapter","full_weights","sampler_weights","full_state"}` | `training/types.py` Literal (§16 widened) |
+| Eval result_dir | `metrics.json` + `predictions.jsonl` | `benchmark.parse_metrics` parses |
+| Cycle record | `MCGSCycleReport` | [training/types.py](agent_evolve/training/types.py) |
+
+## 3.6 Module level — what each module owns (responsibility map)
+
+Everything organized by "if I need to change X, which file do I touch".
+
+### The four-axes package layout (§1 recap + where each axis lives)
+
+```
+algorithm  →  training/algorithms/<name>/             ← reads metrics, proposes moves
+  + training/algorithms/null.py                         (reference impl: 45 LoC)
+  + training/algorithms/mcgs/{search,graph,node,         (UCT + mutation + reward
+       selection,mutation,reward,promotion,               + promotion + memory
+       memory,fusion}.py                                  + fusion — one file each)
+
+backend    →  backends/tinkerlite/<name>/             ← runs the pipeline, no scoring
+  + backends/tinkerlite/single_node/                    (local — mock/real)
+  + backends/tinkerlite/elastic/                        (k8s-first + local fallback §14)
+  + backends/tinkerlite/clients/{mock,hf,vllm}.py       (per-Protocol concrete impls)
+  + backends/tinkerlite/adapters/{base,lora}.py         (ModelAdapter registry §16)
+  + backends/tinkerlite/common_cfg.py                   (byte-identical .ddp_config.json)
+
+benchmark  →  benchmarks/<name>.py                    ← eval semantics, error buckets
+  + benchmarks/training_base.py                         (TrainingBenchmarkAdapter Protocol)
+  + benchmarks/helpers.py                               (routes teacher_distill/rl through
+                                                         benchmark.* with nemo_reasoner fallback)
+
+workspace  →  seed_workspaces/<name>/                 ← on-disk training DNA, evolvable
+```
+
+### Training subsystem (orchestration — shared by all algorithms/backends/benchmarks)
+
+| File | Owns | Depended on by |
+|---|---|---|
+| [training/api.py](agent_evolve/training/api.py) | `TrainingEvolver` facade — resolves string keys, validates workspace, builds loop. | End-user code |
+| [training/loop.py](agent_evolve/training/loop.py) | `TrainingEvolutionLoop` — per-cycle driver. Owns the `LoopContext` dataclass that algorithms read. No accept/reject gate here. | api.py |
+| [training/trial.py](agent_evolve/training/trial.py) | `TrialRunner` — thin wrapper around `backend.run_trial` that normalizes exceptions into `TrainingTrialResult(status="train_failed")` and applies `benchmark.check_validity`. | loop.py (via `LoopContext`) |
+| [training/observer.py](agent_evolve/training/observer.py) | Persists `MCGSCycleReport` to `evolution/reports/cycle_NNNN.json` and `TrainingTrialResult` to `evolution/observations/<node_id>.json`. Dumb serializer — no business logic. | loop.py |
+| [training/workspace.py](agent_evolve/training/workspace.py) | `TrainingWorkspace.fork(node_id, mutation, work_dir)` copies the root to a candidate dir + applies the `WorkspacePatch` + validates. Also `materialize_incumbent`, `fingerprint`. | algorithm + loop + tests |
+| [training/schema.py](agent_evolve/training/schema.py) | `validate_training_workspace(path)` — checks required files exist. Called inside `TrainingWorkspace.validate()`. | workspace.py |
+| [training/types.py](agent_evolve/training/types.py) | **Single source of truth** for every shared dataclass: `TrainingTrialResult`, `CheckpointRef`, `EvalMetrics`, `ErrorBuckets`, `ValidityReport`, `EvalPlan`, `TrainingSearchNode`, `MCGSCycleReport`, `WorkspaceMutation`, `WorkspacePatch`, `TrialBudget`. No other module re-defines these (§13 invariant 5). | everything |
+| [training/registries.py](agent_evolve/training/registries.py) | `TRAINING_BENCHMARKS / ALGORITHMS / JOB_RUNNERS` dicts + `resolve_*` functions. Dotted-path strings → classes. | api.py |
+| [training/runner_protocol.py](agent_evolve/training/runner_protocol.py) | `TrainingJobRunner` Protocol (§16) — root extension point. Even a sklearn runner implements just this. | trial.py, backends |
+| [training/stage_registry.py](agent_evolve/training/stage_registry.py) | `@register_stage(stype)` decorator + `StageContext` / `StageResult` dataclasses + `resolve_stage`. Replaces the old `if stype == "sft":` ladder. | single_node/backend.py dispatcher, stage modules |
+| [training/run.py](agent_evolve/training/run.py) | CLI entrypoint `python -m agent_evolve.training.run`. Just argparse + `TrainingEvolver().run()`. | end-users, CI |
+
+**Rule of thumb:** if a file here needs a new method, the extension is probably missing a registry — add one instead of editing (§13 invariant 5, INTEGRATION.md §8).
+
+### Algorithm subsystem (search logic)
+
+| File | Owns |
+|---|---|
+| [algorithms/null.py](agent_evolve/training/algorithms/null.py) | `NullSearchAlgorithm` — 45-line reference impl. Increments a counter, returns an empty `MCGSCycleReport`. Used to test loop/backend plumbing without dragging in MCGS. |
+| [algorithms/mcgs/search.py](agent_evolve/training/algorithms/mcgs/search.py) | `MCGSSearch.run_cycle(ctx)` — the whole cycle: select → mutate → fork → trial → reward → backprop → promotion → topk → memory → fusion → persist graph. |
+| [algorithms/mcgs/graph.py](agent_evolve/training/algorithms/mcgs/graph.py) | `TrainingSearchGraph` — persistent DAG. JSON save/load round-trips (§13 invariant 7). |
+| [algorithms/mcgs/node.py](agent_evolve/training/algorithms/mcgs/node.py) | `NodeStatus` enum + `node_summary(n) → TrainingSearchNodeSummary`. |
+| [algorithms/mcgs/selection.py](agent_evolve/training/algorithms/mcgs/selection.py) | `UCTSelector` (piecewise exploration decay + branch-diversity guard) + `TopKStore` (per-branch cap). |
+| [algorithms/mcgs/mutation.py](agent_evolve/training/algorithms/mcgs/mutation.py) | `BaselineMutationProposer` (rotating data-mix bag) + `LRBagMutationProposer` (lr sweep). |
+| [algorithms/mcgs/reward.py](agent_evolve/training/algorithms/mcgs/reward.py) | `DefaultRewardPolicy.compute(trial, validity, parent, graph) → float` — spec §8 formula. |
+| [algorithms/mcgs/promotion.py](agent_evolve/training/algorithms/mcgs/promotion.py) | `PromotionPolicy` — incumbent decision + tie-breakers (instability, seconds, tokens, buckets). |
+| [algorithms/mcgs/memory.py](agent_evolve/training/algorithms/mcgs/memory.py) | `NodeMemoryStore` — JSONL persistence + BM25-lite retrieval. |
+| [algorithms/mcgs/fusion.py](agent_evolve/training/algorithms/mcgs/fusion.py) | `FusionPolicy` — cross-branch recombination when stagnating. |
+
+### Runners subsystem (per-stage workers)
+
+Everything dispatchable from `train/pipeline.yaml::stages[i].type`. See INTEGRATION.md §2 for how to add a new stage type.
+
+| File | Owns | Stage type |
+|---|---|---|
+| [runners/stages/sft.py](agent_evolve/training/runners/stages/sft.py) | SFT orchestration: smoke (Mock) + real (in-process HF+PEFT) + real-DDP dispatch (`AE_TRAIN_DDP=1`). | `sft` |
+| [runners/stages/rl.py](agent_evolve/training/runners/stages/rl.py) | GSPO/DAPO: rollout via `SamplingClient` → advantage normalization → update via `TrainingClient.forward_backward("gspo")`. Includes the GPU-lifecycle dance (close SFT client before vLLM, rebuild after). | `rl` |
+| [runners/stages/teacher_distill.py](agent_evolve/training/runners/stages/teacher_distill.py) | 120B teacher distillation. Subprocess-isolated so teacher CUDA state is reclaimed on exit. | `synth_generate` |
+| [runners/stages/solver_distill.py](agent_evolve/training/runners/stages/solver_distill.py) | Deterministic per-category solver → verifier → CoT renderer → postprocess → JSONL. | `solver_distill` |
+| [runners/stages/data_merge.py](agent_evolve/training/runners/stages/data_merge.py) | Load each input JSONL → dedup (first-seen wins) → upsample per recipe → register in `data/sources.yaml`. | `data_merge` |
+| [runners/stages/generate.py](agent_evolve/training/runners/stages/generate.py) | Unified dispatcher for `type: generate, generator: <name>` — delegates to any `DataGenerator` from the registry (§16). | `generate` |
+| [runners/stages/eval.py](agent_evolve/training/runners/stages/eval.py) | `run_eval_plan(plan)` — smoke stub or real vLLM + LoRA loop. Invoked via `backend.run_eval_plan`, not through stage registry. | (not a pipeline stage) |
+| [runners/ddp_worker.py](agent_evolve/training/runners/ddp_worker.py) | `torchrun --nproc_per_node=N -m agent_evolve.training.runners.ddp_worker` subprocess entry. Handles SFT + GSPO update. Byte-for-byte the same under local or k8s. | (subprocess; not a stage) |
+| [runners/helpers/dataset.py](agent_evolve/training/runners/helpers/dataset.py) | `render_datums` (smoke — mock ints) + `render_hf_dataset` (real tokenization, prompt masking) + `PadToLongest` collator. | — |
+| [runners/helpers/pack_adapter.py](agent_evolve/training/runners/helpers/pack_adapter.py) | Smoke-only: wraps a checkpoint dir into a `CheckpointRef`. | — |
+
+### Data subsystem (benchmark-agnostic data primitives)
+
+| File | Owns |
+|---|---|
+| [data/base.py](agent_evolve/training/data/base.py) | 4 Protocols: `Solver / Verifier / CoTRenderer / DataSynthGenerator` (per-category). Dataclasses: `SolverResult`, `TrainingExample`, `GeneratedRow` (JSONL wire format). |
+| [data/generator.py](agent_evolve/training/data/generator.py) | `DataGenerator` Protocol (§16) — stage-level generation abstraction. `@register_data_generator` + `resolve_data_generator` + `DATA_GENERATORS` dict. |
+| [data/generators/solver_distill.py](agent_evolve/training/data/generators/solver_distill.py) | `SolverDistillGenerator` — registered wrapper. |
+| [data/generators/teacher_llm.py](agent_evolve/training/data/generators/teacher_llm.py) | `TeacherLLMGenerator` — registered wrapper. |
+| [data/recipe.py](agent_evolve/training/data/recipe.py) | `DataRecipe` + `CategoryRecipe` + `RecipeFilters` dataclasses + `load_recipe(path)`. Evolvable YAML — MCGS mutators target this. |
+| [data/dedup.py](agent_evolve/training/data/dedup.py) | `dedup_key(row, mode)` ("prompt_hash" or "prompt_and_source_hash") + `dedup(rows, filters)` (first-seen wins, stable order) + `upsample(rows, recipe)`. |
+| [data/cot_template.py](agent_evolve/training/data/cot_template.py) | `postprocess_cot(cot, answer)` — the load-bearing guarantee (§13 invariant 10): forces `\boxed{answer}` + injects `[verify]: PASS`. Idempotent. |
+| [data/verifier_gate.py](agent_evolve/training/data/verifier_gate.py) | `apply_verifier_gate(rows, verifiers, filters) → (kept, GateStats)` — shared correctness filter across any generator that produces first, verifies later. |
+
+### Backends subsystem (execution, no scoring)
+
+| File | Owns |
+|---|---|
+| [backends/tinkerlite/base.py](agent_evolve/backends/tinkerlite/base.py) | `TinkerLiteBackend` Protocol (LLM-specific extension of `TrainingJobRunner`) + `TrainingClient / SamplingClient` Protocols + all LLM dataclasses (`Datum, ModelInput, Prompt, SamplingParams, Logprobs, SampleResponse`). |
+| [backends/tinkerlite/common_cfg.py](agent_evolve/backends/tinkerlite/common_cfg.py) | Pure `.ddp_config.json` builders (`build_sft_cfg`, `build_gspo_cfg`). Single source of truth consumed by both local torchrun and k8s pod — byte-identical output guaranteed (§13 invariant 8). |
+| [backends/tinkerlite/adapters/base.py](agent_evolve/backends/tinkerlite/adapters/base.py) | `ModelAdapter` Protocol + `@register_adapter` + `resolve_adapter` + `ADAPTERS` dict + `ATTACH_MODE_WRAP`/`ATTACH_MODE_INPLACE` constants. §16 extension point — widens beyond LoRA. |
+| [backends/tinkerlite/adapters/lora.py](agent_evolve/backends/tinkerlite/adapters/lora.py) | `LoRAAdapter` — the PEFT LoRA implementation. Today's `HFTrainingClient` behavior, captured. |
+| [backends/tinkerlite/clients/mock.py](agent_evolve/backends/tinkerlite/clients/mock.py) | `MockTrainingClient` / `MockSamplingClient` — in-memory fakes. Geometric loss decay so smoke tests can assert progress. |
+| [backends/tinkerlite/clients/hf.py](agent_evolve/backends/tinkerlite/clients/hf.py) | `HFTrainingClient` — eager HF + PEFT training client. Supports `cross_entropy`, `gspo`, `dapo_token_level` loss functions. Called from `sft.py` (in-process path) and `rl.py` (update phase). |
+| [backends/tinkerlite/clients/vllm.py](agent_evolve/backends/tinkerlite/clients/vllm.py) | `VLLMSamplingClient` — vLLM engine + LoRA request. Used by RL rollout + eval. |
+| [backends/tinkerlite/single_node/backend.py](agent_evolve/backends/tinkerlite/single_node/backend.py) | `SingleNodeTinkerLiteBackend.run_trial` + `_run_pipeline` (StageRegistry-driven dispatcher — §16). Owns the shared-training-client lifecycle across stages. |
+| [backends/tinkerlite/single_node/ddp_launcher.py](agent_evolve/backends/tinkerlite/single_node/ddp_launcher.py) | `run_sft_ddp` / `run_gspo_ddp` — spawns torchrun subprocess. `override_stage_runner(fn)` ContextVar hook lets the k8s backend substitute a different runner. |
+| [backends/tinkerlite/elastic/backend.py](agent_evolve/backends/tinkerlite/elastic/backend.py) | `K8sTinkerLiteBackend` — inherits SingleNode, installs an `ElasticScheduler`-backed `override_stage_runner`. Async extras: `submit_stage_async / wait_any / cancel_stage`. |
+| [backends/tinkerlite/elastic/scheduler.py](agent_evolve/backends/tinkerlite/elastic/scheduler.py) | `ElasticScheduler.run_stage` — priority-first k8s → local fallback (§14). `probe_capacity` returns `FanoutCapacity`. |
+| [backends/tinkerlite/elastic/compute_target.py](agent_evolve/backends/tinkerlite/elastic/compute_target.py) | `ComputeTarget` Protocol + `CapacityReport` + `TargetHandle` + `PendingTimeout`. |
+| [backends/tinkerlite/elastic/targets/k8s.py](agent_evolve/backends/tinkerlite/elastic/targets/k8s.py) | `K8sComputeTarget` — kubernetes client wrapper. Submits `batch/v1` Jobs, polls, streams logs. |
+| [backends/tinkerlite/elastic/targets/local.py](agent_evolve/backends/tinkerlite/elastic/targets/local.py) | `LocalComputeTarget` — torchrun subprocess + GPU lock. Used by k8s backend as local fallback. |
+| [backends/tinkerlite/elastic/targets/gpu_lock.py](agent_evolve/backends/tinkerlite/elastic/targets/gpu_lock.py) | `acquire_gpus` — flock-based multi-process GPU coordination on `/fsx/.ae_locks/`. |
+| [backends/tinkerlite/elastic/k8s/job_manifest.py](agent_evolve/backends/tinkerlite/elastic/k8s/job_manifest.py) | `build_job_manifest(...)` — `batch/v1` Job body with PVC mount + GPU resources + ttlSecondsAfterFinished. |
+
+### Benchmarks subsystem
+
+| File | Owns |
+|---|---|
+| [benchmarks/training_base.py](agent_evolve/benchmarks/training_base.py) | `TrainingBenchmarkAdapter` Protocol — required (eval) + optional (data pipeline §15, LLM hooks §16). Structural; any class with the right methods conforms. |
+| [benchmarks/helpers.py](agent_evolve/benchmarks/helpers.py) | Cross-benchmark shim (§16 PR-E): `build_eval_prompt / extract_final_answer / verify` prefer `benchmark.<method>` when available, fall back to `nemo_reasoner` otherwise. New benchmarks should implement the methods; the shim keeps the legacy Nemotron path green. |
+| [benchmarks/nemo_reasoner.py](agent_evolve/benchmarks/nemo_reasoner.py) | `NemoReasonerBenchmark` — reference implementation covering smoke + Kaggle modes. Implements every optional Protocol method. |
+
+### Quick lookup table — "I need to change X"
+
+| I want to | Change |
+|---|---|
+| Add a new search algorithm | New package under `training/algorithms/<name>/` + dict entry in `registries.py::TRAINING_ALGORITHMS` |
+| Add a new training framework (non-LLM) | Implement `TrainingJobRunner`; register in `TRAINING_JOB_RUNNERS` (§16 PR-A) |
+| Add a new pipeline stage type | `@register_stage("<type>")` on a function taking `StageContext` (§16 PR-B) |
+| Add a new adapter (DoRA, full, QLoRA) | `@register_adapter("<kind>")` under `backends/tinkerlite/adapters/` (§16 PR-C) |
+| Add a new data-gen method | `@register_data_generator("<name>")` under `training/data/generators/` (§16 PR-D) |
+| Add a new benchmark | New class in `benchmarks/<name>.py` conforming to `TrainingBenchmarkAdapter`; register in `TRAINING_BENCHMARKS` |
+| Add a new compute target (Slurm, Batch) | Implement `ComputeTarget`; pass into `K8sTinkerLiteBackend(targets=[...])` |
+| Change the reward formula | Subclass/swap `DefaultRewardPolicy`; pass into `MCGSSearch(reward_policy=...)` |
+| Change what's persisted per cycle | `TrainingObserver` — it's the only writer of evolution artifacts |
+| Change workspace validation | `training/schema.py` REQUIRED_FILES / REQUIRED_DIRS |
+
+See [INTEGRATION.md](INTEGRATION.md) for the hands-on recipe for each row above.
 
 ## 4. What MCGS can see (score-driven, by design)
 
@@ -632,5 +986,56 @@ Error-bucket connection: `analyze_errors` returns a `dict[bucket_key, count]`. F
 - `test_verifier_gate.py` — drops on wrong answer / missing marker / over-long CoT, stats accuracy
 - `test_workers_end_to_end.py` — solver_distill happy path + wrong-answer drop + empty-benchmark graceful degradation + data_merge dedup+upsample+sources.yaml registration + missing-input resilience
 - `test_end_to_end_smoke.py` — full pipeline dispatcher round-trip through `SingleNodeTinkerLiteBackend._run_pipeline` in mock mode
+
+## 16. Reserved abstractions for future training jobs
+
+The training subsystem exposes **four plugin points** so new frameworks
+(sklearn, JAX, tabular GBM), new adapters (DoRA, full fine-tune, QLoRA),
+and new data-gen methods can be added without editing the core loop,
+algorithm, or workspace code. Each is a Protocol + registry with a
+decorator-based registration API.
+
+| Protocol | File | Registry / decorator | Answers the question |
+|---|---|---|---|
+| `TrainingJobRunner` | [training/runner_protocol.py](agent_evolve/training/runner_protocol.py) | `TRAINING_JOB_RUNNERS` dotted-path | "How is one candidate trained + evaluated end-to-end?" (may be entirely non-LLM) |
+| *(stage worker)* | [training/stage_registry.py](agent_evolve/training/stage_registry.py) | `@register_stage("<type>")` + `StageContext`/`StageResult` | "What happens when `pipeline.yaml` has `stage.type: <new>`?" |
+| `ModelAdapter` | [backends/tinkerlite/adapters/base.py](agent_evolve/backends/tinkerlite/adapters/base.py) | `@register_adapter("<kind>")` | "How does a trainable surface attach to a base model, save, load?" |
+| `DataGenerator` | [training/data/generator.py](agent_evolve/training/data/generator.py) | `@register_data_generator("<name>")` | "How do I produce training rows from (workspace, recipe, benchmark)?" |
+
+Pre-existing Protocols — `TrainingBenchmarkAdapter`, `ComputeTarget`,
+`TrainingClient` / `SamplingClient` — continue to serve the same axes they
+always did. `TinkerLiteBackend` is now a documented refinement of
+`TrainingJobRunner` (adds LLM client factories); non-LLM runners implement
+only the root Protocol.
+
+Transitional shim — [benchmarks/helpers.py](agent_evolve/benchmarks/helpers.py) —
+routes `teacher_distill.py` and `rl.py` through `benchmark.build_eval_prompt
+/ extract_final_answer / verify` when available, falling back to the legacy
+`nemo_reasoner` imports otherwise. New benchmarks implement the optional
+Protocol methods; Nemotron-Reasoner pipelines stay green during the
+migration.
+
+**Hands-on integration recipes live in [INTEGRATION.md](INTEGRATION.md)** —
+6 sections covering a sklearn runner example, a DoRA adapter example, a
+RulePerturb generator example, the benchmark Protocol table, seed-workspace
+layout for non-LLM jobs, a registries cheat sheet, and a FAQ.
+
+### Test coverage
+
+24 unit tests under the new namespaces:
+
+- `tests/training/test_job_runner_protocol.py` (6) — Protocol conformance + registry resolution + `TinkerLiteBackend` refines `TrainingJobRunner`.
+- `tests/training/test_stage_registry.py` (5) — built-in stages registered on import + collision detection + idempotent re-registration.
+- `tests/backends/tinkerlite/test_adapter_registry.py` (5) — `LoRAAdapter` Protocol conformance + `CheckpointRef.kind` widened + new-adapter registration round-trip.
+- `tests/training/data/test_data_generator_registry.py` (5) — `solver_distill` / `teacher_llm` registered + unified `type: generate` dispatcher end-to-end.
+- `tests/training/test_benchmark_adapter_hooks.py` (3) — helper prefers benchmark method; falls back to `nemo_reasoner`; `NemoReasonerBenchmark` conforms.
+
+Total suite: **223 tests passing, zero regressions.**
+
+### Design stance
+
+- **No behavior change today.** Every new Protocol ships with an implementation that captures the existing LoRA/Nemotron pipeline exactly (`LoRAAdapter`, `SolverDistillGenerator`, `TeacherLLMGenerator`). The reserved extension points are additive.
+- **Plugin registration is import-time.** Decorators fire when the module loads; plugins outside `agent_evolve/` must be imported from the benchmark's `__init__.py` or a driver script before `evolver.run()`.
+- **Hot-path refactor deferred.** `HFTrainingClient` + `ddp_worker._build_model_and_optim` + `VLLMSamplingClient` still inline the LoRA path directly; a follow-up PR will route them through `resolve_adapter(cfg.type)` so registered non-LoRA adapters actually get invoked. The Protocol + `LoRAAdapter` are shipped as the *reserved* extension point now — low-risk, no GPU-lifecycle churn.
 
 All CPU-only, no GPU, no network. Full suite: 242 pass, 2 skipped, zero regression.

@@ -127,17 +127,23 @@ class SamplingClient(Protocol):
 
 # ── Backend protocol ─────────────────────────────────────────────────────
 
-@runtime_checkable
-class TinkerLiteBackend(Protocol):
-    name: str
+# ``TinkerLiteBackend`` is the LLM-shaped extension of the generic
+# ``TrainingJobRunner`` Protocol: it adds client-factory methods so stages
+# can construct HF/PEFT training clients and vLLM sampling clients. Non-LLM
+# jobs (sklearn, JAX, tabular) should implement just ``TrainingJobRunner``
+# from ``training.runner_protocol`` and ignore this.
+from ...training.runner_protocol import TrainingJobRunner  # noqa: E402
 
-    def run_trial(
-        self,
-        workspace: Any,  # avoid circular import on TrainingWorkspace
-        node: TrainingSearchNode,
-        budget: TrialBudget,
-        benchmark: Any,
-    ) -> TrainingTrialResult: ...
+
+@runtime_checkable
+class TinkerLiteBackend(TrainingJobRunner, Protocol):
+    """LLM-specific extension of ``TrainingJobRunner``.
+
+    Same ``run_trial`` contract plus HF/vLLM client factories and the
+    ``run_eval_plan`` entrypoint. Kept as a separate Protocol so stage
+    workers under ``training/runners/stages/`` can type-hint against the
+    richer surface without pinning non-LLM runners to LLM semantics.
+    """
 
     def create_training_client(
         self,
