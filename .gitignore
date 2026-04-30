@@ -149,3 +149,17 @@ examples/tb_examples/skipped/
 agent_evolve/benchmarks/tb2/challenges/
 examples/run_skillbench_solve_all_ablate.sh
 examples/skillbench_evolve_one.py
+
+# Local-only AutoML notes
+AUTOML_IMPLEMENTATION.md
+AUTOML_QUICKSTART.md
+OPTIMIZATION_GUIDE.md
+OPTIMIZATION_RESULTS.md
+
+# MLE-Bench tabular data — populated by ``mlebench prepare --competition <id>``
+# (see ``seed_workspaces/mle_automl*/data/paths.yaml``). Not tracked in git;
+# the seeds carry only the YAML config, not the CSVs.
+seed_workspaces/mle_automl*/data/*.csv
+
+# Local sqlite cache (transient artifact)
+cache/cache.db

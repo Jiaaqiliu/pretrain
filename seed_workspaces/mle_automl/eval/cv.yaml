@@ -1,0 +1,13 @@
+# Cross-validation configuration (evolvable)
+#
+# When enabled: backend runs K-fold CV, averages test predictions across folds,
+# and uses CV-mean as the metric. This eliminates ~0.003 of test-split noise
+# and gives MCGS / LLM proposers reliable signal to compare configs.
+#
+# When disabled: backend falls back to single train/test split (original behavior).
+
+enabled: false              # searchable: [true, false]
+n_splits: 5                 # searchable: [3, 5, 10]
+strategy: stratified_kfold  # searchable: [stratified_kfold, kfold]
+shuffle: true
+random_state: 42

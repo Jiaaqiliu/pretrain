@@ -1,0 +1,22 @@
+# Feature Engineering Configuration (Evolvable)
+
+# Missing value handling
+fillna: mean  # Options: mean, median, zero, mode, drop
+
+# Scaling
+scale: false  # Whether to apply StandardScaler
+
+# Categorical encoding
+categorical_encoding: label  # Options: label, onehot, target
+
+# Feature selection
+feature_selection:
+  enabled: false
+  method: mutual_info  # mutual_info, chi2, f_classif
+  k_best: 10
+
+# Feature creation
+feature_creation:
+  polynomial_features: false
+  interaction_features: false
+  binning: false

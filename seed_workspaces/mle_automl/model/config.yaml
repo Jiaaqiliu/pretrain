@@ -1,0 +1,43 @@
+# ML Model Configuration for Spaceship Titanic
+
+model_type: xgboost  # 将被 MCGS 变异
+
+# Hyperparameters (will be mutated by MCGS)
+hyperparameters:
+  n_estimators: 100
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  min_child_weight: 1
+  gamma: 0
+  reg_alpha: 0
+  reg_lambda: 1
+  random_state: 42
+  n_jobs: -1
+
+# Feature engineering configuration
+feature_engineering:
+  advanced: true      # Use advanced feature engineering
+  fillna: median      # Fallback strategy for basic FE
+  scale: false        # No scaling needed for tree-based models
+  flags:
+    passenger_id: true
+    cabin_split: true
+    spending_features: true
+    age_groups: true
+    family_features: true
+    interactions: false            # searchable
+    log_transform_spending: false  # searchable
+    target_encoding: false         # searchable
+    group_aggregates: false        # NEW — searchable (Kaggle top-20 signal)
+
+# Data paths
+train_data: train.csv
+test_data: test.csv
+target_column: Transported
+id_column: PassengerId
+
+# Competition info
+competition_id: spaceship-titanic
+task_type: classification

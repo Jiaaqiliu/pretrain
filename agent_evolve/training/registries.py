@@ -13,6 +13,7 @@ from .types import TrainingRegistryError
 
 TRAINING_BENCHMARKS: dict[str, str] = {
     "nemo_reasoner": "agent_evolve.benchmarks.nemo_reasoner.NemoReasonerBenchmark",
+    "mle_bench": "agent_evolve.benchmarks.mle_bench.mle_bench.MLEBenchAdapter",
 }
 
 TRAINING_ALGORITHMS: dict[str, str] = {
@@ -27,6 +28,9 @@ TRAINING_ALGORITHMS: dict[str, str] = {
 TRAINING_JOB_RUNNERS: dict[str, str] = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
     "k8s_h200": "agent_evolve.backends.tinkerlite.elastic.K8sTinkerLiteBackend",
+    # Non-LLM runner — implements ``TrainingJobRunner`` directly. See
+    # ``INTEGRATION.md §1`` (sklearn / tabular AutoML).
+    "sklearn_backend": "agent_evolve.backends.sklearn_backend.SklearnBackend",
 }
 TRAINING_BACKENDS = TRAINING_JOB_RUNNERS  # deprecated alias; use TRAINING_JOB_RUNNERS
 

@@ -1,0 +1,5 @@
+# Error taxonomy for evaluation
+categories:
+  prediction_error:
+    description: "Prediction errors"
+    severity: high

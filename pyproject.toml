@@ -47,6 +47,7 @@ mcp = ["mcp>=1.0.0", "strands-agents>=0.1.0", "datasets>=4.5.0", "boto3>=1.34", 
 skillbench = ["strands-agents>=0.1.0", "boto3>=1.34"]
 gepa = ["gepa>=0.1.0"]
 k8s = ["kubernetes>=31.0"]
+automl = ["scikit-learn>=1.3", "pandas>=2.0", "numpy>=1.24", "boto3>=1.34"]
 all = [
     "anthropic>=0.30",
     "openai>=1.30",

@@ -1,0 +1,4 @@
+enabled: false
+strategy: voting_soft
+members: []
+stacking_meta_learner: logistic_regression
