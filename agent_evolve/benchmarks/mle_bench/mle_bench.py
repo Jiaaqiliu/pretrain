@@ -66,10 +66,14 @@ class MLEBenchAdapter:
 
     def primary_metric(self) -> MetricSpec:
         """Return the primary metric specification."""
+        # NOTE: an earlier mle_training revision passed ``valid_range=(0.0,
+        # 1.0)``, but the canonical ``MetricSpec`` in
+        # ``training/types.py`` only declares ``name / maximize /
+        # higher_is_better``. The range is just metadata anyway — drop it
+        # to keep the benchmark instantiable.
         return MetricSpec(
             name=DEFAULT_PRIMARY_METRIC_NAME,
             higher_is_better=True,
-            valid_range=(0.0, 1.0),
         )
 
     def build_eval_plan(
