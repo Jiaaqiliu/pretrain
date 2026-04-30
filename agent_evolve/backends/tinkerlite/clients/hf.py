@@ -24,18 +24,19 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ...training.types import CheckpointRef
-from .base import (
+from ....training.types import CheckpointRef
+from ..base import (
     AdamParams,
     Datum,
     ForwardBackwardResult,
     OptimStepResult,
+    TrainingClient,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class HFTrainingClient:
+class HFTrainingClient(TrainingClient):
     """Eager HF + PEFT training client.
 
     Supported ``loss_fn`` values:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_evolve.backends.tinkerlite.k8s.job_manifest import build_job_manifest
+from agent_evolve.backends.tinkerlite.elastic.k8s.job_manifest import build_job_manifest
 
 
 def _default_args(**overrides):
@@ -30,9 +30,9 @@ def test_basic_structure() -> None:
 def test_command_uses_torchrun_module() -> None:
     m = build_job_manifest(**_default_args(world_size=4))
     cmd = m["spec"]["template"]["spec"]["containers"][0]["command"]
-    # Verify the worker entrypoint matches the local ddp_launcher entrypoint
-    # exactly. A divergence here would silently produce different results
-    # on k8s vs. local.
+    # Verify the worker entrypoint matches the single-node DDP launcher
+    # exactly. A divergence here would silently produce different results on
+    # k8s vs. local.
     assert "-m" in cmd and "torch.distributed.run" in cmd
     assert "--nproc_per_node=4" in cmd
     assert "-m" in cmd and "agent_evolve.training.runners.train_worker_ddp" in cmd

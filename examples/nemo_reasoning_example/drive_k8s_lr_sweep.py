@@ -37,7 +37,7 @@ from agent_evolve.backends.tinkerlite.common_cfg import (  # noqa: E402
     build_sft_cfg,
     default_world_size,
 )
-from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend  # noqa: E402
+from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend  # noqa: E402
 
 
 LRS = (1e-4, 5e-5, 3e-5, 1e-5)

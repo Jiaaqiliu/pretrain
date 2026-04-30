@@ -1,4 +1,4 @@
-"""Single-node TinkerLite backend.
+"""Single-node TinkerLite backend implementation.
 
 PR2 delivers a mock-capable shell that honors the protocol shape. PR7 fills in
 the real SFT pipeline; until then the backend relies on MockTrainingClient to
@@ -9,21 +9,22 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from ...training.runners.data_worker import render_datums
-from ...training.runners.eval_worker import run_eval_plan as _run_eval_plan
-from ...training.runners.pack_adapter_worker import pack_adapter
-from ...training.runners.data_merge_worker import run_data_merge_stage
-from ...training.runners.rl_worker import run_gspo_stage
-from ...training.runners.solver_distill_worker import run_solver_distill_stage
-from ...training.runners.synth_worker import run_synth_stage
-from ...training.runners.train_worker import run_sft_stage
-from ...training.types import (
+from ....training.runners.data_worker import render_datums
+from ....training.runners.eval_worker import run_eval_plan as _run_eval_plan
+from ....training.runners.pack_adapter_worker import pack_adapter
+from ....training.runners.data_merge_worker import run_data_merge_stage
+from ....training.runners.rl_worker import run_gspo_stage
+from ....training.runners.solver_distill_worker import run_solver_distill_stage
+from ....training.runners.synth_worker import run_synth_stage
+from ....training.runners.train_worker import run_sft_stage
+from ....training.types import (
     CheckpointRef,
     EvalMetrics,
     ErrorBuckets,
@@ -33,7 +34,8 @@ from ...training.types import (
     TrialBudget,
     ValidityReport,
 )
-from .mock_clients import MockSamplingClient, MockTrainingClient
+from ..base import SamplingClient, TrainingClient
+from ..clients.mock import MockSamplingClient, MockTrainingClient
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +61,10 @@ class SingleNodeTinkerLiteBackend:
         self,
         workspace: Any,
         checkpoint: CheckpointRef | None = None,
-    ) -> Any:
+    ) -> TrainingClient:
         if self.mock:
             return MockTrainingClient(Path(workspace.root))
-        from .hf_clients import build_hf_client_from_workspace
+        from ..clients.hf import build_hf_client_from_workspace
 
         return build_hf_client_from_workspace(workspace, checkpoint=checkpoint)
 
@@ -70,10 +72,10 @@ class SingleNodeTinkerLiteBackend:
         self,
         workspace: Any,
         checkpoint: CheckpointRef,
-    ) -> Any:
+    ) -> SamplingClient:
         if self.mock:
             return MockSamplingClient()
-        from .vllm_sampling import VLLMSamplingClient
+        from ..clients.vllm import VLLMSamplingClient
 
         import yaml
 
@@ -327,7 +329,15 @@ class SingleNodeTinkerLiteBackend:
             # Smoke path still uses the mock Datum iterable; real path pulls
             # its tokenized dataset from ``render_hf_dataset`` inside
             # ``train_worker`` and ignores the ``datums`` arg.
+            #
+            # DDP dispatch: when AE_TRAIN_DDP=1, we pass training_client=None
+            # so train_worker._run_real_stage branches to the torchrun-based
+            # DDP worker (which owns its own model load across 8 ranks).
+            # Without this, the in-process HFTrainingClient would be built
+            # here on cuda:0 only, defeating the multi-GPU plan.
             datums = list(render_datums(workspace, smoke=self.mock)) if self.mock else None
+            use_ddp = not self.mock and os.environ.get("AE_TRAIN_DDP", "0") == "1"
+            client = None if (self.mock or use_ddp) else _ensure_training_client()
             ckpt, stage_metrics = run_sft_stage(
                 workspace,
                 stage,
@@ -335,7 +345,7 @@ class SingleNodeTinkerLiteBackend:
                 optimizer=optimizer,
                 smoke=self.mock,
                 budget_seconds=remaining,
-                training_client=None if self.mock else _ensure_training_client(),
+                training_client=client,
             )
             aggregated["stage_metrics"].append(stage_metrics)
             last_ckpt = ckpt

@@ -1,6 +1,7 @@
-"""Verify ``common_cfg`` produces configs identical to the pre-refactor
-``ddp_launcher`` payloads — the k8s backend and local ddp_launcher MUST
-emit byte-identical ``.ddp_config.json`` from the same inputs.
+"""Verify ``common_cfg`` produces the shared DDP payload.
+
+The k8s backend and ``single_node.ddp_launcher`` MUST emit byte-identical
+``.ddp_config.json`` from the same inputs.
 """
 
 from __future__ import annotations

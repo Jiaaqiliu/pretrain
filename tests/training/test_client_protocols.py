@@ -19,7 +19,7 @@ from agent_evolve.backends.tinkerlite.base import (
     SamplingClient,
     TrainingClient,
 )
-from agent_evolve.backends.tinkerlite.mock_clients import (
+from agent_evolve.backends.tinkerlite.clients.mock import (
     MockSamplingClient,
     MockTrainingClient,
 )
@@ -42,7 +42,7 @@ def test_mock_sampling_client_satisfies_protocol() -> None:
     reason="torch+peft+transformers not installed",
 )
 def test_hf_training_client_module_importable() -> None:
-    from agent_evolve.backends.tinkerlite import hf_clients  # noqa: F401
+    from agent_evolve.backends.tinkerlite.clients import hf as hf_clients  # noqa: F401
 
     # The class exists and exposes the protocol methods.
     cls = hf_clients.HFTrainingClient
@@ -55,7 +55,7 @@ def test_hf_training_client_module_importable() -> None:
     reason="vllm not installed",
 )
 def test_vllm_sampling_client_module_importable() -> None:
-    from agent_evolve.backends.tinkerlite import vllm_sampling  # noqa: F401
+    from agent_evolve.backends.tinkerlite.clients import vllm as vllm_sampling  # noqa: F401
 
     cls = vllm_sampling.VLLMSamplingClient
     for name in ("sample", "compute_logprobs"):

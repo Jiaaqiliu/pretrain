@@ -16,16 +16,20 @@ evolver = ae.TrainingEvolver(
 result = evolver.run(cycles=4)
 ```
 
-Each cycle: MCGS selects a parent node → proposes a mutation (e.g. `train/optimizer.yaml::lr`) → forks the candidate workspace → backend runs an SFT training stage → backend evaluates the resulting adapter → benchmark returns metrics + error buckets + a validity report → MCGS computes reward, backprops, updates the top-k, decides whether to promote incumbent. The existing `ae.Evolver(...)` is untouched.
+Each cycle: the algorithm selects a parent node → proposes a mutation (e.g. `train/optimizer.yaml::lr`) → forks the candidate workspace → backend runs an SFT training stage → backend evaluates the resulting adapter → benchmark returns metrics + error buckets + a validity report → algorithm computes reward, backprops, updates the top-k, decides whether to promote incumbent. The existing `ae.Evolver(...)` is untouched.
 
-Four axes, four owners:
+Four axes, one constructor kwarg each. The table below is the same four objects shown against the constructor above — same order, same names:
 
-- **Workspace** = training DNA on disk (`seed_workspaces/<name>/`)
-- **MCGS** = search (selection, mutation, reward, backprop, promotion, memory, fusion)
-- **Backend** = execution only (train, save adapter, load for eval, sample)
-- **Benchmark** = evaluation semantics (primary metric, split loading, error taxonomy, validity)
+| Constructor kwarg | Role | Registered value in the example | Owns |
+|---|---|---|---|
+| `workspace=` | Training DNA on disk | `seed_workspaces/nemotron_reasoner` | Path to a directory with `manifest.yaml`, `train/`, `data/`, `model/`, `eval/`, `rl/` (see §8) |
+| `algorithm=` | Search | `"mcgs"` → `MCGSSearch` | Selection, mutation, reward, backprop, promotion, memory, fusion — everything that reads metrics and proposes next moves |
+| `backend=` | Execution | `"h200_single_node"` → `SingleNodeTinkerLiteBackend` (or `"k8s_h200"` → `K8sTinkerLiteBackend`, §14) | Runs SFT/RL stages, saves adapter, loads it for eval, samples. Never scores a trajectory |
+| `benchmark=` | Evaluation semantics | `"nemo_reasoner"` → `NemoReasonerBenchmark` | Primary metric, split loading, error taxonomy, validity rules, (optionally) per-category solvers/verifiers/renderers for §15 |
 
-MCGS never executes a forward pass. Benchmark never computes a reward or picks an incumbent. Backend never scores a trajectory. These are enforced with tests (`test_backend_no_reward.py`, `test_benchmark_no_reward.py`, `test_loop_no_gate.py`).
+The algorithm never executes a forward pass. The benchmark never computes a reward or picks an incumbent. The backend never scores a trajectory. These are enforced with tests (`test_backend_no_reward.py`, `test_benchmark_no_reward.py`, `test_loop_no_gate.py`).
+
+String values on the right are *registry keys* — `ae.TrainingEvolver` resolves them via `TRAINING_ALGORITHMS` / `TRAINING_BACKENDS` / `TRAINING_BENCHMARKS` (see §10). You can also pass instances directly (`algorithm=MCGSSearch(...)`, `backend=MyBackend()`) to bypass the registry.
 
 ## 2. Package layout
 
@@ -69,22 +73,26 @@ agent_evolve/
 │       └── data_merge_worker.py  Stage: dedup + upsample + register in data/sources.yaml
 ├── backends/tinkerlite/
 │   ├── base.py                   TinkerLiteBackend Protocol + Datum/ModelInput/SamplingParams
-│   ├── single_node.py            SingleNodeTinkerLiteBackend (mock & real paths)
-│   ├── mock_clients.py           MockTrainingClient / MockSamplingClient
-│   ├── hf_clients.py             HF+PEFT TrainingClient (real single-GPU path)
-│   ├── vllm_sampling.py          VLLMSamplingClient (real eval path)
 │   ├── common_cfg.py             Pure .ddp_config.json builder (single source of truth)
-│   ├── ddp_launcher.py           torchrun spawner + override_stage_runner ContextVar hook
-│   └── k8s/
+│   ├── clients/
+│   │   ├── mock.py               MockTrainingClient / MockSamplingClient
+│   │   ├── hf.py                 HF+PEFT TrainingClient (real single-GPU path)
+│   │   └── vllm.py               VLLMSamplingClient (real eval path)
+│   ├── single_node/
+│   │   ├── backend.py            SingleNodeTinkerLiteBackend (mock & real paths)
+│   │   └── ddp_launcher.py       torchrun spawner + override_stage_runner ContextVar hook
+│   └── elastic/                  k8s-first elastic backend + target-agnostic scheduler
 │       ├── backend.py            K8sTinkerLiteBackend (extends SingleNode; elastic scheduler)
 │       ├── scheduler.py          ElasticScheduler + FanoutCapacity (k8s-first, local fallback)
 │       ├── compute_target.py     ComputeTarget Protocol + CapacityReport
-│       ├── k8s_target.py         K8sComputeTarget (batch/v1 Job submit / poll / log tail)
-│       ├── local_target.py       LocalComputeTarget (torchrun subprocess + GPU lock)
-│       ├── gpu_lock.py           flock-based GPU reservation, stale-PID cleanup
-│       ├── job_manifest.py       batch/v1 Job manifest builder
-│       ├── Dockerfile            thin trainer image (code mounted via FSx PVC)
-│       └── README.md             prereqs + debugging
+│       ├── targets/
+│       │   ├── k8s.py            K8sComputeTarget (batch/v1 Job submit / poll / log tail)
+│       │   ├── local.py          LocalComputeTarget (torchrun subprocess + GPU lock)
+│       │   └── gpu_lock.py       flock-based GPU reservation, stale-PID cleanup
+│       └── k8s/                  k8s-specific assets
+│           ├── job_manifest.py   batch/v1 Job manifest builder
+│           ├── image/            Docker image build (thin trainer; code mounted via FSx PVC)
+│           └── smoke/            host-side smoke drivers + manual kubectl manifests
 └── benchmarks/
     ├── training_base.py          TrainingBenchmarkAdapter Protocol
     └── nemo_reasoner.py          NemoReasonerBenchmark — smoke + Kaggle modes
@@ -257,7 +265,7 @@ TRAINING_ALGORITHMS = {
 
 TRAINING_BACKENDS = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
-    "k8s_h200":         "agent_evolve.backends.tinkerlite.k8s.K8sTinkerLiteBackend",
+    "k8s_h200":         "agent_evolve.backends.tinkerlite.elastic.K8sTinkerLiteBackend",
 }
 ```
 
@@ -416,7 +424,7 @@ Not a replacement for SLURM — single-node coordination only.
 ### Deployment prereqs
 
 - PVC named `fsx-zzsamshi` that maps to the same FSx filesystem accessible at `/fsx` on the host (code, models, checkpoints all via the shared mount).
-- Image built from [`k8s/Dockerfile`](agent_evolve/backends/tinkerlite/k8s/Dockerfile) and pushed to a registry the cluster can pull from. The image is deliberately **thin** — it contains torch+transformers+peft+vllm+kubernetes and nothing else. Application code is mounted via the PVC so iteration is "save file → resubmit Job" with no rebuild.
+- Image built from [`elastic/k8s/image/Dockerfile`](agent_evolve/backends/tinkerlite/elastic/k8s/image/Dockerfile) and pushed to a registry the cluster can pull from. The image is deliberately **thin** — it contains torch+transformers+peft+vllm+kubernetes and nothing else. Application code is mounted via the PVC so iteration is "save file → resubmit Job" with no rebuild.
 - `pip install 'a-evolve[k8s]'` (adds `kubernetes>=31.0`).
 - Optional: node label `nvidia.com/gpu.product=H200` so `node_selector` can target the right nodes. Construct with `node_selector={"nvidia.com/gpu.product": "H200"}`.
 
@@ -433,7 +441,7 @@ If `kubernetes` is missing or no kubeconfig is reachable, `K8sComputeTarget` fai
 
 ### Test coverage
 
-44 unit tests under `tests/backends/tinkerlite/k8s/`:
+44 unit tests under `tests/backends/tinkerlite/elastic/`:
 - `test_gpu_lock.py` — flock correctness, stale-PID reclaim, partial-allocation rollback
 - `test_local_target_probe.py` — capacity probe under nvidia-smi/lock state combinations
 - `test_job_manifest.py` — Job manifest structure (GPU limits match world_size, PVC mount, env vars, no restart)

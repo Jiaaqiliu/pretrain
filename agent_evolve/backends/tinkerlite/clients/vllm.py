@@ -9,11 +9,10 @@ Notes:
   * ``sample(prompts, params)`` expects the caller to have tokenized +
     chat-templated the prompts already. The tokens carried by ``Prompt``
     are NOT used by vLLM's generate (which re-tokenizes strings) — the
-    wrapper stashes the matching prompt string via ``set_prompt_strings``
-    OR via a ``metadata["prompt_text"]`` field on each Prompt.
+    wrapper stashes the matching prompt string via ``set_prompt_strings``.
   * Per-token logprobs are returned on ``Sample`` via a non-protocol
-    attribute ``_logprobs_per_token: list[float]``. We avoid editing
-    ``base.py``; callers that need logprobs access this attribute.
+    attribute ``_logprobs_per_token: list[float]``. Callers that need
+    rollout logprobs access this attribute explicitly.
   * ``compute_logprobs`` is intentionally a stub: GSPO's rollout phase
     already emits lp_old in the same call as generation, so we don't need
     a separate logprob-scoring path today. Raising NotImplementedError
@@ -25,11 +24,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import (
+from ..base import (
     Logprobs,
     Prompt,
     Sample,
     SampleResponse,
+    SamplingClient,
     SamplingParams,
     TokenSequence,
 )
@@ -37,7 +37,7 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
-class VLLMSamplingClient:
+class VLLMSamplingClient(SamplingClient):
     def __init__(
         self,
         *,

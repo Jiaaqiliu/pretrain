@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ...training.types import CheckpointRef
-from .base import (
+from ....training.types import CheckpointRef
+from ..base import (
     AdamParams,
     Datum,
     ForwardBackwardResult,
@@ -15,12 +15,14 @@ from .base import (
     Prompt,
     Sample,
     SampleResponse,
+    SamplingClient,
     SamplingParams,
     TokenSequence,
+    TrainingClient,
 )
 
 
-class MockTrainingClient:
+class MockTrainingClient(TrainingClient):
     def __init__(self, workspace_root: Path):
         self._root = Path(workspace_root)
         self._step = 0
@@ -52,7 +54,13 @@ class MockTrainingClient:
         return CheckpointRef(name=name, path=str(path), kind="sampler_weights")
 
 
-class MockSamplingClient:
+class MockSamplingClient(SamplingClient):
+    def set_prompt_strings(self, prompts: list[Prompt], texts: list[str]) -> None:
+        # Mock sampling uses token ids directly, but the real vLLM client
+        # requires prompt strings. Keep the protocol surface identical.
+        if len(prompts) != len(texts):
+            raise ValueError("prompts and texts must have the same length")
+
     def sample(
         self, prompts: list[Prompt], params: SamplingParams
     ) -> list[SampleResponse]:

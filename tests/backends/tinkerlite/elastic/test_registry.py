@@ -35,7 +35,7 @@ def test_single_node_registry_unchanged() -> None:
 
 def test_k8s_backend_subclasses_single_node() -> None:
     """Shared pipeline orchestration via inheritance — documented design."""
-    from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend
+    from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend
     from agent_evolve.backends.tinkerlite.single_node import SingleNodeTinkerLiteBackend
 
     assert issubclass(K8sTinkerLiteBackend, SingleNodeTinkerLiteBackend)

@@ -116,6 +116,8 @@ class TrainingClient(Protocol):
 
 @runtime_checkable
 class SamplingClient(Protocol):
+    def set_prompt_strings(self, prompts: list[Prompt], texts: list[str]) -> None: ...
+
     def sample(
         self, prompts: list[Prompt], params: SamplingParams
     ) -> list[SampleResponse]: ...

@@ -6,10 +6,10 @@ the DDP-spawn boundary: instead of a local torchrun subprocess, each stage
 is routed through the ``ElasticScheduler``, which picks between k8s and
 local targets per availability.
 
-Why inheritance instead of duplication: ``SingleNodeTinkerLiteBackend`` is
-~350 lines of pipeline orchestration that we don't want to fork. The only
-seam we need is how a single DDP stage is executed — and ``ddp_launcher``
-now exposes ``override_stage_runner`` exactly for that.
+Why inheritance instead of duplication: ``SingleNodeTinkerLiteBackend`` owns
+the pipeline orchestration that we don't want to fork. The only seam we need
+is how a single DDP stage is executed — and ``single_node.ddp_launcher``
+exposes ``override_stage_runner`` exactly for that.
 
 Extras beyond the Protocol (for callers that want parallel fan-out):
 ``submit_stage_async``, ``wait_any``, ``cancel_stage``. These are the
@@ -22,12 +22,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..ddp_launcher import override_stage_runner
 from ..single_node import SingleNodeTinkerLiteBackend
+from ..single_node.ddp_launcher import override_stage_runner
 from .compute_target import CapacityExhausted, ComputeTarget
-from .k8s_target import K8sComputeTarget
-from .local_target import LocalComputeTarget
 from .scheduler import ElasticScheduler, FanoutCapacity, StageHandle
+from .targets.k8s import K8sComputeTarget
+from .targets.local import LocalComputeTarget
 
 logger = logging.getLogger(__name__)
 

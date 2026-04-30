@@ -1,4 +1,4 @@
-"""Parent-side launcher for DDP training stages.
+"""Parent-side launcher for single-node DDP training stages.
 
 Dispatches ``torchrun --nproc_per_node=N -m
 agent_evolve.training.runners.train_worker_ddp`` as a subprocess. The parent
@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from ...training.types import CheckpointRef
-from .common_cfg import (
+from ....training.types import CheckpointRef
+from ..common_cfg import (
     _common_config,
     build_gspo_cfg,
     build_sft_cfg,
@@ -72,7 +72,7 @@ def _dispatch_stage(cfg_path: Path, world_size: int, log_prefix: str) -> None:
 
 
 def _spawn_torchrun(cfg_path: Path, world_size: int, log_prefix: str) -> None:
-    ae_root = str(Path(__file__).resolve().parents[3])
+    ae_root = str(Path(__file__).resolve().parents[4])
     env = os.environ.copy()
     env.setdefault("HF_HUB_OFFLINE", "1")
     env.setdefault("TRANSFORMERS_OFFLINE", "1")

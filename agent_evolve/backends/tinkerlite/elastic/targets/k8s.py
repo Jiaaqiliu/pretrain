@@ -25,12 +25,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-from .compute_target import (
+from ..compute_target import (
     CapacityReport,
     PendingTimeout,
     TargetHandle,
 )
-from .job_manifest import build_job_manifest
+from ..k8s.job_manifest import build_job_manifest
 
 logger = logging.getLogger(__name__)
 

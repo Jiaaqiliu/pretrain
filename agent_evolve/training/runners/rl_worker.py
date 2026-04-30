@@ -29,6 +29,7 @@ import os
 import random
 import time
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,9 @@ from ...backends.tinkerlite.base import (
     Datum,
     ModelInput,
     Prompt,
+    SamplingClient,
     SamplingParams,
+    TrainingClient,
 )
 from ...benchmarks.nemo_reasoner import (
     build_eval_prompt,
@@ -57,12 +60,12 @@ def run_gspo_stage(
     workspace: Any,
     stage: dict,
     *,
-    sampling_client: Any,
-    training_client_factory: Any,
+    sampling_client: SamplingClient | None,
+    training_client_factory: Callable[[], TrainingClient],
     benchmark: Any,  # noqa: ARG001 — currently uses module-level verify()
     budget_seconds: float | None = None,  # noqa: ARG001 — reserved
     smoke: bool = False,
-    training_client: Any | None = None,
+    training_client: TrainingClient | None = None,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Run one GSPO / DAPO RL stage.
 
@@ -78,6 +81,7 @@ def run_gspo_stage(
     if smoke:
         assert training_client is not None, "smoke requires a training_client"
         return _run_smoke_gspo(workspace, stage, training_client)
+    assert sampling_client is not None, "real GSPO requires a sampling_client"
     return _run_real_gspo(
         workspace,
         stage,
@@ -89,7 +93,7 @@ def run_gspo_stage(
 # ── Smoke path (no GPU) ──────────────────────────────────────────────────
 
 def _run_smoke_gspo(
-    workspace: Any, stage: dict, training_client: Any
+    workspace: Any, stage: dict, training_client: TrainingClient
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Exercise the protocol: no vLLM, no torch.
 
@@ -141,8 +145,8 @@ def _run_real_gspo(
     workspace: Any,
     stage: dict,
     *,
-    sampling_client: Any,
-    training_client_factory: Any,
+    sampling_client: SamplingClient,
+    training_client_factory: Callable[[], TrainingClient],
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     cfg = _load_real_gspo_config(workspace, stage)
     outdir = Path(workspace.root) / "evolution" / "rl" / stage.get("name", "rl_gspo")
@@ -535,7 +539,7 @@ def _run_gspo_update_ddp(
     rollouts_path: Path,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Write post-advantage records to disk, launch torchrun DDP worker."""
-    from ...backends.tinkerlite.ddp_launcher import run_gspo_ddp
+    from ...backends.tinkerlite.single_node.ddp_launcher import run_gspo_ddp
 
     outdir = Path(workspace.root) / "evolution" / "rl" / stage.get("name", "rl_gspo")
     outdir.mkdir(parents=True, exist_ok=True)

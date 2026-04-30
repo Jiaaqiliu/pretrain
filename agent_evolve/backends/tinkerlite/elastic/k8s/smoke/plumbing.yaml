@@ -51,7 +51,7 @@ spec:
           print(f"peft={peft.__version__}")
           print(f"vllm={vllm.__version__}")
           import agent_evolve
-          from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend
+          from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend
           from agent_evolve.training.runners.train_worker_ddp import main as worker_main
           print(f"agent_evolve OK ({agent_evolve.__file__})")
           print(f"K8sTinkerLiteBackend OK ({K8sTinkerLiteBackend.name})")

@@ -11,7 +11,7 @@ Single cycle, single parent (root), single child. The mutator flips the
   4. Eval the updated adapter on Kaggle dev.
 
 Uses the TinkerLite ``SamplingClient`` + ``TrainingClient`` protocols end-to-end
-(``agent_evolve.backends.tinkerlite.hf_clients.HFTrainingClient`` +
+(``agent_evolve.backends.tinkerlite.clients.hf.HFTrainingClient`` +
 ``VLLMSamplingClient``). Mirrors the verified recipe in
 ``../nemotron-auto-research/scripts/gspo_rollout.py`` + ``scripts/gspo_update.py``.
 

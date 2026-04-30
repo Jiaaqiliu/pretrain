@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent_evolve.backends.tinkerlite import ddp_launcher as ddp_mod
-from agent_evolve.backends.tinkerlite.ddp_launcher import (
+from agent_evolve.backends.tinkerlite.single_node import ddp_launcher as ddp_mod
+from agent_evolve.backends.tinkerlite.single_node.ddp_launcher import (
     override_stage_runner,
     run_sft_ddp,
 )

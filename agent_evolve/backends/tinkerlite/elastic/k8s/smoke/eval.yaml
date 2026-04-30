@@ -21,7 +21,7 @@ spec:
       args:
         - |
           set -e
-          python agent_evolve/backends/tinkerlite/k8s/smoke/run_eval_smoke.py \
+          python agent_evolve/backends/tinkerlite/elastic/k8s/smoke/run_eval_smoke.py \
                  /fsx/zzsamshi/a-evolve-smoke/sft/sft_adapter
       env:
         - name: HF_HUB_OFFLINE

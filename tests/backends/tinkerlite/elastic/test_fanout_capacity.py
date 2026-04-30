@@ -10,11 +10,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from agent_evolve.backends.tinkerlite.k8s.compute_target import (
+from agent_evolve.backends.tinkerlite.elastic.compute_target import (
     CapacityReport,
     TargetHandle,
 )
-from agent_evolve.backends.tinkerlite.k8s.scheduler import (
+from agent_evolve.backends.tinkerlite.elastic.scheduler import (
     ElasticScheduler,
     FanoutCapacity,
 )
@@ -128,11 +128,11 @@ def test_world_size_affects_run_now_count() -> None:
 def test_backend_exposes_probe(tmp_path: Path, monkeypatch) -> None:
     """The backend surface exposes probe_fanout_capacity; driver code
     depends on this name."""
-    from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend
+    from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend
 
     # Stub out the kubernetes-bound K8sComputeTarget construction so we
     # can instantiate the backend without kubeconfig.
-    import agent_evolve.backends.tinkerlite.k8s.backend as backend_mod
+    import agent_evolve.backends.tinkerlite.elastic.backend as backend_mod
 
     class _StubK8sTarget:
         name = "k8s"

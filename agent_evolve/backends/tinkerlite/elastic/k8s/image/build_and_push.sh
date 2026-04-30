@@ -2,7 +2,7 @@
 # Build + push the K8sTinkerLiteBackend trainer image to ECR.
 # Tag is derived from git SHA + "-dirty" if there are unstaged changes.
 # Usage:
-#   cd agent_evolve/backends/tinkerlite/k8s
+#   cd agent_evolve/backends/tinkerlite/elastic/k8s/image
 #   ./build_and_push.sh                  # build + push with auto tag
 #   ./build_and_push.sh latest           # build + push with explicit tag
 #   AE_ECR_REGION=us-west-2 ./build_and_push.sh   # override region
@@ -15,7 +15,7 @@ REPO="${AE_ECR_REPO:-zzsamshi/a-evolve}"
 REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-AE_ROOT="$(cd "${HERE}/../../../../.." && pwd)"
+AE_ROOT="$(cd "${HERE}/../../../../../.." && pwd)"
 cd "${AE_ROOT}"
 
 if [[ $# -ge 1 ]]; then

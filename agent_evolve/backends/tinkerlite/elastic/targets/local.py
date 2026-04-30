@@ -1,8 +1,9 @@
 """``LocalComputeTarget`` — run a DDP stage as a torchrun subprocess.
 
-Semantically equivalent to ``ddp_launcher._spawn_torchrun`` but wrapped in
-the ComputeTarget Protocol: non-blocking ``submit`` returns a handle whose
-``poll``/``wait`` consult the subprocess and the ``.ddp_result.json`` file.
+Semantically equivalent to ``single_node.ddp_launcher._spawn_torchrun`` but
+wrapped in the ComputeTarget Protocol: non-blocking ``submit`` returns a
+handle whose ``poll``/``wait`` consult the subprocess and the
+``.ddp_result.json`` file.
 
 GPU allocation is tracked via ``gpu_lock`` flocks so that multiple parent
 processes (e.g. parallel LR sweep drivers) coexist safely on one node.
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .compute_target import CapacityReport, PendingTimeout, TargetHandle
+from ..compute_target import CapacityReport, PendingTimeout, TargetHandle
 from .gpu_lock import GpuLease, acquire_gpus, live_locked_gpus
 
 
@@ -80,7 +81,7 @@ class LocalComputeTarget:
         self.lock_dir = Path(lock_dir)
         self.smi_mem_free_min_mib = smi_mem_free_min_mib
         # Points at the repo root so the subprocess can PYTHONPATH into it.
-        self.ae_root = Path(ae_root) if ae_root else Path(__file__).resolve().parents[4]
+        self.ae_root = Path(ae_root) if ae_root else Path(__file__).resolve().parents[5]
 
     # ── Capacity ────────────────────────────────────────────────────
 

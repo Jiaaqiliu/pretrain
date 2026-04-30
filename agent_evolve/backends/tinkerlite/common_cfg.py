@@ -1,13 +1,13 @@
 """Pure config builders for DDP training stages.
 
-Extracted from ``ddp_launcher`` so that multiple execution paths (local
-subprocess, k8s pod) can generate byte-identical ``.ddp_config.json`` files
-from the same stage description. The execution-layer concerns (how to spawn
-torchrun, where the process runs) live elsewhere.
+Shared by the single-node DDP launcher and the k8s backend so both execution
+paths generate byte-identical ``.ddp_config.json`` files from the same stage
+description. The execution-layer concerns (how to spawn torchrun, where the
+process runs) live elsewhere.
 
-Guarantee: ``ddp_launcher.run_sft_ddp`` and the k8s backend MUST produce
-the same dict from the same inputs — this is the only place that definition
-lives.
+Guarantee: ``single_node.ddp_launcher.run_sft_ddp`` and the k8s backend MUST
+produce the same dict from the same inputs — this is the only place that
+definition lives.
 """
 
 from __future__ import annotations

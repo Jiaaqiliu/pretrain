@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from agent_evolve.backends.tinkerlite.k8s.compute_target import (
+from agent_evolve.backends.tinkerlite.elastic.compute_target import (
     CapacityExhausted,
     CapacityReport,
     PendingTimeout,
     TargetHandle,
 )
-from agent_evolve.backends.tinkerlite.k8s.scheduler import ElasticScheduler
+from agent_evolve.backends.tinkerlite.elastic.scheduler import ElasticScheduler
 
 
 @dataclass

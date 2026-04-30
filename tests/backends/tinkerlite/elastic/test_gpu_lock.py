@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_evolve.backends.tinkerlite.k8s.gpu_lock import (
+from agent_evolve.backends.tinkerlite.elastic.targets.gpu_lock import (
     acquire_gpus,
     live_locked_gpus,
 )

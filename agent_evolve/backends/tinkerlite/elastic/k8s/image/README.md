@@ -90,7 +90,7 @@ for callers that want to dispatch multiple trials concurrently.
 ### Inspect a manifest without submitting
 
 ```python
-from agent_evolve.backends.tinkerlite.k8s.job_manifest import build_job_manifest
+from agent_evolve.backends.tinkerlite.elastic.k8s.job_manifest import build_job_manifest
 import yaml, json
 m = build_job_manifest(
     job_name="test-job", namespace="a-evolve",

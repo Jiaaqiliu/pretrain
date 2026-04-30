@@ -21,7 +21,7 @@ TRAINING_ALGORITHMS: dict[str, str] = {
 
 TRAINING_BACKENDS: dict[str, str] = {
     "h200_single_node": "agent_evolve.backends.tinkerlite.single_node.SingleNodeTinkerLiteBackend",
-    "k8s_h200": "agent_evolve.backends.tinkerlite.k8s.K8sTinkerLiteBackend",
+    "k8s_h200": "agent_evolve.backends.tinkerlite.elastic.K8sTinkerLiteBackend",
 }
 
 

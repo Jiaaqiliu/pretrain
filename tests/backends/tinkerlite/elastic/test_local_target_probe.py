@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_evolve.backends.tinkerlite.k8s import local_target as lt_mod
-from agent_evolve.backends.tinkerlite.k8s.gpu_lock import acquire_gpus
-from agent_evolve.backends.tinkerlite.k8s.local_target import LocalComputeTarget
+from agent_evolve.backends.tinkerlite.elastic.targets import local as lt_mod
+from agent_evolve.backends.tinkerlite.elastic.targets.gpu_lock import acquire_gpus
+from agent_evolve.backends.tinkerlite.elastic.targets.local import LocalComputeTarget
 
 
 def test_probe_no_smi_no_locks(tmp_path: Path, monkeypatch) -> None:

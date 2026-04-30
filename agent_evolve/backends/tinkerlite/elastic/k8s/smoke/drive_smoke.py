@@ -16,7 +16,7 @@ from pathlib import Path
 REPO = Path("/fsx/zzsamshi/a-evolve")
 sys.path.insert(0, str(REPO))
 
-from agent_evolve.backends.tinkerlite.k8s import K8sTinkerLiteBackend  # noqa: E402
+from agent_evolve.backends.tinkerlite.elastic import K8sTinkerLiteBackend  # noqa: E402
 
 
 def main() -> int:

@@ -21,7 +21,7 @@ spec:
         - "-m"
         - "agent_evolve.training.runners.synth_worker"
         - "--config"
-        - "/fsx/zzsamshi/a-evolve/agent_evolve/backends/tinkerlite/k8s/smoke/synth_cfg.json"
+        - "/fsx/zzsamshi/a-evolve/agent_evolve/backends/tinkerlite/elastic/k8s/smoke/synth_cfg.json"
       env:
         - name: HF_HUB_OFFLINE
           value: "1"

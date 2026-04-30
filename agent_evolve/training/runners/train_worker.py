@@ -16,17 +16,22 @@ from __future__ import annotations
 import random
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import yaml
 
-from ...backends.tinkerlite.base import AdamParams, Datum, ModelInput
-from ...backends.tinkerlite.hf_clients import (
-    HFTrainingClient,
-    build_hf_client_from_workspace,
-)
-from ...backends.tinkerlite.mock_clients import MockTrainingClient
+from ...backends.tinkerlite.base import AdamParams, Datum, ModelInput, TrainingClient
+from ...backends.tinkerlite.clients.hf import build_hf_client_from_workspace
+from ...backends.tinkerlite.clients.mock import MockTrainingClient
 from ..types import CheckpointRef
+
+
+class SFTTrainingClient(TrainingClient, Protocol):
+    """Training client surface needed by the in-process SFT runner."""
+
+    tokenizer: Any
+
+    def close(self) -> None: ...
 
 
 # ── Public entrypoint ────────────────────────────────────────────────────
@@ -39,7 +44,7 @@ def run_sft_stage(
     optimizer: dict | None = None,
     smoke: bool = True,
     budget_seconds: float | None = None,
-    training_client: HFTrainingClient | None = None,
+    training_client: SFTTrainingClient | None = None,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Run one SFT stage. Returns the checkpoint plus a metrics dict.
 
@@ -99,7 +104,7 @@ def _run_real_stage(
     optimizer: dict | None,
     budget_seconds: float | None,
     *,
-    training_client: HFTrainingClient | None,
+    training_client: SFTTrainingClient | None,
 ) -> tuple[CheckpointRef, dict[str, Any]]:
     """Drive ``TrainingClient.forward_backward("cross_entropy") + optim_step``.
 
@@ -307,7 +312,7 @@ def _run_real_stage_ddp(
     Falls back to the in-process HFTrainingClient path only if the caller
     explicitly passes a training_client (which it wouldn't under DDP mode).
     """
-    from ...backends.tinkerlite.ddp_launcher import run_sft_ddp
+    from ...backends.tinkerlite.single_node.ddp_launcher import run_sft_ddp
 
     root = Path(workspace.root)
     base_cfg = _load_yaml_safely(root / "model" / "base.yaml")
