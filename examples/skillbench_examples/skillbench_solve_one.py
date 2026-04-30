@@ -12,13 +12,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent_evolve.agents.skillbench import SkillBenchAgent
-from agent_evolve.agents.skillbench.artifacts import export_skillbench_artifacts
-from agent_evolve.agents.skillbench.paths import (
+from agent_evolve.harness.agents.skillbench import SkillBenchAgent
+from agent_evolve.harness.agents.skillbench.artifacts import export_skillbench_artifacts
+from agent_evolve.harness.agents.skillbench.paths import (
     resolve_skillbench_relative_path as resolve_runtime_path,
     resolve_skillbench_seed_workspaces_root,
 )
-from agent_evolve.agents.skillbench.repo import (
+from agent_evolve.harness.agents.skillbench.repo import (
     SkillBenchSetupError,
     resolve_skillbench_paths,
 )

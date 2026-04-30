@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from agent_evolve.agents.arc.mas_agent import MASArcAgent
+from agent_evolve.harness.agents.arc.mas_agent import MASArcAgent
 from agent_evolve.benchmarks.arc_agi3 import ArcAgi3Benchmark
 
 

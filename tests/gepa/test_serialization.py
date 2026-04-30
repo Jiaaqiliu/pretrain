@@ -1,7 +1,7 @@
 """Tests for GEPA workspace ↔ candidate serialization round-trip."""
 import json
 from pathlib import Path
-from agent_evolve.contract.workspace import AgentWorkspace
+from agent_evolve.harness.contract.workspace import AgentWorkspace
 from agent_evolve.config import EvolveConfig
 
 
@@ -19,7 +19,7 @@ def _make_workspace(tmp_path: Path) -> AgentWorkspace:
 
 
 def test_build_candidate_includes_all_layers(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import build_candidate
+    from agent_evolve.harness.algorithms.gepa.serialization import build_candidate
     ws = _make_workspace(tmp_path)
     config = EvolveConfig(evolve_prompts=True, evolve_skills=True, evolve_memory=True)
     candidate = build_candidate(ws, config)
@@ -31,7 +31,7 @@ def test_build_candidate_includes_all_layers(tmp_path):
 
 
 def test_build_candidate_respects_config_gates(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import build_candidate
+    from agent_evolve.harness.algorithms.gepa.serialization import build_candidate
     ws = _make_workspace(tmp_path)
     config = EvolveConfig(evolve_prompts=True, evolve_skills=False, evolve_memory=False)
     candidate = build_candidate(ws, config)
@@ -42,7 +42,7 @@ def test_build_candidate_respects_config_gates(tmp_path):
 
 
 def test_serialize_and_parse_fragments(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import serialize_fragments, parse_fragments
+    from agent_evolve.harness.algorithms.gepa.serialization import serialize_fragments, parse_fragments
     ws = _make_workspace(tmp_path)
     blob = serialize_fragments(ws)
     assert "=== FRAGMENT: code-exec.md ===" in blob
@@ -57,7 +57,7 @@ def test_serialize_and_parse_fragments(tmp_path):
 
 
 def test_serialize_and_parse_skills(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import serialize_skills, parse_skills
+    from agent_evolve.harness.algorithms.gepa.serialization import serialize_skills, parse_skills
     ws = _make_workspace(tmp_path)
     blob = serialize_skills(ws)
     assert "=== SKILL: multi-req ===" in blob
@@ -73,7 +73,7 @@ def test_serialize_and_parse_skills(tmp_path):
 
 
 def test_serialize_memory_includes_category(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import serialize_memory
+    from agent_evolve.harness.algorithms.gepa.serialization import serialize_memory
     ws = _make_workspace(tmp_path)
     blob = serialize_memory(ws)
     lines = [line for line in blob.splitlines() if line.strip()]
@@ -84,7 +84,7 @@ def test_serialize_memory_includes_category(tmp_path):
 
 
 def test_restore_candidate_round_trip(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import build_candidate, restore_candidate
+    from agent_evolve.harness.algorithms.gepa.serialization import build_candidate, restore_candidate
     ws = _make_workspace(tmp_path)
     config = EvolveConfig(evolve_prompts=True, evolve_skills=True, evolve_memory=True)
     candidate = build_candidate(ws, config)
@@ -102,7 +102,7 @@ def test_restore_candidate_round_trip(tmp_path):
 
 
 def test_restore_candidate_replaces_existing_content(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import restore_candidate
+    from agent_evolve.harness.algorithms.gepa.serialization import restore_candidate
     ws = _make_workspace(tmp_path)
     config = EvolveConfig(evolve_prompts=True, evolve_skills=True, evolve_memory=True)
     new_candidate = {
@@ -122,7 +122,7 @@ def test_restore_candidate_replaces_existing_content(tmp_path):
 
 
 def test_restore_memory_clears_and_rewrites(tmp_path):
-    from agent_evolve.algorithms.gepa.serialization import restore_memory
+    from agent_evolve.harness.algorithms.gepa.serialization import restore_memory
     ws = AgentWorkspace(tmp_path)
     ws.add_memory({"old": "data"}, category="episodic")
     ws.add_memory({"old": "strategic"}, category="strategic")

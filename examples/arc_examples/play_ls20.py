@@ -18,10 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent_evolve.agents.arc.frame import Frame
-from agent_evolve.agents.arc.game_loop import convert_frame_data
-from agent_evolve.agents.arc.colors import COLOR_NAMES, COLOR_LEGEND, PALETTE_HEX
-from agent_evolve.agents.arc.grid_render import grid_to_image, image_to_base64, image_diff
+from agent_evolve.harness.agents.arc.frame import Frame
+from agent_evolve.harness.agents.arc.game_loop import convert_frame_data
+from agent_evolve.harness.agents.arc.colors import COLOR_NAMES, COLOR_LEGEND, PALETTE_HEX
+from agent_evolve.harness.agents.arc.grid_render import grid_to_image, image_to_base64, image_diff
 
 log_dir = Path(__file__).parent / "logs"
 log_dir.mkdir(exist_ok=True)

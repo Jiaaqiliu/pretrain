@@ -14,14 +14,14 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent_evolve.agents.arc.mas_agent import MASArcAgent
-from agent_evolve.agents.arc.wiki import GameWiki
-from agent_evolve.agents.arc.memories import Memories
-from agent_evolve.agents.arc.bedrock_tools import (
+from agent_evolve.harness.agents.arc.mas_agent import MASArcAgent
+from agent_evolve.harness.agents.arc.wiki import GameWiki
+from agent_evolve.harness.agents.arc.memories import Memories
+from agent_evolve.harness.agents.arc.bedrock_tools import (
     build_subagent_tools,
     build_orchestrator_tools,
 )
-from agent_evolve.agents.arc.frame import Frame
+from agent_evolve.harness.agents.arc.frame import Frame
 
 
 SEED_DIR = Path(__file__).parent.parent / "seed_workspaces" / "arc-mas"

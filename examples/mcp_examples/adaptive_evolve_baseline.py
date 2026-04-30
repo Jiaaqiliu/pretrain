@@ -20,11 +20,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent_evolve.benchmarks.mcp_atlas import McpAtlasBenchmark
-from agent_evolve.agents.mcp import McpAgent
-from agent_evolve.agents.mcp.key_registry import KeyRegistry
-from agent_evolve.agents.mcp.docker_env import McpAtlasContainer, pull_image
-from agent_evolve.agents.mcp.mcp_client import McpClientWrapper
-from agent_evolve.agents.mcp.code_executor import create_code_executor_tool
+from agent_evolve.harness.agents.mcp import McpAgent
+from agent_evolve.harness.agents.mcp.key_registry import KeyRegistry
+from agent_evolve.harness.agents.mcp.docker_env import McpAtlasContainer, pull_image
+from agent_evolve.harness.agents.mcp.mcp_client import McpClientWrapper
+from agent_evolve.harness.agents.mcp.code_executor import create_code_executor_tool
 
 
 class BaselineCodeExecAgent(McpAgent):
@@ -32,7 +32,7 @@ class BaselineCodeExecAgent(McpAgent):
 
     def solve(self, task, shared_client=None):
         """Standard solve with code executor."""
-        from agent_evolve.agents.mcp.tools import create_tool_wrappers
+        from agent_evolve.harness.agents.mcp.tools import create_tool_wrappers
         from strands import Agent
         from strands.models import BedrockModel
 
@@ -97,7 +97,7 @@ class BaselineCodeExecAgent(McpAgent):
 
         steps = []
         try:
-            from agent_evolve.agents.mcp.key_registry import redact_secrets
+            from agent_evolve.harness.agents.mcp.key_registry import redact_secrets
             old_limit = sys.getrecursionlimit()
             sys.setrecursionlimit(5000)
 
@@ -191,7 +191,7 @@ def main():
         log.info("Copied seed workspace %s -> %s", seed_dir, work_dir)
 
     # Prepare workspace with code execution support (same as adaptive_evolve)
-    from agent_evolve.algorithms.adaptive_evolve import AdaptiveEvolveEngine
+    from agent_evolve.harness.algorithms.adaptive_evolve import AdaptiveEvolveEngine
     AdaptiveEvolveEngine.prepare_workspace(work_dir)
 
     bm = McpAtlasBenchmark(

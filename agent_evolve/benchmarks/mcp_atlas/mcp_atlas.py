@@ -14,8 +14,8 @@ import asyncio
 import logging
 import os
 import time
-from ...agents.mcp.key_registry import KeyRegistry
-from ...agents.mcp.task_filter import filter_tasks_by_keys
+from ...harness.agents.mcp.key_registry import KeyRegistry
+from ...harness.agents.mcp.task_filter import filter_tasks_by_keys
 from ...types import Feedback, Task, Trajectory
 from ..base import BenchmarkAdapter
 

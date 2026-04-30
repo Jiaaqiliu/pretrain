@@ -35,21 +35,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent_evolve.agents.skillbench import SkillBenchAgent
-from agent_evolve.agents.skillbench.artifacts import export_skillbench_artifacts
-from agent_evolve.agents.skillbench.paths import (
+from agent_evolve.harness.agents.skillbench import SkillBenchAgent
+from agent_evolve.harness.agents.skillbench.artifacts import export_skillbench_artifacts
+from agent_evolve.harness.agents.skillbench.paths import (
     resolve_skillbench_relative_path as resolve_runtime_path,
     resolve_skillbench_seed_workspaces_root,
 )
-from agent_evolve.agents.skillbench.repo import (
+from agent_evolve.harness.agents.skillbench.repo import (
     SkillBenchSetupError,
     resolve_skillbench_paths,
 )
-from agent_evolve.agents.skillbench.dataset import load_all_tasks
+from agent_evolve.harness.agents.skillbench.dataset import load_all_tasks
 from agent_evolve.benchmarks.skill_bench import SkillBenchBenchmark
 from agent_evolve.config import EvolveConfig
-from agent_evolve.algorithms.skillforge import AEvolveEngine
-from agent_evolve.engine.observer import Observer
+from agent_evolve.harness.algorithms.skillforge import AEvolveEngine
+from agent_evolve.harness.engine.observer import Observer
 from agent_evolve.types import Feedback, Observation, Task, Trajectory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

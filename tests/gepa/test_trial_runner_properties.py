@@ -1,6 +1,6 @@
 """Tests for TrialRunner public agent and benchmark properties."""
 from unittest.mock import MagicMock
-from agent_evolve.engine.trial import TrialRunner
+from agent_evolve.harness.engine.trial import TrialRunner
 
 def test_trial_runner_agent_property():
     agent = MagicMock()

@@ -54,7 +54,7 @@ def main():
     args = parser.parse_args()
 
     from arc_agi import Arcade, OperationMode
-    from agent_evolve.agents.arc.mas_agent import MASArcAgent
+    from agent_evolve.harness.agents.arc.mas_agent import MASArcAgent
 
     # Competition mode vs dry-run
     if args.dry_run:

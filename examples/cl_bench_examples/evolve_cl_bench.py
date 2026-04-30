@@ -44,9 +44,9 @@ from agent_evolve.benchmarks.cl_bench import (
     MODEL_MAP,
 )
 from agent_evolve.config import EvolveConfig
-from agent_evolve.contract.workspace import AgentWorkspace
-from agent_evolve.engine.observer import Observer
-from agent_evolve.protocol.base_agent import BaseAgent
+from agent_evolve.harness.contract.workspace import AgentWorkspace
+from agent_evolve.harness.engine.observer import Observer
+from agent_evolve.harness.protocol.base_agent import BaseAgent
 from agent_evolve.types import Feedback, Observation, Task, Trajectory
 
 logger = logging.getLogger(__name__)

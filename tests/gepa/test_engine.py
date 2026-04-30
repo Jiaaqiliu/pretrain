@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from agent_evolve.config import EvolveConfig
-from agent_evolve.contract.workspace import AgentWorkspace
+from agent_evolve.harness.contract.workspace import AgentWorkspace
 from agent_evolve.types import StepResult, Task
 
 
@@ -52,9 +52,9 @@ def _mock_gepa_modules():
 def test_gepa_engine_manages_own_evaluation():
     mocks = _mock_gepa_modules()
     with patch.dict(sys.modules, mocks):
-        if "agent_evolve.algorithms.gepa.engine" in sys.modules:
-            importlib.reload(sys.modules["agent_evolve.algorithms.gepa.engine"])
-        from agent_evolve.algorithms.gepa.engine import GEPAEngine
+        if "agent_evolve.harness.algorithms.gepa.engine" in sys.modules:
+            importlib.reload(sys.modules["agent_evolve.harness.algorithms.gepa.engine"])
+        from agent_evolve.harness.algorithms.gepa.engine import GEPAEngine
         config = EvolveConfig()
         engine = GEPAEngine(config)
         assert engine.manages_own_evaluation is True
@@ -73,9 +73,9 @@ def test_gepa_engine_step_calls_optimize_anything(tmp_path):
     mocks["gepa.optimize_anything"].optimize_anything = MagicMock(return_value=fake_result)
 
     with patch.dict(sys.modules, mocks):
-        if "agent_evolve.algorithms.gepa.engine" in sys.modules:
-            importlib.reload(sys.modules["agent_evolve.algorithms.gepa.engine"])
-        from agent_evolve.algorithms.gepa.engine import GEPAEngine
+        if "agent_evolve.harness.algorithms.gepa.engine" in sys.modules:
+            importlib.reload(sys.modules["agent_evolve.harness.algorithms.gepa.engine"])
+        from agent_evolve.harness.algorithms.gepa.engine import GEPAEngine
 
         ws = _make_workspace(tmp_path)
         config = EvolveConfig(evolve_prompts=True, evolve_skills=False, evolve_memory=False)
@@ -107,9 +107,9 @@ def test_gepa_engine_default_config():
     mocks["gepa.optimize_anything"].ReflectionConfig = mock_reflection_config
 
     with patch.dict(sys.modules, mocks):
-        if "agent_evolve.algorithms.gepa.engine" in sys.modules:
-            importlib.reload(sys.modules["agent_evolve.algorithms.gepa.engine"])
-        from agent_evolve.algorithms.gepa.engine import GEPAEngine
+        if "agent_evolve.harness.algorithms.gepa.engine" in sys.modules:
+            importlib.reload(sys.modules["agent_evolve.harness.algorithms.gepa.engine"])
+        from agent_evolve.harness.algorithms.gepa.engine import GEPAEngine
 
         config = EvolveConfig(batch_size=10, max_cycles=20)
         engine = GEPAEngine(config)

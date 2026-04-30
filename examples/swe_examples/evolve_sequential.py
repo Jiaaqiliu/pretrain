@@ -27,11 +27,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent_evolve.agents.swe.agent import SweAgent
-from agent_evolve.algorithms.guided_synth.engine import GuidedSynthesisEngine
+from agent_evolve.harness.agents.swe.agent import SweAgent
+from agent_evolve.harness.algorithms.guided_synth.engine import GuidedSynthesisEngine
 from agent_evolve.benchmarks.swe_verified_mini.benchmark import SweVerifiedMiniBenchmark
 from agent_evolve.config import EvolveConfig
-from agent_evolve.engine.observer import Observer
+from agent_evolve.harness.engine.observer import Observer
 from agent_evolve.types import Feedback, Observation, Trajectory
 
 logger = logging.getLogger("evolve_seq")
@@ -54,7 +54,7 @@ def solve_one_task(
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-    from agent_evolve.agents.swe.agent import SweAgent
+    from agent_evolve.harness.agents.swe.agent import SweAgent
     from agent_evolve.benchmarks.swe_verified_mini.benchmark import SweVerifiedMiniBenchmark
     from agent_evolve.types import Task
 

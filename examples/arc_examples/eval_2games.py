@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent_evolve.agents.arc.agent import ArcAgent
+from agent_evolve.harness.agents.arc.agent import ArcAgent
 from agent_evolve.benchmarks.arc_agi3.benchmark import ArcAgi3Benchmark
 from agent_evolve.types import Task
 

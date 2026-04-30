@@ -45,13 +45,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
 sys.setrecursionlimit(4000)
 
-from agent_evolve.agents.terminal.agent import TerminalAgent, _extract_conversation
-from agent_evolve.agents.terminal.dataset import load_all_tasks, TB2Task
-from agent_evolve.agents.terminal.docker_env import TB2Container, pull_image
-from agent_evolve.algorithms.adaptive_skill import AdaptiveSkillEngine
-from agent_evolve.algorithms.mas_adaptive_skill import MasAdaptiveSkillEngine
+from agent_evolve.harness.agents.terminal.agent import TerminalAgent, _extract_conversation
+from agent_evolve.harness.agents.terminal.dataset import load_all_tasks, TB2Task
+from agent_evolve.harness.agents.terminal.docker_env import TB2Container, pull_image
+from agent_evolve.harness.algorithms.adaptive_skill import AdaptiveSkillEngine
+from agent_evolve.harness.algorithms.mas_adaptive_skill import MasAdaptiveSkillEngine
 from agent_evolve.config import EvolveConfig
-from agent_evolve.engine.observer import Observer
+from agent_evolve.harness.engine.observer import Observer
 from agent_evolve.types import Feedback, Observation, Task, Trajectory
 from strands import tool
 
@@ -260,7 +260,7 @@ def _solve_one_task(
         skill_draft = None
 
         if solver == "react":
-            from agent_evolve.agents.terminal.react_solver import (
+            from agent_evolve.harness.agents.terminal.react_solver import (
                 react_solve, extract_conversation,
             )
             react_result = react_solve(
@@ -926,7 +926,7 @@ def main():
         if not args.no_evolve:
             # v15: Write solver-proposed skill drafts to workspace before evolving
             if args.propose_skill:
-                from agent_evolve.contract.workspace import AgentWorkspace
+                from agent_evolve.harness.contract.workspace import AgentWorkspace
                 ws = AgentWorkspace(args.work_dir)
                 ws.clear_drafts()
                 draft_count = 0

@@ -105,7 +105,7 @@ if ! [[ "${MAX_WORKERS}" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 SELECTED_TASKS_DIR="$(TASKS_DIR="${TASKS_DIR}" TASKS_DIR_WITH_SKILLS="${TASKS_DIR_WITH_SKILLS}" TASKS_DIR_WITHOUT_SKILLS="${TASKS_DIR_WITHOUT_SKILLS}" HARBOR_REPO="${HARBOR_REPO}" USE_SKILLS_LC="${USE_SKILLS_LC}" PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}" python - <<'PY'
-from agent_evolve.agents.skillbench.repo import SkillBenchSetupError, resolve_skillbench_paths
+from agent_evolve.harness.agents.skillbench.repo import SkillBenchSetupError, resolve_skillbench_paths
 import os
 import sys
 

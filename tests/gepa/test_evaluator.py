@@ -25,7 +25,7 @@ def _make_observation(
 
 
 def test_build_side_info_structure():
-    from agent_evolve.algorithms.gepa.evaluator import build_side_info
+    from agent_evolve.harness.algorithms.gepa.evaluator import build_side_info
     obs = _make_observation()
     info = build_side_info(obs)
     assert "Input" in info
@@ -38,19 +38,19 @@ def test_build_side_info_structure():
 
 
 def test_build_side_info_fail_status():
-    from agent_evolve.algorithms.gepa.evaluator import build_side_info
+    from agent_evolve.harness.algorithms.gepa.evaluator import build_side_info
     obs = _make_observation(success=False, score=0.0)
     info = build_side_info(obs)
     assert info["Feedback"]["Status"] == "FAIL"
 
 
 def test_truncate_short_string():
-    from agent_evolve.algorithms.gepa.evaluator import _truncate
+    from agent_evolve.harness.algorithms.gepa.evaluator import _truncate
     assert _truncate("hello", 100) == "hello"
 
 
 def test_truncate_long_string():
-    from agent_evolve.algorithms.gepa.evaluator import _truncate
+    from agent_evolve.harness.algorithms.gepa.evaluator import _truncate
     text = "a" * 1000
     result = _truncate(text, 100)
     assert len(result) <= 110
@@ -58,32 +58,32 @@ def test_truncate_long_string():
 
 
 def test_truncate_empty():
-    from agent_evolve.algorithms.gepa.evaluator import _truncate
+    from agent_evolve.harness.algorithms.gepa.evaluator import _truncate
     assert _truncate("", 100) == ""
     assert _truncate(None, 100) == ""
 
 
 def test_truncate_dict_empty():
-    from agent_evolve.algorithms.gepa.evaluator import _truncate_dict
+    from agent_evolve.harness.algorithms.gepa.evaluator import _truncate_dict
     assert _truncate_dict({}, 500) == ""
 
 
 def test_truncate_dict_small():
-    from agent_evolve.algorithms.gepa.evaluator import _truncate_dict
+    from agent_evolve.harness.algorithms.gepa.evaluator import _truncate_dict
     result = _truncate_dict({"key": "value"}, 500)
     assert "key" in result
     assert "value" in result
 
 
 def test_compress_trajectory_empty():
-    from agent_evolve.algorithms.gepa.evaluator import compress_trajectory
+    from agent_evolve.harness.algorithms.gepa.evaluator import compress_trajectory
     traj = Trajectory(task_id="t1", output="out")
     result = compress_trajectory(traj)
     assert isinstance(result, str)
 
 
 def test_compress_trajectory_with_conversation():
-    from agent_evolve.algorithms.gepa.evaluator import compress_trajectory
+    from agent_evolve.harness.algorithms.gepa.evaluator import compress_trajectory
     conversation = [
         {"role": "assistant", "tool_calls": [{"function": "bash", "arguments": {"cmd": "ls -la"}}]},
         {"role": "tool", "content": "file1.txt\nfile2.txt"},
@@ -100,7 +100,7 @@ def test_compress_trajectory_with_conversation():
 
 
 def test_compress_trajectory_bounded():
-    from agent_evolve.algorithms.gepa.evaluator import compress_trajectory
+    from agent_evolve.harness.algorithms.gepa.evaluator import compress_trajectory
     conversation = []
     for i in range(100):
         conversation.append({"role": "assistant", "tool_calls": [{"function": "bash", "arguments": {"cmd": f"command_{i} " * 50}}]})
@@ -111,7 +111,7 @@ def test_compress_trajectory_bounded():
 
 
 def test_compress_steps_with_tools():
-    from agent_evolve.algorithms.gepa.evaluator import _compress_steps
+    from agent_evolve.harness.algorithms.gepa.evaluator import _compress_steps
     steps = [
         {"tool": "bash", "action": "execute"},
         {"tool": "bash", "action": "execute"},
@@ -122,12 +122,12 @@ def test_compress_steps_with_tools():
 
 
 def test_compress_steps_empty():
-    from agent_evolve.algorithms.gepa.evaluator import _compress_steps
+    from agent_evolve.harness.algorithms.gepa.evaluator import _compress_steps
     assert _compress_steps([]) == ""
 
 
 def test_make_evaluator_calls_restore_and_run():
-    from agent_evolve.algorithms.gepa.evaluator import make_evaluator
+    from agent_evolve.harness.algorithms.gepa.evaluator import make_evaluator
     config = EvolveConfig()
     trial = MagicMock()
     obs = _make_observation()
@@ -135,7 +135,7 @@ def test_make_evaluator_calls_restore_and_run():
     trial.agent.workspace = MagicMock()
     trial.agent.reload_from_fs.return_value = None
     evaluator = make_evaluator(trial, config)
-    with patch("agent_evolve.algorithms.gepa.evaluator.restore_candidate") as mock_restore:
+    with patch("agent_evolve.harness.algorithms.gepa.evaluator.restore_candidate") as mock_restore:
         task = Task(id="t1", input="do something")
         score, side_info = evaluator({"system_prompt": "test"}, task)
     assert score == 0.8

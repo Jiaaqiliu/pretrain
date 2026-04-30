@@ -31,9 +31,9 @@ def solve_one_task(task_dict: dict, args_dict: dict) -> dict:
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from agent_evolve.agents.swe.env import SWEBenchContainer, pull_image
+    from agent_evolve.harness.agents.swe.env import SWEBenchContainer, pull_image
 
-    # Load tools from seed_workspaces/swe/tools/ (no longer in agent_evolve.agents.swe.tools)
+    # Load tools from seed_workspaces/swe/tools/ (no longer in agent_evolve.harness.agents.swe.tools)
     _tools_dir = Path(__file__).resolve().parent.parent.parent.parent / "seed_workspaces" / "swe" / "tools"
     import importlib.util as _ilu
 

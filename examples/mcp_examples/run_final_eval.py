@@ -31,10 +31,10 @@ sys.setrecursionlimit(4000)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 os.environ.setdefault("BYPASS_TOOL_CONSENT", "true")
 
-from agent_evolve.agents.mcp_mh.agent import McpMHAgent
-from agent_evolve.agents.mcp.key_registry import KeyRegistry
-from agent_evolve.agents.mcp.docker_env import McpAtlasContainer, pull_image
-from agent_evolve.agents.mcp.mcp_client import McpClientWrapper
+from agent_evolve.harness.agents.mcp_mh.agent import McpMHAgent
+from agent_evolve.harness.agents.mcp.key_registry import KeyRegistry
+from agent_evolve.harness.agents.mcp.docker_env import McpAtlasContainer, pull_image
+from agent_evolve.harness.agents.mcp.mcp_client import McpClientWrapper
 from agent_evolve.benchmarks.mcp_atlas.mcp_atlas import McpAtlasBenchmark
 from agent_evolve.config import EvolveConfig
 from agent_evolve.types import Observation, Task, Trajectory

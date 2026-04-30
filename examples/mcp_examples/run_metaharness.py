@@ -45,17 +45,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 os.environ.setdefault("BYPASS_TOOL_CONSENT", "true")
 
-from agent_evolve.agents.mcp_mh.agent import McpMHAgent
-from agent_evolve.agents.mcp.key_registry import KeyRegistry
-from agent_evolve.agents.mcp.docker_env import McpAtlasContainer, pull_image
-from agent_evolve.agents.mcp.mcp_client import McpClientWrapper
-from agent_evolve.algorithms.meta_harness import MetaHarnessEngine
+from agent_evolve.harness.agents.mcp_mh.agent import McpMHAgent
+from agent_evolve.harness.agents.mcp.key_registry import KeyRegistry
+from agent_evolve.harness.agents.mcp.docker_env import McpAtlasContainer, pull_image
+from agent_evolve.harness.agents.mcp.mcp_client import McpClientWrapper
+from agent_evolve.harness.algorithms.meta_harness import MetaHarnessEngine
 from agent_evolve.benchmarks.mcp_atlas.mcp_atlas import McpAtlasBenchmark
 from agent_evolve.config import EvolveConfig
-from agent_evolve.engine.history import EvolutionHistory
-from agent_evolve.engine.observer import Observer
-from agent_evolve.engine.trial import TrialRunner
-from agent_evolve.engine.versioning import VersionControl
+from agent_evolve.harness.engine.history import EvolutionHistory
+from agent_evolve.harness.engine.observer import Observer
+from agent_evolve.harness.engine.trial import TrialRunner
+from agent_evolve.harness.engine.versioning import VersionControl
 from agent_evolve.types import CycleRecord, Feedback, Observation, Task, Trajectory
 
 log = logging.getLogger("metaharness_mcp")
@@ -633,7 +633,7 @@ def main():
         datefmt="%H:%M:%S",
     )
     # Our own loggers stay at INFO on console
-    for name in ("metaharness_mcp", "agent_evolve.algorithms.meta_harness"):
+    for name in ("metaharness_mcp", "agent_evolve.harness.algorithms.meta_harness"):
         logging.getLogger(name).setLevel(logging.INFO)
     # Suppress noisy libraries
     for n in ("botocore", "urllib3", "httpcore", "httpx",

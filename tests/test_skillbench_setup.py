@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agent_evolve.agents.skillbench.repo import (
+from agent_evolve.harness.agents.skillbench.repo import (
     SKILLBENCH_BOOTSTRAP_PATHS,
     SKILLBENCH_HARBOR_REPO_ENV,
     SKILLBENCH_REPO_ENV,
@@ -22,7 +22,7 @@ from agent_evolve.agents.skillbench.repo import (
     resolve_skillbench_paths,
     validate_skillbench_paths,
 )
-from agent_evolve.agents.skillbench.paths import resolve_skillbench_seed_workspaces_root
+from agent_evolve.harness.agents.skillbench.paths import resolve_skillbench_seed_workspaces_root
 from agent_evolve.benchmarks.skill_bench import SkillBenchBenchmark
 
 

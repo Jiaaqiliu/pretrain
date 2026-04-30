@@ -49,8 +49,8 @@ uv pip install -e ".[swe]"           # SWE-bench benchmark
 ```python
 import agent_evolve as ae
 print(ae.__version__)        # 0.1.0
-print(ae.Evolver)            # <class 'agent_evolve.api.Evolver'>
-print(ae.BaseAgent)          # <class 'agent_evolve.protocol.base_agent.BaseAgent'>
+print(ae.Evolver)            # <class 'agent_evolve.harness.api.Evolver'>
+print(ae.BaseAgent)          # <class 'agent_evolve.harness.protocol.base_agent.BaseAgent'>
 ```
 
 ---
@@ -266,7 +266,7 @@ Use available tools to gather information before answering.
 ### Step 2: Implement BaseAgent
 
 ```python
-from agent_evolve.protocol.base_agent import BaseAgent
+from agent_evolve.harness.protocol.base_agent import BaseAgent
 from agent_evolve.types import Task, Trajectory
 
 class MyAgent(BaseAgent):
@@ -334,7 +334,7 @@ All built-in algorithms implement one interface: `EvolutionEngine.step()`.
 ### Step 1: Implement EvolutionEngine
 
 ```python
-from agent_evolve.engine.base import EvolutionEngine
+from agent_evolve.harness.engine.base import EvolutionEngine
 from agent_evolve.types import StepResult
 
 class MyEvolver(EvolutionEngine):

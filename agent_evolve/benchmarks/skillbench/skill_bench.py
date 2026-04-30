@@ -12,7 +12,7 @@ import random
 from pathlib import Path
 from typing import Any, Literal
 
-from ...agents.skillbench.repo import (
+from ...harness.agents.skillbench.repo import (
     SkillBenchPaths,
     resolve_skillbench_paths,
     validate_skillbench_paths,

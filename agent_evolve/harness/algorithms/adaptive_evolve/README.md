@@ -276,7 +276,7 @@ This ensures the agent knows about `execute_code` from the first solve cycle, be
 The main engine. Implements both the `EvolutionEngine.step()` interface (for use inside the Evolver loop) and a standalone `evolve()` method.
 
 ```python
-from agent_evolve.algorithms.adaptive_evolve import AdaptiveEvolveEngine
+from agent_evolve.harness.algorithms.adaptive_evolve import AdaptiveEvolveEngine
 
 engine = AdaptiveEvolveEngine(
     config=config,
@@ -297,7 +297,7 @@ Composes four sub-analyzers into a single `AdaptiveAnalysisResult`:
 - `FailurePatternDetector` — identifies systematic failure patterns
 
 ```python
-from agent_evolve.algorithms.adaptive_evolve import AdaptiveAnalyzer
+from agent_evolve.harness.algorithms.adaptive_evolve import AdaptiveAnalyzer
 
 analyzer = AdaptiveAnalyzer()
 result = analyzer.analyze(observations, base_analysis, code_stats)
@@ -312,7 +312,7 @@ result = analyzer.analyze(observations, base_analysis, code_stats)
 Controls prompt generation and evolver LLM constraints:
 
 ```python
-from agent_evolve.algorithms.adaptive_evolve import AdaptivePromptConfig
+from agent_evolve.harness.algorithms.adaptive_evolve import AdaptivePromptConfig
 
 cfg = AdaptivePromptConfig(
     prompt_max_chars=4000,              # system prompt length limit

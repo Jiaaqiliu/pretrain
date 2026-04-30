@@ -164,7 +164,7 @@ A-Evolve ships with built-in seed workspaces (`swe`, `mcp`, `terminal`, `skillbe
 To make any agent evolvable, implement one method — `solve()`:
 
 ```python
-from agent_evolve.protocol.base_agent import BaseAgent
+from agent_evolve.harness.protocol.base_agent import BaseAgent
 from agent_evolve.types import Task, Trajectory
 
 class MyAgent(BaseAgent):
@@ -261,7 +261,7 @@ A-Evolve ships with 4 reference evolution algorithms, each targeting different d
 Each algorithm lives in its own directory under `algorithms/`. Implement a single method:
 
 ```python
-from agent_evolve.engine.base import EvolutionEngine
+from agent_evolve.harness.engine.base import EvolutionEngine
 from agent_evolve.types import StepResult
 
 class MyEvolutionEngine(EvolutionEngine):

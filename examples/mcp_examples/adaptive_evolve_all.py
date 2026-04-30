@@ -31,15 +31,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent_evolve.benchmarks.mcp_atlas import McpAtlasBenchmark
-from agent_evolve.agents.mcp import McpAgent
-from agent_evolve.agents.mcp.key_registry import KeyRegistry
-from agent_evolve.agents.mcp.docker_env import McpAtlasContainer, pull_image
-from agent_evolve.agents.mcp.mcp_client import McpClientWrapper
-from agent_evolve.agents.mcp.code_executor import create_code_executor_tool
+from agent_evolve.harness.agents.mcp import McpAgent
+from agent_evolve.harness.agents.mcp.key_registry import KeyRegistry
+from agent_evolve.harness.agents.mcp.docker_env import McpAtlasContainer, pull_image
+from agent_evolve.harness.agents.mcp.mcp_client import McpClientWrapper
+from agent_evolve.harness.agents.mcp.code_executor import create_code_executor_tool
 from agent_evolve.config import EvolveConfig
-from agent_evolve.engine.observer import Observer
+from agent_evolve.harness.engine.observer import Observer
 from agent_evolve.types import Observation
-from agent_evolve.algorithms.adaptive_evolve import (
+from agent_evolve.harness.algorithms.adaptive_evolve import (
     AdaptiveEvolveEngine,
     AdaptivePromptConfig,
 )
@@ -50,8 +50,8 @@ class CodeExecMcpAgent(McpAgent):
 
     def solve(self, task, shared_client=None):
         """Override solve to inject the code executor tool."""
-        from agent_evolve.agents.mcp.tools import create_tool_wrappers
-        from agent_evolve.agents.mcp.docker_env import McpAtlasContainer
+        from agent_evolve.harness.agents.mcp.tools import create_tool_wrappers
+        from agent_evolve.harness.agents.mcp.docker_env import McpAtlasContainer
         from strands import Agent
         from strands.models import BedrockModel
 
@@ -120,7 +120,7 @@ class CodeExecMcpAgent(McpAgent):
         # Capture trajectory from the strands agent (not the response)
         steps = []
         try:
-            from agent_evolve.agents.mcp.key_registry import redact_secrets
+            from agent_evolve.harness.agents.mcp.key_registry import redact_secrets
             import sys
 
             # Increase recursion limit temporarily to handle deep tool call chains

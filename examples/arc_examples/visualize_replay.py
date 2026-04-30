@@ -38,8 +38,8 @@ COLOR_NAMES = [
 
 def capture_replay(game_id: str, max_actions: int, model_id: str, region: str):
     """Run the agent and capture every frame + action."""
-    from agent_evolve.agents.arc.agent import ArcAgent
-    from agent_evolve.agents.arc.game_loop import run_game, convert_frame_data
+    from agent_evolve.harness.agents.arc.agent import ArcAgent
+    from agent_evolve.harness.agents.arc.game_loop import run_game, convert_frame_data
     from agent_evolve.types import Task
     import arc_agi
     from arcengine import GameAction, GameState
@@ -102,7 +102,7 @@ def capture_replay(game_id: str, max_actions: int, model_id: str, region: str):
 
     # Get initial frame
     raw = env.reset()
-    from agent_evolve.agents.arc.game_loop import convert_frame_data as cvt
+    from agent_evolve.harness.agents.arc.game_loop import convert_frame_data as cvt
     init_frame, init_meta = cvt(raw)
     captured_frames.append({
         "step": 0,

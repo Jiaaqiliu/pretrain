@@ -3,8 +3,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from agent_evolve.config import EvolveConfig
-from agent_evolve.contract.workspace import AgentWorkspace
-from agent_evolve.engine.loop import EvolutionLoop
+from agent_evolve.harness.contract.workspace import AgentWorkspace
+from agent_evolve.harness.engine.loop import EvolutionLoop
 from agent_evolve.types import Feedback, Observation, StepResult, Task, Trajectory
 
 

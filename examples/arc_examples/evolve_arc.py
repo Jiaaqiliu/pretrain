@@ -92,13 +92,13 @@ def main():
     # Select evolution engine
     engine = None
     if args.engine == "adaptive-evolve":
-        from agent_evolve.algorithms.adaptive_evolve.engine import AdaptiveEvolveEngine
+        from agent_evolve.harness.algorithms.adaptive_evolve.engine import AdaptiveEvolveEngine
         engine = AdaptiveEvolveEngine(config)
     elif args.engine == "adaptive-skill":
-        from agent_evolve.algorithms.adaptive_skill.engine import AdaptiveSkillEngine
+        from agent_evolve.harness.algorithms.adaptive_skill.engine import AdaptiveSkillEngine
         engine = AdaptiveSkillEngine(config)
     elif args.engine == "guided-synth":
-        from agent_evolve.algorithms.guided_synth.engine import GuidedSynthesisEngine
+        from agent_evolve.harness.algorithms.guided_synth.engine import GuidedSynthesisEngine
         engine = GuidedSynthesisEngine(config)
 
     # Create benchmark with ARC-specific settings

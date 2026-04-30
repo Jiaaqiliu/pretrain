@@ -1,5 +1,5 @@
 """Tests for EvolutionEngine.manages_own_evaluation property."""
-from agent_evolve.engine.base import EvolutionEngine
+from agent_evolve.harness.engine.base import EvolutionEngine
 from agent_evolve.types import StepResult
 
 class DummyEngine(EvolutionEngine):
