@@ -2,15 +2,15 @@
 
 __version__ = "0.1.0"
 
-from .api import Evolver
 from .benchmarks.base import BenchmarkAdapter
 from .config import EvolveConfig
-from .contract.manifest import Manifest
-from .contract.workspace import AgentWorkspace
-from .engine.base import EvolutionEngine
-from .engine.history import EvolutionHistory
-from .engine.trial import TrialRunner
-from .protocol.base_agent import BaseAgent
+from .harness.api import Evolver
+from .harness.contract.manifest import Manifest
+from .harness.contract.workspace import AgentWorkspace
+from .harness.engine.base import EvolutionEngine
+from .harness.engine.history import EvolutionHistory
+from .harness.engine.trial import TrialRunner
+from .harness.protocol.base_agent import BaseAgent
 from .training.api import TrainingEvolver
 from .training.workspace import TrainingWorkspace
 from .types import (

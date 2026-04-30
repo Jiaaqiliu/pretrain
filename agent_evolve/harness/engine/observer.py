@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..types import Observation
+from ...types import Observation
 
 logger = logging.getLogger(__name__)
 

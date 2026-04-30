@@ -15,15 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..config import EvolveConfig
-from ..types import CycleRecord, EvolutionResult, Observation
+from ...config import EvolveConfig
+from ...types import CycleRecord, EvolutionResult, Observation
 from .history import EvolutionHistory
 from .observer import Observer
 from .trial import TrialRunner
 from .versioning import VersionControl
 
 if TYPE_CHECKING:
-    from ..benchmarks.base import BenchmarkAdapter
+    from ...benchmarks.base import BenchmarkAdapter
     from ..protocol.base_agent import BaseAgent
     from .base import EvolutionEngine
 

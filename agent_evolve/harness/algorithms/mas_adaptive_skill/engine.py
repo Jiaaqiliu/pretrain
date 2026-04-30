@@ -11,11 +11,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...contract.workspace import AgentWorkspace
 from ...engine.base import EvolutionEngine
 from ...engine.versioning import VersionControl
-from ...types import Observation, StepResult
+from ....types import Observation, StepResult
 from .orchestrator import run_evolution_cycle
 
 logger = logging.getLogger(__name__)

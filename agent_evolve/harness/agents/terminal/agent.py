@@ -18,7 +18,7 @@ from strands import Agent
 from strands.models import BedrockModel
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .docker_env import TB2Container, pull_image
 from .tools import bash, python, submit, set_container_name, reset_submit_flag, reset_tool_counter
 

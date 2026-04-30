@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from ..contract.workspace import AgentWorkspace
-from ..types import SkillMeta, Task, Trajectory
+from ...types import SkillMeta, Task, Trajectory
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from .evolver import SkillBenchEvolver
 from .paths import resolve_skillbench_seed_workspaces_root
 

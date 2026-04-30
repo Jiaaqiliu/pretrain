@@ -19,7 +19,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 # Default challenges directory -- override via TB2_CHALLENGES_DIR env var
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 CHALLENGES_DIR = os.environ.get(
     "TB2_CHALLENGES_DIR",
     str(_PROJECT_ROOT / "agent_evolve" / "benchmarks" / "tb2" / "challenges"),

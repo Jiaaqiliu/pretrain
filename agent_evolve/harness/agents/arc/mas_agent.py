@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .bedrock_agent import BedrockAgent
 from .bedrock_tools import build_orchestrator_tools, build_subagent_tools
 from .frame import Frame

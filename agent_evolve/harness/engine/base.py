@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..contract.workspace import AgentWorkspace
-    from ..types import Observation, StepResult
+    from ...types import Observation, StepResult
     from .history import EvolutionHistory
     from .trial import TrialRunner
 

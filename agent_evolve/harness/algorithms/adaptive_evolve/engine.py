@@ -15,12 +15,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...contract.workspace import AgentWorkspace
 from ...engine.base import EvolutionEngine
 from ...engine.versioning import VersionControl
-from ...llm.base import LLMProvider
-from ...types import Observation, StepResult
+from ....llm.base import LLMProvider
+from ....types import Observation, StepResult
 
 # Shared utilities
 from .base_analysis import analyze_observations, McpAutoCorrector, McpErrorPatternExtractor

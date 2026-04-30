@@ -24,9 +24,9 @@ from typing import Any, Callable, Protocol
 
 import yaml
 
-from ...llm.base import LLMMessage, LLMResponse
-from ...llm.bedrock import BedrockProvider
-from ...types import Task, Trajectory
+from ....llm.base import LLMMessage, LLMResponse
+from ....llm.bedrock import BedrockProvider
+from ....types import Task, Trajectory
 from .docker_env import SkillBenchContainer, VerificationResult, build_image
 from .official_terminus import (
     DEFAULT_SKILL_DIRS as OFFICIAL_SKILL_DIRS,

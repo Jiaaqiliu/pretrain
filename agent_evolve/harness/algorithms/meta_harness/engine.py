@@ -23,12 +23,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...contract.workspace import AgentWorkspace
 from ...engine.base import EvolutionEngine
 from ...engine.history import EvolutionHistory
 from ...engine.trial import TrialRunner
-from ...types import Observation, StepResult
+from ....types import Observation, StepResult
 from .prompts import build_proposer_prompt
 
 logger = logging.getLogger(__name__)

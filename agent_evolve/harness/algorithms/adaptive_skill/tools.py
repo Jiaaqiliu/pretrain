@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ...config import EvolveConfig
-from ...llm.base import LLMProvider
+from ....config import EvolveConfig
+from ....llm.base import LLMProvider
 
 BASH_TOOL_SPEC = {
     "name": "workspace_bash",

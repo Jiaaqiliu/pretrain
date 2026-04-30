@@ -20,7 +20,7 @@ from gepa.optimize_anything import (
 )
 
 from ...engine.base import EvolutionEngine
-from ...types import StepResult
+from ....types import StepResult
 from .evaluator import make_evaluator, make_parallel_evaluator
 from .serialization import build_candidate, restore_candidate
 

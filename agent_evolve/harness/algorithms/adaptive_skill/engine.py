@@ -11,12 +11,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...contract.workspace import AgentWorkspace
 from ...engine.base import EvolutionEngine
 from ...engine.versioning import VersionControl
-from ...llm.base import LLMMessage, LLMProvider
-from ...types import Observation, StepResult
+from ....llm.base import LLMMessage, LLMProvider
+from ....types import Observation, StepResult
 from .prompts import DEFAULT_EVOLVER_SYSTEM_PROMPT, build_evolution_prompt
 from .tools import BASH_TOOL_SPEC, create_default_llm, make_workspace_bash
 

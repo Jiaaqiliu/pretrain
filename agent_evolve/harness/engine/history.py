@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..types import CycleRecord
+from ...types import CycleRecord
 from .observer import Observer
 from .versioning import VersionControl
 

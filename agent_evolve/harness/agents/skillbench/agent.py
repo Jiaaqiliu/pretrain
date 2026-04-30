@@ -23,7 +23,7 @@ except Exception as exc:  # pragma: no cover - optional runtime dependency
     _STRANDS_IMPORT_ERROR = exc
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .repo import resolve_skillbench_paths
 from .backends import (
     HarborSkillBenchBackend,
@@ -34,7 +34,7 @@ from .backends import (
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("BYPASS_TOOL_CONSENT", "true")
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class SkillBenchAgent(BaseAgent):

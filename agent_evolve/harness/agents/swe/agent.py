@@ -19,7 +19,7 @@ from strands import Agent
 from strands.models import BedrockModel
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .env import SWEBenchContainer, pull_image
 
 logger = logging.getLogger(__name__)

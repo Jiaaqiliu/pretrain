@@ -34,7 +34,7 @@ from ..mcp.key_registry import KeyRegistry, classify_error, redact_secrets
 from ..mcp.conversation_manager import PinnedFirstMessageManager
 from ..mcp.mcp_client import McpClientWrapper
 from ..mcp.tools import create_tool_wrappers
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 
 logger = logging.getLogger(__name__)
 

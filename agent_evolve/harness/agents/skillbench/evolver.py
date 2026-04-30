@@ -10,10 +10,10 @@ import shutil
 from pathlib import Path
 
 from ...algorithms.skillforge import AEvolveEngine
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...engine.base import EvolutionEngine
-from ...types import EvolutionResult
-from ...benchmarks.skill_bench import SkillBenchBenchmark
+from ....types import EvolutionResult
+from ....benchmarks.skill_bench import SkillBenchBenchmark
 from .agent import SkillBenchAgent
 from .loop import SkillBenchEvolutionLoop
 from .paths import (
@@ -23,7 +23,7 @@ from .paths import (
 
 logger = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_SEED_WORKSPACE = resolve_skillbench_seed_workspaces_root() / "skillbench"
 _DEFAULT_WORK_DIR = Path("./evolution_workdir/skillbench")
 

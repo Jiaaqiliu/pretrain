@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .colors import COLOR_LEGEND, COLOR_NAMES
 from .frame import Frame
 

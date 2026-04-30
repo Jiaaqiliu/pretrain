@@ -27,7 +27,7 @@ import boto3
 from arcengine import GameAction, GameState
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .colors import COLOR_NAMES, COLOR_LEGEND
 from .frame import Frame
 from .game_loop import convert_frame_data

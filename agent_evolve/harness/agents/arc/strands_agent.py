@@ -28,7 +28,7 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .colors import COLOR_LEGEND, COLOR_NAMES
 from .frame import Frame
 from .game_loop import GameResult, convert_frame_data

@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from ..types import SkillMeta
+from ...types import SkillMeta
 
 
 class AgentWorkspace:

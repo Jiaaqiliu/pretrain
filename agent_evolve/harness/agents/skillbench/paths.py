@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 _SKILLBENCH_ROOT = Path(__file__).resolve().parent
-_AGENT_EVOLVE_ROOT = _SKILLBENCH_ROOT.parents[2]
+_AGENT_EVOLVE_ROOT = _SKILLBENCH_ROOT.parents[3]
 _SOURCE_ROOT = _AGENT_EVOLVE_ROOT.parent
 
 

@@ -14,10 +14,10 @@ import logging
 import re
 from typing import Any
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...engine.base import EvolutionEngine
-from ...llm.base import LLMProvider
-from ...types import Observation, StepResult
+from ....llm.base import LLMProvider
+from ....types import Observation, StepResult
 
 logger = logging.getLogger(__name__)
 

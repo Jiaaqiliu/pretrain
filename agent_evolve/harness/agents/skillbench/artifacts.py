@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...types import Feedback, Trajectory
+from ....types import Feedback, Trajectory
 
 
 @dataclass

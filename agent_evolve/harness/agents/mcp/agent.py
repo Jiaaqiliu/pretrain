@@ -16,7 +16,7 @@ from strands import Agent
 from strands.models import BedrockModel
 
 from ...protocol.base_agent import BaseAgent
-from ...types import Task, Trajectory
+from ....types import Task, Trajectory
 from .docker_env import McpAtlasContainer, pull_image
 from .key_registry import KeyRegistry, classify_error, redact_secrets
 from .conversation_manager import PinnedFirstMessageManager

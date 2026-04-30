@@ -27,14 +27,14 @@ import logging
 import shutil
 from pathlib import Path
 
-from .benchmarks.base import BenchmarkAdapter
-from .config import EvolveConfig
+from ..benchmarks.base import BenchmarkAdapter
+from ..config import EvolveConfig
 from .contract.manifest import Manifest
 from .contract.schema import validate_workspace
 from .engine.base import EvolutionEngine
 from .engine.loop import EvolutionLoop
 from .protocol.base_agent import BaseAgent
-from .types import EvolutionResult
+from ..types import EvolutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ class Evolver:
         # Named seed workspace
         seed_name = _SEED_REGISTRY.get(str(agent))
         if seed_name:
-            seed_dir = Path(__file__).parent.parent / "seed_workspaces" / seed_name
+            seed_dir = Path(__file__).parent.parent.parent / "seed_workspaces" / seed_name
             if seed_dir.exists():
                 dest = work_dir / seed_name
                 if not dest.exists():

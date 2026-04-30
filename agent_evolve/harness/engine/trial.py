@@ -9,12 +9,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..types import Observation
+from ...types import Observation
 
 if TYPE_CHECKING:
-    from ..benchmarks.base import BenchmarkAdapter
+    from ...benchmarks.base import BenchmarkAdapter
     from ..protocol.base_agent import BaseAgent
-    from ..types import Task
+    from ...types import Task
 
 logger = logging.getLogger(__name__)
 

@@ -12,9 +12,9 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from ...config import EvolveConfig
+from ....config import EvolveConfig
 from ...engine.loop import EvolutionLoop
-from ...types import CycleRecord, EvolutionResult, Feedback, Observation, Task
+from ....types import CycleRecord, EvolutionResult, Feedback, Observation, Task
 
 logger = logging.getLogger(__name__)
 
