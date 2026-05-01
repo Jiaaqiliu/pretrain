@@ -19,15 +19,15 @@ import yaml
 # Importing ``runners`` triggers @register_stage side-effects for all
 # built-in stage types. We also pull a few direct entrypoints (pack_adapter
 # + eval) that the dispatcher and run_eval_plan use outside the registry.
-from ....training.runners import (  # noqa: F401 — import for side-effects
+from ....model.runners import (  # noqa: F401 — import for side-effects
     pack_adapter,
     render_datums,
     run_eval_plan as _run_eval_plan,
     run_sft_stage,
     run_synth_stage,
 )
-from ....training.stage_registry import StageContext, resolve_stage
-from ....training.types import (
+from ....model.stage_registry import StageContext, resolve_stage
+from ....model.types import (
     CheckpointRef,
     EvalMetrics,
     ErrorBuckets,

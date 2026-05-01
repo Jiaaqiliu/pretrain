@@ -39,9 +39,9 @@ AE = Path("/fsx/zzsamshi/a-evolve")
 NAR = Path("/fsx/zzsamshi/nemotron-auto-research")
 sys.path.insert(0, str(AE))
 
-from agent_evolve.training.algorithms.mcgs.search import MCGSSearch  # noqa: E402
-from agent_evolve.training.api import TrainingEvolver  # noqa: E402
-from agent_evolve.training.types import (  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.search import MCGSSearch  # noqa: E402
+from agent_evolve.model.api import TrainingEvolver  # noqa: E402
+from agent_evolve.model.types import (  # noqa: E402
     PatchOperation,
     TrainingEvolveConfig,
     WorkspaceMutation,

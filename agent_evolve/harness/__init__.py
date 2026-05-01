@@ -9,7 +9,7 @@ Top-level home for the agent side of agent_evolve:
   * ``agents/``     — ARC, MCP, SkillBench, SWE, Terminal, ...
   * ``api.py``      — :class:`Evolver`, the public top-level entry point
 
-The model-training subsystem lives at ``agent_evolve.training``. Both
+The model-training subsystem lives at ``agent_evolve.model``. Both
 subsystems share infrastructure under ``agent_evolve.{benchmarks, backends,
 llm, utils, types, config}``.
 """

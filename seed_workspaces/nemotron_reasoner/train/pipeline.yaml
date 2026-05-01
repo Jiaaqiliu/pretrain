@@ -42,7 +42,7 @@ stages:
     enabled: true
   - name: rl_gspo
     type: rl
-    # ── GSPO knobs (consumed by agent_evolve.training.runners.stages.rl).
+    # ── GSPO knobs (consumed by agent_evolve.model.runners.stages.rl).
     #    Mutators may overwrite any of these.
     loss: importance_sampling
     rollout: default

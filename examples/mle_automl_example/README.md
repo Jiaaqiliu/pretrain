@@ -152,7 +152,7 @@ algo = MCGSSearch(
 ### 2. 搜索学习率
 
 ```python
-from agent_evolve.training.algorithms.mcgs.ml_mutation import MLLearningRateSweepProposer
+from agent_evolve.model.algorithms.mcgs.ml_mutation import MLLearningRateSweepProposer
 
 algo = MCGSSearch(
     mutator=MLLearningRateSweepProposer(
@@ -164,7 +164,7 @@ algo = MCGSSearch(
 ### 3. 随机超参数搜索
 
 ```python
-from agent_evolve.training.algorithms.mcgs.ml_mutation import MLHyperparameterMutationProposer
+from agent_evolve.model.algorithms.mcgs.ml_mutation import MLHyperparameterMutationProposer
 
 algo = MCGSSearch(
     mutator=MLHyperparameterMutationProposer(mutation_rate=0.3),
@@ -354,7 +354,7 @@ def _apply_feature_engineering(X_train, X_test, config):
 
 ### Q: 报错 "Unknown backend: sklearn_backend"
 
-A: 确保 `agent_evolve/training/registries.py` 中已注册 sklearn_backend
+A: 确保 `agent_evolve/model/registries.py` 中已注册 sklearn_backend
 
 ### Q: MLE-Bench 评分失败
 

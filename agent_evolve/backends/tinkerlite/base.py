@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from ...training.types import (
+from ...model.types import (
     CheckpointRef,
     EvalPlan,
     TrainingSearchNode,
@@ -132,7 +132,7 @@ class SamplingClient(Protocol):
 # can construct HF/PEFT training clients and vLLM sampling clients. Non-LLM
 # jobs (sklearn, JAX, tabular) should implement just ``TrainingJobRunner``
 # from ``training.runner_protocol`` and ignore this.
-from ...training.runner_protocol import TrainingJobRunner  # noqa: E402
+from ...model.runner_protocol import TrainingJobRunner  # noqa: E402
 
 
 @runtime_checkable

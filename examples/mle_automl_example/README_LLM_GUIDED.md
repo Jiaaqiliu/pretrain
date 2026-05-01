@@ -165,7 +165,7 @@ The proposer uses the `us.anthropic.claude-opus-4-7` inference profile. Note:
 
 ## Files
 
-- `agent_evolve/training/algorithms/mcgs/llm_mutation.py` — `LLMHyperparameterProposer`, `LLMFeatureEngineeringProposer`
+- `agent_evolve/model/algorithms/mcgs/llm_mutation.py` — `LLMHyperparameterProposer`, `LLMFeatureEngineeringProposer`
 - `agent_evolve/backends/feature_engineering.py` — gated FE with `flags` dict
 - `examples/mle_automl_example/drive_llm_smoke3.py` — 3-cycle smoke test
 - `examples/mle_automl_example/drive_llm_20cycle.py` — 20-cycle run with HybridSelector

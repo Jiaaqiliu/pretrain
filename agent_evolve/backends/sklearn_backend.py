@@ -146,7 +146,7 @@ class SklearnBackend:
         Returns:
             TrainingTrialResult with metrics
         """
-        from ..training.types import TrainingTrialResult, CheckpointRef, TrialStatus
+        from ..model.types import TrainingTrialResult, CheckpointRef, TrialStatus
 
         workspace_path = Path(workspace.root) if hasattr(workspace, "root") else Path(workspace)
 

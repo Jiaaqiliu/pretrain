@@ -37,10 +37,10 @@ os.environ.setdefault("VLLM_ALLREDUCE_USE_FLASHINFER", "0")
 AE = Path("/fsx/zzsamshi/a-evolve")
 sys.path.insert(0, str(AE))
 
-from agent_evolve.training.algorithms.mcgs.mutation import BaselineMutationProposer  # noqa: E402
-from agent_evolve.training.algorithms.mcgs.search import MCGSSearch  # noqa: E402
-from agent_evolve.training.api import TrainingEvolver  # noqa: E402
-from agent_evolve.training.types import TrainingEvolveConfig  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.mutation import BaselineMutationProposer  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.search import MCGSSearch  # noqa: E402
+from agent_evolve.model.api import TrainingEvolver  # noqa: E402
+from agent_evolve.model.types import TrainingEvolveConfig  # noqa: E402
 
 
 class EnableSynthMutator:
@@ -52,7 +52,7 @@ class EnableSynthMutator:
     """
 
     def propose(self, parent, graph=None):  # noqa: ARG002
-        from agent_evolve.training.types import (
+        from agent_evolve.model.types import (
             PatchOperation,
             WorkspaceMutation,
             WorkspacePatch,

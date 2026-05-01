@@ -11,8 +11,8 @@ from .harness.engine.base import EvolutionEngine
 from .harness.engine.history import EvolutionHistory
 from .harness.engine.trial import TrialRunner
 from .harness.protocol.base_agent import BaseAgent
-from .training.api import TrainingEvolver
-from .training.workspace import TrainingWorkspace
+from .model.api import TrainingEvolver
+from .model.workspace import TrainingWorkspace
 from .types import (
     CycleRecord,
     EvolutionResult,

@@ -29,7 +29,7 @@ Four axes, one constructor kwarg each. The table below is the same four objects 
 
 The algorithm never executes a forward pass. The benchmark never computes a reward or picks an incumbent. The backend never scores a trajectory. These are enforced with tests (`test_backend_no_reward.py`, `test_benchmark_no_reward.py`, `test_loop_no_gate.py`).
 
-String values on the right are *registry keys* — `ae.TrainingEvolver` resolves them via `TRAINING_ALGORITHMS` / `TRAINING_BACKENDS` / `TRAINING_BENCHMARKS` (see [registries.py](agent_evolve/training/registries.py)). You can also pass instances directly (`algorithm=MCGSSearch(...)`, `backend=MyBackend()`) to bypass the registry.
+String values on the right are *registry keys* — `ae.TrainingEvolver` resolves them via `TRAINING_ALGORITHMS` / `TRAINING_BACKENDS` / `TRAINING_BENCHMARKS` (see [registries.py](agent_evolve/model/registries.py)). You can also pass instances directly (`algorithm=MCGSSearch(...)`, `backend=MyBackend()`) to bypass the registry.
 
 ## 2. Package layout
 
@@ -46,7 +46,7 @@ agent_evolve/
 │   ├── loop.py                   TrainingEvolutionLoop — no accept/reject gate
 │   ├── trial.py                  TrialRunner wraps backend.run_trial + validity
 │   ├── observer.py               Writes evolution/reports + evolution/observations
-│   ├── run.py                    CLI: python -m agent_evolve.training.run
+│   ├── run.py                    CLI: python -m agent_evolve.model.run
 │   ├── algorithms/
 │   │   ├── null.py               No-op algorithm for scaffolding
 │   │   └── mcgs/
@@ -372,7 +372,7 @@ memory/ / checkpoints/ / evolution/   artifact layers
 
 ## 7. TODO
 
-- **Runner → backend name leakage.** [stages/sft.py:24-25](agent_evolve/training/runners/stages/sft.py#L24-L25) imports `HFTrainingClient` / `MockTrainingClient` by name — a fallback for the (currently untaken) path where the dispatcher doesn't supply a `training_client`. Ideally even those references disappear and runners only see the `ctx.training_client_fn()` factory. Low priority; doesn't affect the "swap backend, runners don't budge" guarantee because the dispatcher always supplies the client today.
+- **Runner → backend name leakage.** [stages/sft.py:24-25](agent_evolve/model/runners/stages/sft.py#L24-L25) imports `HFTrainingClient` / `MockTrainingClient` by name — a fallback for the (currently untaken) path where the dispatcher doesn't supply a `training_client`. Ideally even those references disappear and runners only see the `ctx.training_client_fn()` factory. Low priority; doesn't affect the "swap backend, runners don't budge" guarantee because the dispatcher always supplies the client today.
 
 ---
 

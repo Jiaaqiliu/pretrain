@@ -17,8 +17,8 @@ sys.path.insert(0, str(REPO))
 
 from agent_evolve.backends.tinkerlite.single_node import SingleNodeTinkerLiteBackend  # noqa: E402
 from agent_evolve.benchmarks.nemo_reasoner import NemoReasonerBenchmark  # noqa: E402
-from agent_evolve.training.types import CheckpointRef  # noqa: E402
-from agent_evolve.training.workspace import TrainingWorkspace  # noqa: E402
+from agent_evolve.model.types import CheckpointRef  # noqa: E402
+from agent_evolve.model.workspace import TrainingWorkspace  # noqa: E402
 
 
 def main() -> int:

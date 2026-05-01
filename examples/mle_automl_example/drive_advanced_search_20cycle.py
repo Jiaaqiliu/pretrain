@@ -19,10 +19,10 @@ os.environ.setdefault("WANDB_DISABLED", "true")
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from agent_evolve.training.api import TrainingEvolver
-from agent_evolve.training.types import TrainingEvolveConfig
-from agent_evolve.training.algorithms.mcgs.search import MCGSSearch
-from agent_evolve.training.algorithms.mcgs.ml_mutation import (
+from agent_evolve.model.api import TrainingEvolver
+from agent_evolve.model.types import TrainingEvolveConfig
+from agent_evolve.model.algorithms.mcgs.search import MCGSSearch
+from agent_evolve.model.algorithms.mcgs.ml_mutation import (
     MLModelTypeMutationProposer,
     MLDepthSweepProposer,
     MLNEstimatorsSweepProposer,

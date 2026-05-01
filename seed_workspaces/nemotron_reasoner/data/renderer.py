@@ -2,7 +2,7 @@
 
 The real implementation would tokenize prompts + targets using the model's
 tokenizer. In smoke mode the TinkerLite backend falls back to ``render_datums``
-in ``agent_evolve.training.runners.helpers.dataset``, which treats integer IDs
+in ``agent_evolve.model.runners.helpers.dataset``, which treats integer IDs
 directly.
 """
 

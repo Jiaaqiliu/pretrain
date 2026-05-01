@@ -62,13 +62,13 @@ AE = Path("/fsx/zzsamshi/a-evolve")
 NAR = Path("/fsx/zzsamshi/nemotron-auto-research")
 sys.path.insert(0, str(AE))
 
-from agent_evolve.training.algorithms.mcgs.mutation import (  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.mutation import (  # noqa: E402
     LRBagMutationProposer,
 )
-from agent_evolve.training.algorithms.mcgs.search import MCGSSearch  # noqa: E402
-from agent_evolve.training.algorithms.mcgs.selection import UCTSelector  # noqa: E402
-from agent_evolve.training.api import TrainingEvolver  # noqa: E402
-from agent_evolve.training.types import (  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.search import MCGSSearch  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.selection import UCTSelector  # noqa: E402
+from agent_evolve.model.api import TrainingEvolver  # noqa: E402
+from agent_evolve.model.types import (  # noqa: E402
     PatchOperation,
     TrainingEvolveConfig,
     WorkspaceMutation,
@@ -79,7 +79,7 @@ from agent_evolve.training.types import (  # noqa: E402
 # side-effects for {sft, rl, synth_generate, solver_distill, data_merge,
 # generate}. If you add a custom stage type via INTEGRATION.md §2, import
 # that module here too — the decorator only fires on import.
-import agent_evolve.training.runners  # noqa: F401,E402
+import agent_evolve.model.runners  # noqa: F401,E402
 
 # ── Starting adapter + data ─────────────────────────────────────────────
 

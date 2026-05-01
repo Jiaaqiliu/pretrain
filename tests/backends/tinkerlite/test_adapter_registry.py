@@ -17,7 +17,7 @@ from agent_evolve.backends.tinkerlite.adapters import (
     register_adapter,
     resolve_adapter,
 )
-from agent_evolve.training.types import CheckpointRef
+from agent_evolve.model.types import CheckpointRef
 
 
 def test_lora_is_registered_on_import():

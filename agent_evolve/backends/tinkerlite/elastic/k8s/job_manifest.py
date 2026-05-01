@@ -67,7 +67,7 @@ def build_job_manifest(
             f"--nproc_per_node={world_size}",
             "--master_addr=127.0.0.1",
             f"--master_port={master_port}",
-            "-m", "agent_evolve.training.runners.ddp_worker",
+            "-m", "agent_evolve.model.runners.ddp_worker",
             "--config", cfg_path,
         ],
         "env": [{"name": k, "value": v} for k, v in env.items()],

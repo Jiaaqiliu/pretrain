@@ -22,7 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
-from ....training.types import CheckpointRef
+from ....model.types import CheckpointRef
 
 
 # ``attach_mode`` signals how the training loop must treat the return value

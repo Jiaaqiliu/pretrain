@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ....training.types import CheckpointRef
+from ....model.types import CheckpointRef
 from ..base import (
     AdamParams,
     Datum,

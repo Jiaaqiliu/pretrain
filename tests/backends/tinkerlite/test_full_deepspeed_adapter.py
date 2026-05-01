@@ -30,7 +30,7 @@ from agent_evolve.backends.tinkerlite.adapters import (
     ModelAdapter,
     resolve_adapter,
 )
-from agent_evolve.training.types import CheckpointRef
+from agent_evolve.model.types import CheckpointRef
 
 
 def test_full_deepspeed_is_registered_on_import():

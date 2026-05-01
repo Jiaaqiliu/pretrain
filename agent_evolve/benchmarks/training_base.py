@@ -9,14 +9,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Protocol, runtime_checkable
 
-from ..training.data.base import (
+from ..model.data.base import (
     CoTRenderer,
     DataSynthGenerator,
     Solver,
     TrainingExample,
     Verifier,
 )
-from ..training.types import (
+from ..model.types import (
     CheckpointRef,
     ErrorBuckets,
     EvalMetrics,

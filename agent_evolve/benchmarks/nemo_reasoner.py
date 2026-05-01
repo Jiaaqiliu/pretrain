@@ -27,7 +27,7 @@ from typing import Any
 
 import yaml
 
-from ..training.types import (
+from ..model.types import (
     CheckpointRef,
     ErrorBuckets,
     EvalMetrics,

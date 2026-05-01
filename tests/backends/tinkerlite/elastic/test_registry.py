@@ -10,7 +10,7 @@ import importlib
 
 
 def test_k8s_dotted_path_imports() -> None:
-    from agent_evolve.training.registries import TRAINING_BACKENDS
+    from agent_evolve.model.registries import TRAINING_BACKENDS
 
     dotted = TRAINING_BACKENDS["k8s_h200"]
     module_path, class_name = dotted.rsplit(".", 1)
@@ -24,7 +24,7 @@ def test_k8s_dotted_path_imports() -> None:
 
 def test_single_node_registry_unchanged() -> None:
     """Regression guard: we did not alter the h200_single_node registration."""
-    from agent_evolve.training.registries import TRAINING_BACKENDS
+    from agent_evolve.model.registries import TRAINING_BACKENDS
 
     dotted = TRAINING_BACKENDS["h200_single_node"]
     module_path, class_name = dotted.rsplit(".", 1)

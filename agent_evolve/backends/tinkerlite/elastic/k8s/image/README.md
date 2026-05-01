@@ -36,7 +36,7 @@ are identical.
 ## Quick start
 
 ```python
-from agent_evolve.training.api import TrainingEvolver
+from agent_evolve.model.api import TrainingEvolver
 
 evolver = TrainingEvolver(
     workspace="seed_workspaces/nemotron_reasoner",

@@ -25,10 +25,10 @@ os.environ.setdefault("WANDB_DISABLED", "true")
 AE = Path("/home/ec2-user/fsx/yisi/A-EVOLVE-V2")
 sys.path.insert(0, str(AE))
 
-from agent_evolve.training.algorithms.mcgs.ml_mutation import MLModelTypeMutationProposer  # noqa: E402
-from agent_evolve.training.algorithms.mcgs.search import MCGSSearch  # noqa: E402
-from agent_evolve.training.api import TrainingEvolver  # noqa: E402
-from agent_evolve.training.types import TrainingEvolveConfig  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.ml_mutation import MLModelTypeMutationProposer  # noqa: E402
+from agent_evolve.model.algorithms.mcgs.search import MCGSSearch  # noqa: E402
+from agent_evolve.model.api import TrainingEvolver  # noqa: E402
+from agent_evolve.model.types import TrainingEvolveConfig  # noqa: E402
 
 
 class RootFanoutSelector:

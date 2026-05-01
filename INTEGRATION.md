@@ -13,10 +13,10 @@ Protocol, register your class, set a YAML field — done.
 
 | You want to … | Implement | Registry |
 |---|---|---|
-| Swap the entire training framework (sklearn, JAX, PyTorch-from-scratch, tabular GBM) | [`TrainingJobRunner`](agent_evolve/training/runner_protocol.py) | `TRAINING_JOB_RUNNERS` (dotted-path) |
-| Add a new pipeline stage type (new `stage.type` in `train/pipeline.yaml`) | `@register_stage("<name>")` on a function taking `StageContext → StageResult` | [`stage_registry.py`](agent_evolve/training/stage_registry.py) |
+| Swap the entire training framework (sklearn, JAX, PyTorch-from-scratch, tabular GBM) | [`TrainingJobRunner`](agent_evolve/model/runner_protocol.py) | `TRAINING_JOB_RUNNERS` (dotted-path) |
+| Add a new pipeline stage type (new `stage.type` in `train/pipeline.yaml`) | `@register_stage("<name>")` on a function taking `StageContext → StageResult` | [`stage_registry.py`](agent_evolve/model/stage_registry.py) |
 | Add a new fine-tuning surface (DoRA, IA³, full fine-tune, QLoRA, prefix-tuning, custom head) | [`ModelAdapter`](agent_evolve/backends/tinkerlite/adapters/base.py) | `@register_adapter("<kind>")` |
-| Add a new way to generate training rows (self-instruct, OOD augment, rule-perturb, scraper) | [`DataGenerator`](agent_evolve/training/data/generator.py) | `@register_data_generator("<name>")` |
+| Add a new way to generate training rows (self-instruct, OOD augment, rule-perturb, scraper) | [`DataGenerator`](agent_evolve/model/data/generator.py) | `@register_data_generator("<name>")` |
 | Add a new benchmark (eval protocol, metrics, error taxonomy) | [`TrainingBenchmarkAdapter`](agent_evolve/benchmarks/training_base.py) | `TRAINING_BENCHMARKS` (dotted-path) |
 | Add a new compute target (ECS, AWS Batch, Slurm) | [`ComputeTarget`](agent_evolve/backends/tinkerlite/elastic/compute_target.py) | passed explicitly into `K8sTinkerLiteBackend(targets=[...])` |
 | Add a new search algorithm | class with `run_cycle(ctx) → MCGSCycleReport` | `TRAINING_ALGORITHMS` (dotted-path) |
@@ -46,14 +46,14 @@ Natural homes alongside their peers:
 | Extension | Natural in-tree home |
 |---|---|
 | `TrainingJobRunner` / backend | `agent_evolve/backends/<name>/` (same shape as `tinkerlite/`) |
-| Pipeline stage worker | `agent_evolve/training/runners/stages/<name>.py` |
+| Pipeline stage worker | `agent_evolve/model/runners/stages/<name>.py` |
 | `ModelAdapter` | `agent_evolve/backends/tinkerlite/adapters/<name>.py` |
-| `DataGenerator` | `agent_evolve/training/data/generators/<name>.py` |
+| `DataGenerator` | `agent_evolve/model/data/generators/<name>.py` |
 | Benchmark | `agent_evolve/benchmarks/<name>.py` |
 | Compute target | `agent_evolve/backends/tinkerlite/elastic/targets/<name>.py` |
 
 If you go this route, also add the dotted-path entry to
-[`training/registries.py`](agent_evolve/training/registries.py) so the
+[`training/registries.py`](agent_evolve/model/registries.py) so the
 string key resolves.
 
 ### Out-of-tree (when you want isolation)
@@ -78,7 +78,7 @@ edits to `agent_evolve/` are needed:
 
 ```python
 # myproj/__init__.py
-from agent_evolve.training.registries import (
+from agent_evolve.model.registries import (
     TRAINING_JOB_RUNNERS, TRAINING_BENCHMARKS,
 )
 TRAINING_JOB_RUNNERS["sklearn_tabular"] = "myproj.sklearn_runner.SklearnJobRunner"
@@ -103,7 +103,7 @@ populated.
   can start in-tree and factor out later with no code changes.
 
 The only directory that's **off-limits** for integrations is
-`agent_evolve/training/algorithms/mcgs/` and the core training-loop
+`agent_evolve/model/algorithms/mcgs/` and the core training-loop
 files (§7) — those are stable contracts.
 
 ---
@@ -130,7 +130,7 @@ myproj/
 ```python
 # myproj/sklearn_runner.py
 from pathlib import Path
-from agent_evolve.training.types import (
+from agent_evolve.model.types import (
     CheckpointRef, TrainingTrialResult, ValidityReport,
 )
 
@@ -186,7 +186,7 @@ class MyTabularBenchmark:
     name = "my_tabular_benchmark"
 
     def primary_metric(self):                         # used by MCGS
-        from agent_evolve.training.types import MetricSpec
+        from agent_evolve.model.types import MetricSpec
         return MetricSpec(name="rmse", direction="minimize")
 
     def score_sklearn(self, workspace, model):        # your runner calls this
@@ -199,12 +199,12 @@ class MyTabularBenchmark:
 
 #### (c) Registry — make the strings resolvable
 
-Edit [agent_evolve/training/registries.py](agent_evolve/training/registries.py)
+Edit [agent_evolve/model/registries.py](agent_evolve/model/registries.py)
 (or, if you're keeping everything out-of-tree, add the entries at import
 time in your `myproj/__init__.py`):
 
 ```python
-from agent_evolve.training.registries import (
+from agent_evolve.model.registries import (
     TRAINING_JOB_RUNNERS, TRAINING_BENCHMARKS,
 )
 
@@ -289,7 +289,7 @@ evolver.run(cycles=10)
 | **Benchmark** | `myproj/benchmark.py` | `primary_metric()`, `check_validity()`, plus whatever scoring method your runner calls |
 | **Algorithm** | — (reuse `"mcgs"`) | Only write one if you need custom search; default MCGS is task-agnostic |
 | **Workspace** | `seed_workspaces/my_tabular_task/` | On-disk, forked per candidate. `train/sklearn.yaml` is the evolvable surface MCGS mutates |
-| **Registry** | `agent_evolve/training/registries.py` *or* `myproj/__init__.py` | String-key → dotted-path for runner + benchmark |
+| **Registry** | `agent_evolve/model/registries.py` *or* `myproj/__init__.py` | String-key → dotted-path for runner + benchmark |
 
 ---
 
@@ -313,7 +313,7 @@ myproj/
 
 ```python
 # myproj/stages/rule_perturb.py
-from agent_evolve.training.stage_registry import (
+from agent_evolve.model.stage_registry import (
     register_stage, StageContext, StageResult,
 )
 
@@ -330,7 +330,7 @@ def _drive_rule_perturb(ctx: StageContext) -> StageResult:
 
 `StageContext` fields (workspace, benchmark, last_ckpt, training_client_fn,
 sampling_client_fn, budget_seconds, smoke, …) are defined in
-[stage_registry.py](agent_evolve/training/stage_registry.py).
+[stage_registry.py](agent_evolve/model/stage_registry.py).
 
 #### (b) Benchmark — only if your stage needs task-specific semantics
 
@@ -396,7 +396,7 @@ from pathlib import Path
 from agent_evolve.backends.tinkerlite.adapters import (
     register_adapter, ATTACH_MODE_WRAP,
 )
-from agent_evolve.training.types import CheckpointRef
+from agent_evolve.model.types import CheckpointRef
 
 
 @register_adapter("dora")
@@ -488,7 +488,7 @@ myproj/
 
 ```python
 # myproj/generators/rule_perturb.py
-from agent_evolve.training.data import (
+from agent_evolve.model.data import (
     register_data_generator, GeneratedRow, DataRecipe,
 )
 
@@ -609,7 +609,7 @@ For a non-`nemo_reasoner` benchmark that uses the built-in
 #### (c) Registry — dotted-path entry
 
 ```python
-# agent_evolve/training/registries.py   (or myproj/__init__.py at import time)
+# agent_evolve/model/registries.py   (or myproj/__init__.py at import time)
 TRAINING_BENCHMARKS["my_benchmark"] = "myproj.benchmark.MyBenchmark"
 ```
 
@@ -644,7 +644,7 @@ for Kaggle-mode eval).
 A seed workspace is the evolvable "training DNA" on disk. MCGS forks it
 per candidate, mutators patch fields, and the backend reads it.
 
-### Required files (validator enforces — see [`training/schema.py`](agent_evolve/training/schema.py))
+### Required files (validator enforces — see [`training/schema.py`](agent_evolve/model/schema.py))
 
 ```
 seed_workspaces/<name>/
