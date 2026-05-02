@@ -5,6 +5,12 @@
 # under ``data/synth/`` and appends it to ``data/sources.yaml`` so the next
 # SFT stage sees the new prompts. SFT's ``max_steps`` caps optimizer steps
 # at N (effective batch 32 ≈ ~3.5 min/step on 1× H200).
+
+# Force training to run even though model/adapter.yaml sets seed_adapter_path.
+# Without this flag the backend takes the "eval-only shortcut" which skips DDP
+# and thus never exercises the k8s scheduler.
+override_seed_adapter: true
+
 stages:
   # Data-generation stages (Phase 1/2). All disabled by default; a mutator or
   # a driver flips them on. Recipe at ``data/recipes/default.yaml`` controls
@@ -35,11 +41,11 @@ stages:
 
   - name: sft_warmup
     type: sft
-    epochs: 2
-    max_steps: 8
+    epochs: 1
+    max_steps: 2    # tiny: just enough to exercise the DDP dispatch path (~2-3 min)
     loss: cross_entropy
     data_mix: default
-    enabled: false   # eval-only smoke: skip training; evaluate seed_adapter_path directly
+    enabled: true   # k8s smoke: exercise the elastic scheduler via a DDP SFT stage
   - name: rl_gspo
     type: rl
     # ── GSPO knobs (consumed by agent_evolve.model.runners.stages.rl).

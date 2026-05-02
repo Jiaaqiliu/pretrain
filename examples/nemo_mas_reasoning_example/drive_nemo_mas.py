@@ -281,8 +281,17 @@ def install_dry_run_bedrock_stub(scripted_responses: list[str]) -> None:
     fake._log = log
 
 
-def build_algorithm(*, mode: str, workspace_root: Path):
-    """Construct NemoMASAlgorithm with the right backend_registry for the mode."""
+def build_algorithm(*, mode: str, workspace_root: Path, backend_kind: str = "local"):
+    """Construct NemoMASAlgorithm with the right backend_registry for the mode.
+
+    ``backend_kind`` is only consulted when ``mode == "real"``:
+      * ``"local"``  → SingleNodeTinkerLiteBackend on the local GPUs.
+      * ``"k8s"``    → K8sTinkerLiteBackend capped at 2 concurrent Jobs,
+                        ``local_enabled=False`` so missing kubeconfig fails
+                        fast instead of silently falling back to local.
+
+    For dry-run / demo modes the arg is ignored — no real backend is used.
+    """
     from agent_evolve.model.algorithms.nemo_mas import NemoMASAlgorithm
     from agent_evolve.model.algorithms.nemo_mas.backends import (
         BackendBridge, demo_compute_handlers, local_handlers,
@@ -298,10 +307,39 @@ def build_algorithm(*, mode: str, workspace_root: Path):
         registry.update(demo_compute_handlers())
     elif mode == "real":
         from agent_evolve.benchmarks.nemo_reasoner import NemoReasonerBenchmark
-        from agent_evolve.backends.tinkerlite.single_node.backend import (
-            SingleNodeTinkerLiteBackend,
-        )
-        backend = SingleNodeTinkerLiteBackend(mock=False)
+
+        if backend_kind == "local":
+            from agent_evolve.backends.tinkerlite.single_node.backend import (
+                SingleNodeTinkerLiteBackend,
+            )
+            backend = SingleNodeTinkerLiteBackend(mock=False)
+        elif backend_kind == "k8s":
+            from agent_evolve.backends.tinkerlite.elastic.backend import (
+                K8sTinkerLiteBackend,
+            )
+            backend = K8sTinkerLiteBackend(
+                namespace=os.environ.get("AE_K8S_NAMESPACE", "a-evolve"),
+                image=os.environ.get("AE_K8S_IMAGE", "a-evolve/trainer:latest"),
+                pvc_name=os.environ.get("AE_K8S_PVC", "fsx-zzsamshi"),
+                node_selector=(
+                    {"nvidia.com/gpu.product": "H200"}
+                    if os.environ.get("AE_K8S_NODE_LABEL", "1") == "1"
+                    else None
+                ),
+                # Hard constraints from the plan: 2 concurrent Jobs max, no
+                # local fallback. Missing kubeconfig / namespace raises at
+                # construction rather than silently running on local GPUs.
+                local_enabled=False,
+                k8s_queue_budget=2,
+                queue_timeout_secs=float(
+                    os.environ.get("AE_K8S_QUEUE_TIMEOUT", "900")
+                ),
+            )
+        else:
+            raise ValueError(
+                f"unknown backend_kind {backend_kind!r}; expected 'local' or 'k8s'"
+            )
+
         benchmark = NemoReasonerBenchmark()
         bridge = BackendBridge(workspace_root=workspace_root,
                                benchmark=benchmark, backend=backend)
@@ -397,16 +435,29 @@ def main() -> int:
                     help="Write per-turn JSONL traces of every BedrockAgent "
                          "to this directory (demo / real modes). One file "
                          "per agent per cycle.")
+    ap.add_argument("--backend", choices=("local", "k8s"), default="local",
+                    help="Compute target for real mode. `local` (default) = "
+                         "single-node torchrun on local GPUs. `k8s` = elastic "
+                         "k8s submission capped at 2 concurrent Jobs, with no "
+                         "local fallback (bad kubeconfig fails fast).")
     args = ap.parse_args()
 
     configure_logging()
+
+    if args.backend == "k8s" and args.mode != "real":
+        print(f"[driver] --backend k8s requires --mode real (got {args.mode!r})",
+              file=sys.stderr)
+        return 2
 
     workspace = Path(args.workspace).resolve()
     if not workspace.exists():
         print(f"[driver] workspace not found: {workspace}", file=sys.stderr)
         return 2
 
-    work_dir = Path(args.work_dir or f"runs/nemo-mas-{args.mode}").resolve()
+    default_work_suffix = (
+        f"{args.mode}-{args.backend}" if args.mode == "real" else args.mode
+    )
+    work_dir = Path(args.work_dir or f"runs/nemo-mas-{default_work_suffix}").resolve()
 
     # Dry-run: install the stub BEFORE importing the algorithm package so
     # the spawner's lazy import resolves to the stub.
@@ -422,10 +473,12 @@ def main() -> int:
         # BedrockAgent is lazy-imported inside call sites, so we're safe).
         install_trace_wrapper(Path(args.trace_dir).resolve())
 
-    algo = build_algorithm(mode=args.mode, workspace_root=workspace)
+    algo = build_algorithm(
+        mode=args.mode, workspace_root=workspace, backend_kind=args.backend,
+    )
 
-    print(f"[driver] mode={args.mode} cycles={args.cycles} "
-          f"workspace={workspace}")
+    print(f"[driver] mode={args.mode} backend={args.backend} "
+          f"cycles={args.cycles} workspace={workspace}")
     print(f"[driver] backend tools wired: {len(algo.backend_registry or {})}")
 
     summary = run_via_evolver(
