@@ -36,12 +36,22 @@ def build_job_manifest(
     extra_env: dict[str, str] | None = None,
     shm_size_gib: int = 16,
     labels: dict[str, str] | None = None,
+    run_as_uid: int | None = 1000,
+    run_as_gid: int | None = 1000,
+    fs_group: int | None = 1000,
 ) -> dict[str, Any]:
     """Return a plain-dict Job manifest; caller feeds it to ``kubernetes.client``.
 
     ``cfg_path`` / adapter dir / result file must all live under
     ``pvc_mount_path`` so that rank 0 inside the pod writes to the same
     FSx bytes that the scheduler reads on the host.
+
+    By default the pod runs as uid/gid 1000 so any files it creates on
+    the shared FSx PVC are readable + writable by the ec2-user on the
+    host that continues driving the cycle after the Job completes (e.g.
+    the post-training local eval step that writes under
+    ``evolution/eval/``). Pass ``run_as_uid=None`` / ``run_as_gid=None``
+    to disable and inherit the image's default user.
     """
     master_port = 29500 + (hash(cfg_path) % 1000)
 
@@ -52,6 +62,10 @@ def build_job_manifest(
         "NCCL_DEBUG": "WARN",
         "TOKENIZERS_PARALLELISM": "false",
         "PYTHONPATH": ae_root_in_pod,
+        # uid 1000 has no /etc/passwd entry in the NGC image, so HOME
+        # is unset. Point it at a writable path to keep stray ~/foo
+        # cache writes from failing.
+        "HOME": "/tmp",
     }
     if extra_env:
         env.update(extra_env)
@@ -100,6 +114,19 @@ def build_job_manifest(
     }
     if node_selector:
         pod_spec["nodeSelector"] = dict(node_selector)
+
+    # Ensure files created on FSx are owned by the host's ec2-user
+    # (uid/gid 1000 by default) rather than root, so the host-side
+    # eval step can read + write under the pod's output paths.
+    security_context: dict[str, Any] = {}
+    if run_as_uid is not None:
+        security_context["runAsUser"] = int(run_as_uid)
+    if run_as_gid is not None:
+        security_context["runAsGroup"] = int(run_as_gid)
+    if fs_group is not None:
+        security_context["fsGroup"] = int(fs_group)
+    if security_context:
+        pod_spec["securityContext"] = security_context
 
     pod_labels = {"app": "a-evolve-trainer", "job-name": job_name}
     if labels:

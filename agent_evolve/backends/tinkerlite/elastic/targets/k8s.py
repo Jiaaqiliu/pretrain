@@ -70,6 +70,12 @@ class K8sComputeTarget:
         kubeconfig: str | None = None,
         ae_root_in_pod: str = "/fsx/zzsamshi/a-evolve",
         poll_interval_secs: float = 10.0,
+        # Pod uid/gid for FSx write compatibility with the host driver.
+        # Default 1000/1000/1000 matches ec2-user; pass None to disable
+        # and inherit the image's default user.
+        run_as_uid: int | None = 1000,
+        run_as_gid: int | None = 1000,
+        fs_group: int | None = 1000,
     ):
         self.namespace = namespace
         self.image = image
@@ -79,6 +85,9 @@ class K8sComputeTarget:
         self.gpu_resource_key = gpu_resource_key
         self.ae_root_in_pod = ae_root_in_pod
         self.poll_interval_secs = float(poll_interval_secs)
+        self.run_as_uid = run_as_uid
+        self.run_as_gid = run_as_gid
+        self.fs_group = fs_group
 
         client, config, _ = _require_kubernetes()
         if kubeconfig is not None:
@@ -185,6 +194,9 @@ class K8sComputeTarget:
             ae_root_in_pod=self.ae_root_in_pod,
             node_selector=self.node_selector,
             gpu_resource_key=self.gpu_resource_key,
+            run_as_uid=self.run_as_uid,
+            run_as_gid=self.run_as_gid,
+            fs_group=self.fs_group,
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=manifest)
         logger.info("submitted k8s Job %s/%s (ws=%d cfg=%s)",

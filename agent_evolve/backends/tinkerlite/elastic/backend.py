@@ -56,6 +56,12 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
         kubeconfig: str | None = None,
         ae_root_in_pod: str = "/fsx/zzsamshi/a-evolve",
         k8s_poll_interval_secs: float = 10.0,
+        # Pod uid/gid — default 1000/1000/1000 matches ec2-user so files
+        # created on FSx are writable by the driver process afterwards.
+        # Pass None to inherit the image default (root in NGC images).
+        k8s_run_as_uid: int | None = 1000,
+        k8s_run_as_gid: int | None = 1000,
+        k8s_fs_group: int | None = 1000,
         # Local fallback config
         local_enabled: bool = True,
         local_gpu_pool: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 7),
@@ -83,6 +89,9 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
                     kubeconfig=kubeconfig,
                     ae_root_in_pod=ae_root_in_pod,
                     poll_interval_secs=k8s_poll_interval_secs,
+                    run_as_uid=k8s_run_as_uid,
+                    run_as_gid=k8s_run_as_gid,
+                    fs_group=k8s_fs_group,
                 )
             )
         except RuntimeError as exc:
