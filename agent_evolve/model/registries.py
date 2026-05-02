@@ -19,6 +19,9 @@ TRAINING_BENCHMARKS: dict[str, str] = {
 
 TRAINING_ALGORITHMS: dict[str, str] = {
     "mcgs": "agent_evolve.model.algorithms.mcgs.search.MCGSSearch",
+    # Orchestrator-worker MAS — independent of mcgs; same workspace contract.
+    # See seed_workspaces/nemo_mas_reasoner/DESIGN.md.
+    "nemo_mas": "agent_evolve.model.algorithms.nemo_mas.orchestrator.NemoMASAlgorithm",
 }
 
 # The authoritative name is ``TRAINING_JOB_RUNNERS`` (implements

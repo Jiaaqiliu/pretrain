@@ -1,0 +1,78 @@
+# Tools available to Analyst workers.
+# Tool descriptions are shown to the LLM (evolvable).
+# mem_write is restricted to the kind whitelist below.
+
+mem_write_kinds:
+  - data_audit_finding
+  - benchmark_rule
+  - profile_run
+  - eval_report
+  - error_pattern
+  - data_gap
+  - breakthrough        # requires len(refs) >= 1
+  - failed_attempt
+
+tools:
+  # Memory
+  mem_write:
+    description: >
+      Append a typed record to the memory store. Required: kind, title, body.
+      Optional: tags (list), refs (list of ids). The 'author' field is set
+      automatically. Writing a kind not in the whitelist returns an error.
+      `breakthrough` requires len(refs)>=1.
+  mem_search:
+    description: "BM25 search. Args: query, kind?, author?, tags?, cycle_range?, top_k=8."
+  mem_recent:
+    description: "Recent records. Args: kind?, author?, tags?, k=10."
+  mem_get:
+    description: "Full record by id."
+  mem_link:
+    description: "Add a refs edge from one record to another (cannot remove)."
+
+  # Skills
+  skill_index:
+    description: "List skills in skills/<domain>/ with their 'When to use' line."
+  skill_load:
+    description: "Read full markdown for one skill."
+
+  # Read-only file access
+  read_file:
+    description: "Read a workspace file. Cannot read model/ checkpoints."
+  list_dir:
+    description: "List a workspace directory."
+
+  # Data inspection
+  sample_jsonl:
+    description: >
+      Sample N rows from a JSONL file. Args: path, n (default 50),
+      seed (default 0). Returns rows + a per-field type/length summary.
+  count_by_field:
+    description: >
+      Group-by count over a JSONL file. Args: path, field (e.g. 'category').
+      Returns {value: count}.
+  length_distribution:
+    description: >
+      Token-length histogram for a JSONL field. Args: path, field
+      (e.g. 'completion'), tokenizer (default 'nemotron-3-nano').
+
+  # Eval execution (Analyst can run eval, not training)
+  run_eval:
+    description: >
+      Run a full eval pass on a checkpoint against a split. Args:
+      ckpt_path, split (e.g. 'kaggle_dev_local'), limit (optional row cap).
+      Returns: per-category accuracy, error-bucket counts, jsonl path of
+      per-row outputs.
+  run_short_training:
+    description: >
+      Launch a short training run (default 200 steps) for profiling only.
+      Args: recipe_diff (yaml or unified diff), max_steps (default 200),
+      log_every (default 10). Returns loss curve + status.
+  plot_loss_curve:
+    description: >
+      Generate a PNG of loss vs step for one or more profile runs.
+      Args: training_run_ids (list). Returns PNG path.
+  compute_data_gap_table:
+    description: >
+      Helper for compute_data_gap skill: cross-tabulate
+      eval errors by (category, length_bucket) to surface gaps.
+      Args: eval_report_id. Returns a markdown table.

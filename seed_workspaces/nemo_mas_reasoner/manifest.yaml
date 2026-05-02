@@ -1,0 +1,54 @@
+name: nemo_mas_reasoner
+contract_version: train-1.0
+description: >
+  Orchestrator-worker MAS for Nemotron Reasoning Kaggle. Lightweight role
+  prompts + medium skill pool + typed-record memory with BM25. Parallel
+  alternative to MCGS — same workspace contract, different search strategy.
+
+defaults:
+  benchmark: nemo_reasoner
+  algorithm: nemo_mas
+  backend: h200_single_node
+
+# What the algorithm is allowed to mutate cycle-to-cycle.
+# `prompts` and `skills` are evolvable so the LLM-managed pipeline can sharpen
+# its own protocols across cycles, but in practice the human curates these.
+evolvable_layers:
+  - prompts
+  - skills
+  - data/mix.yaml
+  - data/curriculum.yaml
+  - data/recipes
+  - data/generators
+  - data/filters
+  - train/pipeline.yaml
+  - train/optimizer.yaml
+  - train/loss.yaml
+  - train/batching.yaml
+  - rl/reward.py
+  - rl/advantage.py
+  - rl/rollout.yaml
+  - eval/error_taxonomy.yaml
+  - runner                  # Engineer scaffolds here
+  - backend                 # backend config tweaks
+
+protected_layers:
+  - DESIGN.md
+  - manifest.yaml
+  - tools                   # tool whitelist is structural, not evolvable per-cycle
+  - prompts/benchmark_reference.md  # human-curated ground truth about eval
+  - model/base.yaml
+  - eval/local_splits.yaml
+  - eval/kaggle_eval.yaml
+  - eval/private_holdout.jsonl
+  - data/raw
+
+artifact_layers:
+  - memory                  # records.jsonl + bm25 index
+  - checkpoints
+  - evolution
+  - data/generated          # distill outputs (TeacherDistiller / SolverDistiller)
+  - data/final              # DataCurator outputs
+  - logs                    # training / eval logs
+
+reload_strategy: hot

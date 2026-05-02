@@ -2,7 +2,7 @@
 
 This guide tells you **where to wire in** a new training job, data-generation
 method, inference path, fine-tuning surface, or benchmark without editing
-core files (`training/loop.py`, `training/trial.py`, `training/algorithms/`).
+core files (`model/loop.py`, `model/trial.py`, `model/algorithms/`).
 
 Every extension point is a Protocol + a small registry. Implement the
 Protocol, register your class, set a YAML field — done.
@@ -20,6 +20,7 @@ Protocol, register your class, set a YAML field — done.
 | Add a new benchmark (eval protocol, metrics, error taxonomy) | [`TrainingBenchmarkAdapter`](agent_evolve/benchmarks/training_base.py) | `TRAINING_BENCHMARKS` (dotted-path) |
 | Add a new compute target (ECS, AWS Batch, Slurm) | [`ComputeTarget`](agent_evolve/backends/tinkerlite/elastic/compute_target.py) | passed explicitly into `K8sTinkerLiteBackend(targets=[...])` |
 | Add a new search algorithm | class with `run_cycle(ctx) → MCGSCycleReport` | `TRAINING_ALGORITHMS` (dotted-path) |
+| Replace one role (plan / data / train / eval / analyze) in the multi-role algorithm | class with `name: str` + `execute(my_dir, cycle_dir)` matching [`Role`](agent_evolve/model/algorithms/a_evolve_training_multi/role.py) | constructor arg to `run_cycle(workspace, roles)` (no registry) |
 
 Most integrations only need **one** of these.
 
@@ -53,7 +54,7 @@ Natural homes alongside their peers:
 | Compute target | `agent_evolve/backends/tinkerlite/elastic/targets/<name>.py` |
 
 If you go this route, also add the dotted-path entry to
-[`training/registries.py`](agent_evolve/model/registries.py) so the
+[`model/registries.py`](agent_evolve/model/registries.py) so the
 string key resolves.
 
 ### Out-of-tree (when you want isolation)
@@ -639,12 +640,123 @@ for Kaggle-mode eval).
 
 ---
 
+## 5.5 `Role` — replace a role in `a_evolve_training_multi`
+
+Use this when you're running the role-driven algorithm (§4.5 in
+TRAINDESIGN.md) and want to swap one of the five default roles
+(`orchestrator` / `data` / `training` / `evaluation` / `analysis`) for
+your own implementation. Unlike the other extension points, there is
+**no registry** — roles are passed directly to `run_cycle`.
+
+#### (a) Role class — your logic
+
+```text
+myproj/
+└── roles/
+    └── llm_orchestrator.py   ← implements the Role Protocol
+```
+
+```python
+# myproj/roles/llm_orchestrator.py
+from pathlib import Path
+
+
+class LLMOrchestrator:
+    """Orchestrator that asks an LLM to rewrite strategy each cycle."""
+
+    name = "orchestrator"   # must match one of the 5 fixed role names
+
+    def __init__(self, model: str = "claude-opus-4-7"):
+        self.model = model
+
+    def execute(self, my_dir: Path, cycle_dir: Path) -> None:
+        workspace = cycle_dir.parent.parent
+        strategy = (workspace / "strategy.md").read_text()
+        prior_summaries = sorted(
+            (p / "analysis" / "summary.md")
+            for p in cycle_dir.parent.iterdir()
+            if p.is_dir() and p.name != cycle_dir.name and (p / "_done").exists()
+        )
+        # ... call LLM with (strategy, prior_summaries) ...
+        (my_dir / "plan.md").write_text(plan_text)
+        (my_dir / "strategy_update.md").write_text(updated_strategy)
+```
+
+The Protocol is structural (see
+[role.py](agent_evolve/model/algorithms/a_evolve_training_multi/role.py)) —
+no inheritance is required. The only contract is `name` (matches the
+role slot) and `execute(my_dir, cycle_dir)`.
+
+#### (b) Backend / benchmark — untouched
+
+The algorithm itself does not import any backend. If your role is the
+`training` role and needs to launch a real training job, inject the
+`TrainingJobRunner` via your constructor:
+
+```python
+class MyTrainingRole:
+    name = "training"
+
+    def __init__(self, backend):
+        self.backend = backend    # e.g. SingleNodeTinkerLiteBackend
+
+    def execute(self, my_dir, cycle_dir):
+        result = self.backend.run_trial(workspace=my_dir, node=..., ...)
+        ...
+```
+
+Swap `h200_single_node` ↔ `k8s_h200` ↔ a custom `TrainingJobRunner`
+with no change to the other four roles.
+
+#### (c) Wiring — pass your role list to `run_cycle`
+
+```python
+from agent_evolve.model.algorithms.a_evolve_training_multi import (
+    run_cycle, DataRole, EvaluationRole, AnalysisRole,
+)
+from myproj.roles.llm_orchestrator import LLMOrchestrator
+from myproj.roles.my_training import MyTrainingRole
+
+backend = ...   # any TrainingJobRunner
+roles = [
+    LLMOrchestrator(model="claude-opus-4-7"),
+    DataRole(),              # stub — replace whenever you like
+    MyTrainingRole(backend=backend),
+    EvaluationRole(),
+    AnalysisRole(),
+]
+
+for _ in range(N):
+    cycle_dir = run_cycle(Path("./workspace"), roles)
+```
+
+#### (d) Workspace — just a directory
+
+The multi-role algorithm does not enforce `schema.py`: any directory
+works. The example driver seeds a `strategy.md` at the workspace root
+and lets each role decide what else to write under `cycles/<NNNN>/<role>/`.
+
+See the end-to-end demo:
+[examples/multi_role_min_example/drive_min_cycle.py](examples/multi_role_min_example/drive_min_cycle.py)
+(~180 LoC, runs offline in milliseconds with a `FakeBackend`).
+
+### Summary — per-layer responsibilities
+
+| Layer | File(s) | Changes |
+|---|---|---|
+| **Role** | `myproj/roles/<role>.py` | New class with `name` + `execute` |
+| **Backend** | — | Untouched; inject into whichever role needs it |
+| **Registry** | — (no registry for roles) | Pass the role instance into `run_cycle(roles=[...])` |
+| **Workspace** | any directory | No `manifest.yaml` / `schema.py` required |
+
+---
+
 ## 6. Seed workspace layout
 
 A seed workspace is the evolvable "training DNA" on disk. MCGS forks it
 per candidate, mutators patch fields, and the backend reads it.
 
-### Required files (validator enforces — see [`training/schema.py`](agent_evolve/model/schema.py))
+### Required files (validator enforces — see [`model/schema.py`](agent_evolve/model/schema.py))
 
 ```
 seed_workspaces/<name>/
@@ -686,9 +798,12 @@ placeholder values.
 
 Core training-loop files are stable — don't fork them:
 
-- `training/api.py`, `training/loop.py`, `training/trial.py`, `training/observer.py`
-- `training/algorithms/mcgs/*.py`
-- `training/types.py`, `training/workspace.py`, `training/schema.py`
+- `model/api.py`, `model/loop.py`, `model/trial.py`, `model/observer.py`
+- `model/algorithms/mcgs/*.py`
+- `model/algorithms/a_evolve_training_multi/{role,loop}.py` (the 5-line
+  Protocol + the `run_cycle` driver). Replace individual roles via `roles=`,
+  don't fork the loop.
+- `model/types.py`, `model/workspace.py`, `model/schema.py`
 
 If you think you need to edit one of these, **file an issue first** — it
 usually means a new Protocol or registry is missing, and we should add it

@@ -35,7 +35,8 @@ String values on the right are *registry keys* — `ae.TrainingEvolver` resolves
 
 ```text
 agent_evolve/
-├── training/
+├── model/                         (renamed from `training/` — this package now hosts
+│   │                               model-evolve, of which training is one role)
 │   ├── api.py                    TrainingEvolver facade
 │   ├── types.py                  All shared dataclasses (single source of truth)
 │   ├── registries.py             Dotted-path registry for benchmarks / algorithms / job runners
@@ -49,16 +50,23 @@ agent_evolve/
 │   ├── run.py                    CLI: python -m agent_evolve.model.run
 │   ├── algorithms/
 │   │   ├── null.py               No-op algorithm for scaffolding
-│   │   └── mcgs/
-│   │       ├── search.py         MCGSSearch.run_cycle
-│   │       ├── graph.py          TrainingSearchGraph (persistent DAG)
-│   │       ├── node.py           NodeStatus + summaries
-│   │       ├── selection.py      UCTSelector + TopKStore (branch-diversity cap)
-│   │       ├── mutation.py       BaselineMutationProposer + LRBagMutationProposer
-│   │       ├── reward.py         DefaultRewardPolicy
-│   │       ├── promotion.py      PromotionPolicy (incumbent + tie-breakers)
-│   │       ├── memory.py         NodeMemoryStore (BM25-lite retrieval, JSONL on disk)
-│   │       └── fusion.py         FusionPolicy (cross-branch recombination on stagnation)
+│   │   ├── mcgs/
+│   │   │   ├── search.py         MCGSSearch.run_cycle
+│   │   │   ├── graph.py          TrainingSearchGraph (persistent DAG)
+│   │   │   ├── node.py           NodeStatus + summaries
+│   │   │   ├── selection.py      UCTSelector + TopKStore (branch-diversity cap)
+│   │   │   ├── mutation.py       BaselineMutationProposer + LRBagMutationProposer
+│   │   │   ├── reward.py         DefaultRewardPolicy
+│   │   │   ├── promotion.py      PromotionPolicy (incumbent + tie-breakers)
+│   │   │   ├── memory.py         NodeMemoryStore (BM25-lite retrieval, JSONL on disk)
+│   │   │   └── fusion.py         FusionPolicy (cross-branch recombination on stagnation)
+│   │   └── a_evolve_training_multi/
+│   │       ├── role.py           `Role` Protocol — just `name` + `execute(my_dir, cycle_dir)`
+│   │       ├── loop.py           `run_cycle(workspace, roles)` — allocates cycle id, mkdirs,
+│   │       │                     writes `_done` sentinel. ~20 LoC.
+│   │       └── roles.py          Stub impls for the 5 fixed role names
+│   │                             (orchestrator → data → training → evaluation → analysis);
+│   │                             each team replaces the stub with its own class.
 │   ├── data/                     Benchmark-agnostic data-generation primitives
 │   │   ├── base.py               Solver / Verifier / CoTRenderer / DataSynthGenerator Protocols
 │   │   ├── generator.py          DataGenerator Protocol + registry
@@ -269,22 +277,25 @@ Training-subsystem glue (`api/loop/trial/observer/workspace/types/registries`)
 is shared by all five and isn't branched here.
 
 ```
-algorithm  →  training/algorithms/<name>/               ← reads metrics, proposes moves
-  + training/algorithms/null.py                           (reference impl: 45 LoC)
-  + training/algorithms/mcgs/{search,graph,node,
+algorithm  →  model/algorithms/<name>/                  ← reads metrics, proposes moves
+  + model/algorithms/null.py                              (reference impl: 45 LoC)
+  + model/algorithms/mcgs/{search,graph,node,
        selection,mutation,reward,promotion,               (UCT + mutation + reward
        memory,fusion}.py                                   + promotion + memory + fusion)
+  + model/algorithms/a_evolve_training_multi/             (multi-role skeleton;
+       {role,loop,roles}.py                                orchestrator → data → training
+                                                           → evaluation → analysis)
 
-runners    →  training/runners/                         ← per-stage workers, dispatched
-  + runners/stages/sft.py                                 (@register_stage("sft"))
-  + runners/stages/rl.py                                  (@register_stage("rl"))
-  + runners/stages/solver_distill.py                      (@register_stage("solver_distill"))
-  + runners/stages/teacher_distill.py                     (@register_stage("synth_generate"))
-  + runners/stages/data_merge.py                          (@register_stage("data_merge"))
-  + runners/stages/generate.py                            (@register_stage("generate"))
-  + runners/stages/eval.py                                (run_eval_plan; not a pipeline stage)
-  + runners/ddp_worker.py                                 (torchrun subprocess entry)
-  + runners/helpers/{dataset,pack_adapter}.py             (tokenize + collate + pack)
+runners    →  model/runners/                            ← per-stage workers, dispatched
+  + model/runners/stages/sft.py                           (@register_stage("sft"))
+  + model/runners/stages/rl.py                            (@register_stage("rl"))
+  + model/runners/stages/solver_distill.py                (@register_stage("solver_distill"))
+  + model/runners/stages/teacher_distill.py               (@register_stage("synth_generate"))
+  + model/runners/stages/data_merge.py                    (@register_stage("data_merge"))
+  + model/runners/stages/generate.py                      (@register_stage("generate"))
+  + model/runners/stages/eval.py                          (run_eval_plan; not a pipeline stage)
+  + model/runners/ddp_worker.py                           (torchrun subprocess entry)
+  + model/runners/helpers/{dataset,pack_adapter}.py       (tokenize + collate + pack)
 
 backend    →  backends/tinkerlite/<name>/               ← runs the pipeline, no scoring
   + backends/tinkerlite/single_node/                      (local — mock/real; stage dispatcher)
@@ -299,11 +310,11 @@ benchmark  →  benchmarks/<name>.py                      ← eval semantics, er
                                                            benchmark.* with nemo_reasoner fallback)
   + benchmarks/nemo_reasoner.py                           (reference impl — smoke + Kaggle)
 
-data       →  training/data/                            ← benchmark-agnostic primitives
-  + data/base.py                                          (Solver/Verifier/CoTRenderer Protocols)
-  + data/generator.py                                     (DataGenerator Protocol + registry)
-  + data/generators/{solver_distill,teacher_llm}.py       (registered wrappers)
-  + data/{recipe,dedup,cot_template,verifier_gate}.py     (recipe schema + dedup + CoT + gate)
+data       →  model/data/                               ← benchmark-agnostic primitives
+  + model/data/base.py                                    (Solver/Verifier/CoTRenderer Protocols)
+  + model/data/generator.py                               (DataGenerator Protocol + registry)
+  + model/data/generators/{solver_distill,teacher_llm}.py (registered wrappers)
+  + model/data/{recipe,dedup,cot_template,verifier_gate}.py (recipe schema + dedup + CoT + gate)
 
 workspace  →  seed_workspaces/<name>/                   ← on-disk training DNA, evolvable
 ```
@@ -326,6 +337,61 @@ From each `TrainingTrialResult`, MCGS only looks at:
 MCGS does **not** currently read per-prediction text, raw stdout, or benchmark secondary metrics (e.g. per-domain accuracy). `ErrorBuckets.examples` is written to `evolution/observations/<node_id>.json` but not consumed by mutator or selector today. `mutation.py::BaselineMutationProposer.propose` ignores parent entirely (rotates a hardcoded bag); `LRBagMutationProposer` does the same.
 
 Example-driven mutation (Claude-in-the-loop reading bucket examples and writing the next patch) is an obvious next step — hooks exist (`memory.retrieve(query, k)`, `NodeMemoryStore` already persists `examples`). Not done yet.
+
+## 4.5 `a_evolve_training_multi` — the multi-role algorithm
+
+Sibling to MCGS under `model/algorithms/`. Where MCGS is score-driven (one
+number per trial, UCT select, mutate a YAML field), `a_evolve_training_multi`
+is **role-driven**: each evolution cycle is a sequence of roles that each
+own one concern (plan / data / train / eval / analyze), and the platform
+only promises cycle directories, not a search state.
+
+### Contract (everything the platform fixes)
+
+1. **Cycle layout.** `<workspace>/cycles/<NNNN>/` per cycle, monotonic id.
+2. **Role slots.** Each role gets its own subdirectory named after
+   `role.name` — pre-created before `execute` runs.
+3. **Five fixed role names + default execution order:**
+   `orchestrator → data → training → evaluation → analysis`.
+4. **`_done` sentinel** — dropped by the platform after the last role
+   returns, so the next cycle can detect which prior cycles finished.
+
+What the platform does **not** fix:
+
+- File formats / schemas / filenames inside each role directory (role's
+  call — md, yaml, jsonl, png, .pt, …).
+- How roles communicate (they just read sibling subdirectories of
+  `cycle_dir`; there's no typed pipe or message envelope).
+- How a role is implemented — LLM agent, nested MCGS, Claude Code,
+  plain Python. The `Role` Protocol is `name: str` +
+  `execute(my_dir: Path, cycle_dir: Path) -> None`. Nothing else.
+
+See [role.py](agent_evolve/model/algorithms/a_evolve_training_multi/role.py)
+(5-line Protocol) and
+[loop.py](agent_evolve/model/algorithms/a_evolve_training_multi/loop.py)
+(~20-line `run_cycle`). `roles.py` ships stub implementations of all five
+names so a fresh workspace runs end-to-end — each writes a `TODO.md` until
+the owning team replaces it.
+
+### Backend wiring
+
+The algorithm does **not** import any backend. A `TrainingRole`
+implementation injects a `TrainingJobRunner` (from
+[runner_protocol.py](agent_evolve/model/runner_protocol.py)) via its own
+constructor — so swapping `h200_single_node` ↔ `k8s_h200` ↔ `sklearn_backend`
+is a construction-site change only, invisible to the other four roles.
+
+### When to pick this over MCGS
+
+- MCGS: you have a clear primary metric, want automated search over a
+  bounded mutation surface, and trust "higher score wins".
+- multi-role: you want cycles driven by narrative decisions (analysis
+  rewrites strategy, orchestrator re-plans, training role uses a
+  non-scalar success criterion), or you want each concern owned by a
+  different team's code/agent without enforcing a shared schema.
+
+Minimal end-to-end wiring (fake backend, 3 cycles, ~180 LoC) lives at
+[examples/multi_role_min_example/drive_min_cycle.py](examples/multi_role_min_example/drive_min_cycle.py).
 
 ## 5. Tinker parallel
 
