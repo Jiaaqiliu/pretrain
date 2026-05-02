@@ -1,144 +1,142 @@
 # nemo_mas — Orchestrator-Worker MAS Training Algorithm
 
-Independent, parallel alternative to `mcgs` in `TRAINING_ALGORITHMS`.
-Same workspace contract, same `run_cycle(ctx) -> MCGSCycleReport`
-signature, same registry. Different search strategy: instead of UCT
-over a graph of mutations, an LLM **orchestrator** spawns four
-specialist **worker** roles that read and write a shared typed-record
-**memory** with **BM25** search.
+Parallel alternative to `mcgs` in `TRAINING_ALGORITHMS`. Same workspace
+contract and `run_cycle(ctx) -> MCGSCycleReport` signature; different
+search: an LLM **orchestrator** spawns four specialist **workers** that
+share a typed-record **memory** (BM25, JSONL, append-only, ref-validated).
 
-> **Design doc**: `seed_workspaces/nemo_mas_reasoner/DESIGN.md`
-> **Workspace**: `seed_workspaces/nemo_mas_reasoner/`
-> **Driver**: `examples/nemo_mas_reasoning_example/drive_nemo_mas.py`
-> **Tests**: `tests/model/algorithms/nemo_mas/`
-
----
+- Design: `seed_workspaces/nemo_mas_reasoner/DESIGN.md`
+- Workspace: `seed_workspaces/nemo_mas_reasoner/`
+- Driver: `examples/nemo_mas_reasoning_example/drive_nemo_mas.py`
+- Tests: `tests/model/algorithms/nemo_mas/` (98 tests, ~0.1s, no AWS/GPU)
 
 ## Architecture
 
 ```
-                       ┌──────────────────────────────┐
-                       │       Orchestrator           │
-                       │  (BedrockAgent, no execute)  │
-                       │  Tools: spawn / mem-read     │
-                       └──────────┬───────────────────┘
-                                  │ spawn_and_run_subagent(role, task)
-            ┌────────┬────────────┼──────────────┬──────────┐
-            ▼        ▼            ▼              ▼          ▼
-        ┌────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │Analyst │ │Data      │ │Theorist  │ │Engineer  │
-        │        │ │Engineer  │ │(no exec) │ │          │
-        └───┬────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘
-            │           │            │            │
-            └───────────┴──────┬─────┴────────────┘
-                               ▼
-              ┌─────────────────────────────────────┐
-              │       RecipeMemory (BM25)           │
-              │  records.jsonl — typed, append-only │
-              │  whitelist + ref rules enforced     │
-              └─────────────────────────────────────┘
-                               │
-                               ▼
-              ┌─────────────────────────────────────┐
-              │   Backend tools (caller-supplied)   │
-              │  run_eval / launch_training / ...   │
-              │  Stubbed by default; wire in real   │
-              │  backend via backend_registry kwarg │
-              └─────────────────────────────────────┘
+  Orchestrator (no writes, no exec)
+      │  spawn_and_run_subagent(role, task)
+      ▼
+  [Analyst] [DataEngineer] [Theorist] [Engineer]
+      │            │            │          │
+      └────────────┴──► RecipeMemory (BM25, typed records, refs DAG)
+                              │
+                              ▼
+                     Backend tools (run_eval, launch_training, ...)
+                     supplied via `backend_registry`
 ```
 
-The orchestrator's only knobs are which worker to spawn and what task
-message to draft. Workers are stateless across spawns; their only
-side-channel is the memory store. Roles are constrained at the schema
-layer — `mem_write(kind=...)` rejects out-of-whitelist kinds and
-violations of per-kind ref rules.
+Workers are stateless across spawns; only channel is the memory store.
+`mem_write` rejects out-of-whitelist kinds and ref-rule violations.
 
----
+## Agents
 
-## File map
+Roles: **Orchestrator** (plans, spawns, read-only) + four workers.
+Role tools in `seed_workspaces/nemo_mas_reasoner/tools/<role>.yaml`;
+skills in `seed_workspaces/nemo_mas_reasoner/skills/<role>/`.
+Platform tools (`mem_*`, `skill_*`, `read_file`, `list_dir`, `spawn_*`)
+are inherited from `seed_workspaces/_common_model/tools/`.
+
+All workers share: `mem_write/search/recent/get/link`, `skill_index`,
+`skill_load`, `read_file`, `list_dir`.
+
+### Orchestrator — `prompts/system.md`
+
+- **Extra tools:** `spawn_and_run_subagent`, `call_existing_agent`, `mem_search`, `mem_recent`, `mem_get`, `read_file`, `list_dir`
+- **Writes:** none · **Skills:** none
+
+### Analyst — `prompts/analyst.md`, `skills/analyst/`
+
+- **Backend tools:** `sample_jsonl`, `count_by_field`, `length_distribution`, `run_eval`, `run_short_training`, `plot_loss_curve`, `compute_data_gap_table`
+- **Writes:** `data_audit_finding`, `benchmark_rule`, `profile_run`, `eval_report`, `error_pattern`, `data_gap` (+ `breakthrough`, `failed_attempt`)
+- **Skills:** `audit_jsonl_quality`, `categorize_eval_errors`, `compute_data_gap`, `probe_benchmark_format`, `profile_lr_sweep`
+
+### Data Engineer — `prompts/data_engineer.md`, `skills/data/`
+
+- **Backend tools:** `call_teacher_model`, `load_checkpoint_for_inference`, `batch_generate`, `filter_by_gold`, `minhash_dedup`, `apply_format_filter`, `format_validate`, `mix_sources`, `write_jsonl`
+- **Writes:** `distill_batch`, `dataset_snapshot` (+ cross-cutting)
+- **Skills:** `format_validate`, `minhash_dedup`, `mix_by_curriculum`, `solver_self_distill_with_rejection`, `teacher_distill_long_cot`
+
+### Theorist — `prompts/theorist.md`, `skills/theorist/`
+
+Reasoning + records only, no side effects.
+
+- **Backend tools:** `diff_yaml`, `render_recipe_diff`
+- **Writes:** `hypothesis`, `recipe_proposal` (+ cross-cutting)
+- **Skills:** `failure_pattern_recognition`, `lr_warmup_for_long_cot`, `propose_recipe_from_gap`, `when_to_skip_sft`
+
+### Engineer — `prompts/engineer.md`, `skills/engineer/`
+
+Training always routes through the platform `StageRegistry`
+(`agent_evolve/model/runners/stages/*.py`). Engineer **never** scaffolds
+runner scripts.
+
+- **Backend tools:** `launch_training`, `read_training_log`, `read_checkpoint_metric`, `rerun_recipe_with_seeds`, `compute_stability`
+- **Writes:** `training_run`, `cv_result` (+ cross-cutting)
+- **Skills:** `cross_validate_recipe`, `run_training_stage`
+
+## Record kinds (schema.py)
+
+Enforced on every `mem_write`; violations return a structured error.
+
+| kind | author | refs required |
+|---|---|---|
+| `data_audit_finding`, `benchmark_rule`, `profile_run`, `error_pattern`, `data_gap` | analyst | — |
+| `eval_report` | analyst | ≥1 `training_run` |
+| `distill_batch`, `dataset_snapshot` | data_engineer | — |
+| `hypothesis` | theorist | — |
+| `recipe_proposal` | theorist | ≥1 `eval_report` or `data_gap` |
+| `training_run` | engineer | ≥1 `recipe_proposal` **and** ≥1 `dataset_snapshot` |
+| `cv_result` | engineer | ≥1 `training_run` |
+| `breakthrough` | any | ≥1 (any kind) |
+| `failed_attempt` | any | — |
+
+The refs DAG is the audit trail behind every promotion:
+`cv_result → training_run → {recipe_proposal, dataset_snapshot} → {eval_report|data_gap, distill_batch*}`.
+
+## Files
 
 ```
-agent_evolve/model/algorithms/nemo_mas/
-├── __init__.py            (35 lines)  Public API
-├── schema.py              (236 lines) MemoryRecord, KIND_WHITELIST, REF_RULES, validate_record
-├── memory.py              (362 lines) RecipeMemory — JSONL store + vendored BM25
-├── tools.py               (478 lines) Per-role tool factories (mem_*, skill_*, file_*, backend stubs)
-├── spawner.py             (262 lines) SpawnHandler — wraps BedrockAgent for workers
-├── orchestrator.py        (388 lines) NemoMASAlgorithm — TRAINING_ALGORITHMS entry
-├── backends.py            (~470 lines) Tier-1 local handlers + Tier-2 BackendBridge + demo handlers
-└── README.md              (this file)
+__init__.py     public API
+schema.py       MemoryRecord, KIND_WHITELIST, REF_RULES, validate_record
+memory.py       RecipeMemory — JSONL + vendored BM25
+tools.py        per-role tool factories
+spawner.py      SpawnHandler — wraps BedrockAgent for workers
+orchestrator.py NemoMASAlgorithm — TRAINING_ALGORITHMS entry
+backends.py     local_handlers + BackendBridge + demo_compute_handlers
 ```
 
-No external dependencies beyond the standard library. BM25 is vendored
-(no `rank_bm25`); MinHash dedup uses content fingerprints (no
-`datasketch`).
-
----
+Stdlib only. BM25 vendored; MinHash uses content fingerprints.
 
 ## Quickstart
 
-### Run the test suite
-
 ```bash
+# Tests
 PYTHONPATH=. pytest tests/model/algorithms/nemo_mas/ -v
-```
 
-98 tests, runs in ~0.1s. No AWS / GPU required.
-
-### Run the driver in dry-run mode
-
-```bash
+# Dry-run: stub BedrockAgent, no compute
 PYTHONPATH=. .venv/bin/python examples/nemo_mas_reasoning_example/drive_nemo_mas.py \
     --cycles 3 --mode dry-run --print-prompts
-```
 
-`--mode dry-run` injects a stub BedrockAgent so no Bedrock calls are
-made. The orchestrator's prompt is built and dumped; cycle reports are
-printed; nothing trains.
-
-### Run with the demo backend (still needs Bedrock)
-
-```bash
+# Demo: real Bedrock, mocked compute
 PYTHONPATH=. .venv/bin/python examples/nemo_mas_reasoning_example/drive_nemo_mas.py \
     --cycles 5 --mode demo
-```
 
-Compute-bound tools (`run_eval`, `launch_training`, etc.) return
-plausible mock outputs; the orchestrator + workers are real LLM
-agents reading and writing the workspace memory.
-
-### Run with the real backend
-
-```bash
+# Real: Bedrock + GPUs + SingleNodeTinkerLiteBackend
 PYTHONPATH=. .venv/bin/python examples/nemo_mas_reasoning_example/drive_nemo_mas.py \
     --cycles 10 --mode real \
     --workspace seed_workspaces/nemo_mas_reasoner \
     --work-dir runs/nemo-mas-10
 ```
 
-This wires in `SingleNodeTinkerLiteBackend(mock=False)` and
-`NemoReasonerBenchmark` — expects configured GPUs, AWS Bedrock access,
-and the model files referenced in `model/base.yaml`.
+## Wiring a backend
 
----
+`NemoMASAlgorithm(backend_registry=...)` takes a `Mapping[str, Callable]`.
+Compose from:
 
-## Wiring a real / custom backend
-
-The algorithm exposes one knob: `backend_registry: Mapping[str, Callable]`.
-Compose it from:
-
-* **`local_handlers(workspace_root)`** — pure-Python tools that work
-  anywhere (sample_jsonl, format_validate, minhash_dedup, diff_yaml,
-  read_training_log, read_checkpoint_metric, etc.).
-* **`BackendBridge(workspace_root=, benchmark=, backend=).as_registry()`** —
-  delegates compute-bound tools (`run_eval`, `launch_training`,
-  `rerun_recipe_with_seeds`, `load_checkpoint_for_inference`,
-  `batch_generate`) to the supplied backend + benchmark.
-* **`demo_compute_handlers()`** — fallback that returns plausible mock
-  outputs for the same compute-bound tools. Use for tests + dry runs.
-* **Your own** — drop in any `Callable[..., str]`. The handler is
-  invoked with the tool's keyword arguments and must return a JSON
-  string (stable contract; no exception propagation).
+- `local_handlers(workspace_root)` — stdlib-only tools (`sample_jsonl`, `format_validate`, `minhash_dedup`, `diff_yaml`, `read_training_log`, `read_checkpoint_metric`, …)
+- `BackendBridge(workspace_root, benchmark, backend).as_registry()` — delegates compute-bound tools (`run_eval`, `launch_training`, `rerun_recipe_with_seeds`, `load_checkpoint_for_inference`, `batch_generate`) to the backend
+- `demo_compute_handlers()` — plausible mock outputs for dry-run/tests
+- Your own `Callable[..., str]` returning a JSON string
 
 ```python
 from agent_evolve.model.algorithms.nemo_mas import NemoMASAlgorithm
@@ -151,110 +149,45 @@ bridge = BackendBridge(
     benchmark=NemoReasonerBenchmark(),
     backend=SingleNodeTinkerLiteBackend(mock=False),
 )
-algo = NemoMASAlgorithm(
-    backend_registry={
-        **local_handlers(workspace),
-        **bridge.as_registry(),
-        # Override one tool with a custom handler:
-        "call_teacher_model": my_teacher_call,
-    },
-)
+algo = NemoMASAlgorithm(backend_registry={
+    **local_handlers(workspace),
+    **bridge.as_registry(),
+    "call_teacher_model": my_teacher_call,   # not bridged by default
+})
 ```
 
-`call_teacher_model` is intentionally NOT bridged by default — teacher
-distill needs whatever LLM client you're using. Wire it explicitly.
-
----
-
-## How it differs from `mcgs`
+## vs. `mcgs`
 
 | | `mcgs` | `nemo_mas` |
 |---|---|---|
-| Search topology | UCT graph + branches + top-k + fusion | LLM orchestrator + 4 worker roles |
+| Search | UCT graph + branches + top-k | LLM orchestrator + 4 workers |
 | Mutation source | `BaselineMutationProposer` | Theorist's `recipe_proposal` records |
-| Promotion | `PromotionPolicy` over node metric | `cv_result` tagged "stable" with new-best mean |
-| Memory | `NodeMemoryStore` (BM25-lite, per-node) | `RecipeMemory` (BM25Okapi, typed records, ref DAG) |
-| Inter-step communication | Implicit via graph + workspace patches | Explicit via mem_write + refs (auditable) |
-| Adds new dirs to workspace | No | `backend/`, `skills/`, `memory/records.jsonl` (training always runs through `agent_evolve/model/runners/stages/*.py` — no workspace-local runners) |
-| External deps | None new | None new |
-| Best for | Hyperparameter sweeps where the reward signal is clean | Multi-axis exploration (data / recipe / RL) where evidence trail matters |
+| Promotion | `PromotionPolicy` | `cv_result` tagged "stable" |
+| Memory | `NodeMemoryStore` (per-node) | `RecipeMemory` (typed, ref DAG) |
+| Comms | Implicit (graph + patches) | Explicit (`mem_write` + refs, auditable) |
+| Best for | Clean hyperparameter sweeps | Multi-axis exploration (data / recipe / RL) |
 
-Both register to the same `TRAINING_ALGORITHMS` dict — switching is
-one string change in `TrainingEvolver(algorithm="...")`.
-
----
-
-## Schema enforcement (the "moat" that's hard to replicate)
-
-`schema.py` is the contract that makes the memory trustworthy without
-trusting the LLM. Every `mem_write` validates:
-
-* **ID format** (`rec_<hex>`).
-* **Title and body non-empty**.
-* **Kind in this role's whitelist** (Analyst can't write
-  `recipe_proposal`; Engineer can't write `data_audit_finding`).
-* **Per-kind ref rules**:
-  * `breakthrough` → `len(refs) >= 1`
-  * `recipe_proposal` → ref to ≥1 `eval_report` or `data_gap`
-  * `training_run` → refs to ≥1 `recipe_proposal` AND ≥1 `dataset_snapshot`
-  * `cv_result` → ref to ≥1 `training_run`
-  * `eval_report` → ref to ≥1 `training_run`
-
-A worker that violates the contract sees a structured error and either
-adapts or writes a `failed_attempt`. The DAG of refs is the audit
-trail you can walk back from any submission.
-
-Edit these rules to fit your benchmark's epistemics — that's where
-your domain knowledge encodes into the system.
-
----
+Both register to `TRAINING_ALGORITHMS`; switch via `TrainingEvolver(algorithm=...)`.
 
 ## Extending
 
-Adding a new role:
+- **New role:** extend `KIND_WHITELIST` in `schema.py`; add
+  `tools.py::_BACKEND_TOOL_CATALOGUE` entry; drop `prompts/<role>.md`,
+  `tools/<role>.yaml`, `skills/<role>/`.
+- **New record kind:** add to the role in `KIND_WHITELIST`; optionally
+  add a `REF_RULES` entry; update prompts.
+- **New backend tool:** append to `_BACKEND_TOOL_CATALOGUE[<role>]`;
+  implement in `backends.py::local_handlers` or `BackendBridge`; add a
+  stub in `demo_compute_handlers()`.
 
-1. Add an entry to `KIND_WHITELIST` in `schema.py`.
-2. Add the role's allowed kinds to `tools.py::_BACKEND_TOOL_CATALOGUE`
-   if it gets backend tools.
-3. Drop a `prompts/<role>.md` and `tools/<role>.yaml` (LLM-readable
-   doc) in the workspace.
-4. Drop skills under `skills/<role>/`.
+## What's yours, not the algorithm's
 
-Adding a new record kind:
+The Python here is a runtime. Your edge lives in the four artifacts it
+serves:
 
-1. Add it to the relevant role(s) in `KIND_WHITELIST`.
-2. Optionally add an entry to `REF_RULES` if it has provenance
-   constraints.
-3. Update prompts so workers know when to write it.
+1. `prompts/benchmark_reference.md` — first-hand eval observations
+2. `prompts/system.md` — task-crafting / manager style
+3. `skills/<role>/*.md` — every failed cycle should yield a new skill
+4. `KIND_WHITELIST` + `REF_RULES` — the epistemic contract
 
-Adding a new backend tool:
-
-1. Append a tuple to `tools.py::_BACKEND_TOOL_CATALOGUE[<role>]`.
-2. Implement the handler in `backends.py::local_handlers` (if
-   GPU/Bedrock-free) or in `backends.py::BackendBridge` (if it
-   delegates to the backend).
-3. Add a stub in `demo_compute_handlers()` so dry-run / demo mode
-   keeps working.
-
----
-
-## Why this is yours, not the algorithm's
-
-Per the architectural discussion in `DESIGN.md` §9: the BM25 store,
-the role spawn pattern, the JSON tool format — those are commodity.
-The pieces only you can maintain across cycles are:
-
-1. `prompts/benchmark_reference.md` — your first-hand observations
-   about the eval. Don't let an LLM rewrite it.
-2. `prompts/system.md` task-crafting guideline — your "manager
-   style" encoded.
-3. `skills/<role>/*.md` — every failed cycle should yield a new
-   skill or amend one. After 30 cycles your skill library *is* your
-   edge.
-4. `mem_write` whitelist + ref-required constraints — the schema is
-   where your epistemic discipline lives. Tightening or loosening
-   these rules changes what conclusions the system can draw.
-
-The Python in this directory is a faithful runtime for those four
-artifacts. If you replace one of them, the system behaves
-differently — that's the point.
+Replace one and the system behaves differently. That's the point.
