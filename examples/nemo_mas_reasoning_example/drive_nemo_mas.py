@@ -33,7 +33,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import sys
+import threading
+import time
 import types
 from pathlib import Path
 
@@ -42,6 +46,202 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+
+
+def configure_logging() -> None:
+    """Route nemo_mas + BedrockAgent logs to stderr at NEMO_MAS_LOG level.
+
+    ``bedrock_agent`` uses the root logger (``logging.getLogger()``);
+    ``orchestrator`` and ``spawner`` use ``__name__`` loggers. Without
+    ``basicConfig`` both are silent above WARNING — so retries, tool
+    errors, and agent-construction failures never surface.
+    """
+    level = os.environ.get("NEMO_MAS_LOG", "INFO").upper()
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
+    for noisy in ("botocore", "boto3", "urllib3", "s3transfer"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def install_trace_wrapper(trace_dir: Path) -> None:
+    """Wrap the real BedrockAgent so every turn is written to JSONL on disk.
+
+    Writes ``<trace_dir>/cycle_<NNNN>/agent_<id>.jsonl`` — one line per
+    turn (user, assistant, tool_results) plus a final ``event=done``
+    line with usage + total turns. Does not touch ``bedrock_agent.py``;
+    replaces the class in ``sys.modules`` the same way
+    :func:`install_dry_run_bedrock_stub` does.
+
+    Uses a module-level cycle counter that bumps on each top-level
+    agent construction — the spawner constructs one ``BedrockAgent``
+    per worker, and the orchestrator constructs one per cycle. We key
+    files by a monotonic ``cycle_<NNNN>`` stamp so all agents spawned
+    inside a cycle land together.
+    """
+    import importlib
+
+    real_mod = importlib.import_module("agent_evolve.harness.agents.arc.bedrock_agent")
+    RealBedrockAgent = real_mod.BedrockAgent
+
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    # Orchestrator (agent_id=0) starts a new cycle. Worker agents
+    # (agent_id>=1) share the current cycle_dir.
+    state = {"cycle": 0, "cycle_dir": trace_dir}
+
+    class TracingBedrockAgent(RealBedrockAgent):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            if self.agent_id == 0:
+                state["cycle"] += 1
+                state["cycle_dir"] = trace_dir / f"cycle_{state['cycle']:04d}"
+                state["cycle_dir"].mkdir(parents=True, exist_ok=True)
+            self._trace_path = state["cycle_dir"] / f"agent_{self.agent_id}.jsonl"
+            self._trace_last_msg_count = 0
+            self._trace_turn = 0
+            # Header line: system prompt + tool names.
+            tool_names = []
+            for t in (self.tools or []):
+                spec = t.get("toolSpec") if isinstance(t, dict) else None
+                if spec:
+                    tool_names.append(spec.get("name", "?"))
+            self._trace_write({
+                "event": "start",
+                "agent_id": self.agent_id,
+                "model_id": self.model_id,
+                "system_excerpt": (self.system[0].get("text", "")[:500]
+                                   if self.system else ""),
+                "tool_names": tool_names,
+            })
+
+        def _trace_write(self, row: dict) -> None:
+            row = {"ts": time.time(), **row}
+            try:
+                with self._trace_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(row, default=str) + "\n")
+            except OSError:
+                pass  # tracing must never break the run
+
+        def _run_converse_loop(self) -> str:
+            # Log the new user message that ``call`` just appended.
+            if len(self.messages) > self._trace_last_msg_count:
+                for i in range(self._trace_last_msg_count, len(self.messages)):
+                    m = self.messages[i]
+                    self._trace_write({
+                        "event": "message",
+                        "turn": self._trace_turn,
+                        "role": m.get("role"),
+                        "content": m.get("content"),
+                    })
+                self._trace_last_msg_count = len(self.messages)
+
+            # Drive one converse turn at a time by intercepting after each
+            # client.converse round. Cheapest hook: monkey-patch just this
+            # instance's ``_converse_with_retry`` to write the assistant
+            # message + usage as it lands.
+            real_converse = self._converse_with_retry
+
+            def traced_converse(tool_config):
+                self._trace_turn += 1
+                result = real_converse(tool_config)
+                try:
+                    self._trace_write({
+                        "event": "turn",
+                        "turn": self._trace_turn,
+                        "stop_reason": result.get("stopReason"),
+                        "assistant": result.get("output", {}).get("message"),
+                        "usage": result.get("usage"),
+                    })
+                except Exception:  # noqa: BLE001 — tracing is best-effort
+                    pass
+                return result
+
+            self._converse_with_retry = traced_converse  # type: ignore[method-assign]
+
+            try:
+                result_text = super()._run_converse_loop()
+            finally:
+                self._trace_write({
+                    "event": "done",
+                    "total_turns": self._trace_turn,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "cache_read_tokens": self.total_cache_read_tokens,
+                    "cache_write_tokens": self.total_cache_write_tokens,
+                })
+            return result_text
+
+    real_mod.BedrockAgent = TracingBedrockAgent
+
+
+class Heartbeat:
+    """Every 30s, print one line summarizing cycle progress.
+
+    Wall-clock activity pointer for long orchestrator calls. Reads the
+    workspace's ``memory/records.jsonl`` line count and the algorithm's
+    ``_last_cycle_records`` attribute between prints. Safe to stop
+    mid-cycle — the daemon thread exits when :meth:`stop` is called.
+    """
+
+    def __init__(self, *, workspace: Path, algo, cycle: int,
+                 interval_seconds: float = 30.0):
+        self._workspace = workspace
+        self._algo = algo
+        self._cycle = cycle
+        self._interval = interval_seconds
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._t0: float = 0.0
+
+    def _records_path(self) -> Path:
+        return self._workspace / "memory" / "records.jsonl"
+
+    def _records_snapshot(self) -> tuple[int, str]:
+        """(total line count, id of last record) — O(file size), OK for small jsonl."""
+        p = self._records_path()
+        if not p.exists():
+            return 0, "-"
+        try:
+            count = 0
+            last_id = "-"
+            with p.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    count += 1
+                    try:
+                        last_id = json.loads(line).get("id", last_id)
+                    except json.JSONDecodeError:
+                        pass
+            return count, last_id
+        except OSError:
+            return 0, "-"
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self._interval):
+            elapsed = time.time() - self._t0
+            mm, ss = divmod(int(elapsed), 60)
+            count, last = self._records_snapshot()
+            print(
+                f"[heartbeat] cycle={self._cycle} elapsed={mm:02d}:{ss:02d} "
+                f"records={count} last_record={last}",
+                file=sys.stderr, flush=True,
+            )
+
+    def __enter__(self):
+        self._t0 = time.time()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
 
 
 def install_dry_run_bedrock_stub(scripted_responses: list[str]) -> None:
@@ -155,7 +355,8 @@ def run_via_evolver(*, workspace: Path, work_dir: Path, cycles: int,
             budget=types.SimpleNamespace(seconds=trial_budget_seconds,
                                          steps=None, tokens=None),
         )
-        report = algo.run_cycle(ctx)
+        with Heartbeat(workspace=workspace, algo=algo, cycle=c):
+            report = algo.run_cycle(ctx)
         reports.append({
             "cycle": report.cycle,
             "trial_node_ids": report.trial_node_ids,
@@ -192,7 +393,13 @@ def main() -> int:
     ap.add_argument("--script", action="append", default=None,
                     help="Scripted orchestrator response (dry-run mode). "
                          "Repeat to script multiple cycles.")
+    ap.add_argument("--trace-dir", default=None,
+                    help="Write per-turn JSONL traces of every BedrockAgent "
+                         "to this directory (demo / real modes). One file "
+                         "per agent per cycle.")
     args = ap.parse_args()
+
+    configure_logging()
 
     workspace = Path(args.workspace).resolve()
     if not workspace.exists():
@@ -209,6 +416,11 @@ def main() -> int:
             for i in range(args.cycles)
         ]
         install_dry_run_bedrock_stub(scripted)
+    elif args.trace_dir:
+        # Install the tracing wrapper for demo / real modes. Must happen
+        # before the spawner / orchestrator imports the class (though
+        # BedrockAgent is lazy-imported inside call sites, so we're safe).
+        install_trace_wrapper(Path(args.trace_dir).resolve())
 
     algo = build_algorithm(mode=args.mode, workspace_root=workspace)
 
