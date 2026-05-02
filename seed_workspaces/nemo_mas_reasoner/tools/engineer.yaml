@@ -1,82 +1,82 @@
 # Tools available to Engineer workers.
+#
+# NOTE: Training always runs through the platform StageRegistry —
+# agent_evolve/model/runners/stages/*.py — via backend.run_trial. The
+# Engineer role does NOT scaffold or edit workspace-local runner
+# scripts; use the platform's @register_stage-based runners instead.
 
 mem_write_kinds:
-  - runner_capability
   - training_run        # requires refs to recipe_proposal AND dataset_snapshot
   - cv_result           # requires refs to >=1 training_run
   - breakthrough        # requires len(refs) >= 1
   - failed_attempt
 
 tools:
-  # Memory
+  # ── Platform tools (schemas from _common_model) ──
   mem_write:
     description: >
       Append a typed record. `training_run` MUST include refs to a
       `recipe_proposal` AND a `dataset_snapshot`. `cv_result` MUST
       include refs to all `training_run`s involved.
-  mem_search:
-    description: "BM25 search. Args: query, kind?, author?, tags?, cycle_range?, top_k=8."
-  mem_recent:
-    description: "Recent records. Args: kind?, author?, tags?, k=10."
-  mem_get:
-    description: "Full record by id."
+  mem_search:  {}
+  mem_recent:  {}
+  mem_get:     {}
+  mem_link:    {}
+  skill_index: {}
+  skill_load:  {}
+  read_file:   {}
+  list_dir:    {}
 
-  # Skills
-  skill_index:
-    description: "List skills under skills/<domain>/."
-  skill_load:
-    description: "Read full markdown for one skill."
-
-  # Read-only
-  read_file:
-    description: "Read a workspace file."
-  list_dir:
-    description: "List a workspace directory."
-
-  # Runner scaffolding (writes to runner/)
-  scaffold_runner:
-    description: >
-      Generate a training-runner script under runner/. Args: stage
-      (sft | rl | distill | eval), template (named template, see
-      skills/engineer/scaffold_*_runner). Returns the new file path.
-      Updates runner_capability automatically (you still need to write
-      the record).
-  read_runner:
-    description: "Read a runner script under runner/."
-  edit_runner:
-    description: >
-      Edit a runner script under runner/. Args: path, old_text,
-      new_text. Use sparingly — prefer rescaffolding from a clean
-      template.
-
-  # Backend / training
-  check_pipeline_coverage:
-    description: >
-      Compare the stages declared in train/pipeline.yaml against the
-      runners present in runner/ and the backend declared in backend/.
-      Returns: covered_stages, missing_stages.
+  # ── Backend tools ──
   launch_training:
     description: >
-      Launch a training run on the configured backend. Args:
-      runner_path, recipe_path, data_path, ckpt_out, max_steps?,
-      monitor (default true). Returns: job_id, log_path.
-      If monitor=true, polls and kills on divergence per the
-      Engineer's hard rules (loss > 2x for 50 consecutive steps, NaN).
+      Launch a training run on the configured backend. Executes through
+      backend.run_trial → model/runners/stages/*.py (sft / rl /
+      teacher_distill / solver_distill / data_merge / eval).
+      Divergence handling is enforced by those stage runners.
+    schema:
+      properties:
+        recipe_path: {type: string}
+        data_path:   {type: string}
+        ckpt_out:    {type: string}
+        max_steps:   {type: integer}
+        monitor:     {type: boolean, default: true}
+      required: [recipe_path, data_path, ckpt_out]
+
   read_training_log:
-    description: "Read live or final training log. Args: job_id."
+    description: "Read live or final training log."
+    schema:
+      properties:
+        job_id: {type: string}
+      required: [job_id]
+
   read_checkpoint_metric:
     description: >
-      Read the saved metric.json beside a checkpoint. Args: ckpt_path.
-      Returns final loss, val metrics if any.
+      Read metric.json beside a checkpoint. Returns final loss and
+      any val metrics.
+    schema:
+      properties:
+        ckpt_path: {type: string}
+      required: [ckpt_path]
 
-  # Cross-validation
   rerun_recipe_with_seeds:
     description: >
       Run the same recipe N times with different seeds (and optionally
-      M splits). Args: recipe_path, data_path, seeds (list of ints),
-      splits (list, optional). Returns list of training_run job_ids.
+      M splits). Returns list of training_run job_ids.
+    schema:
+      properties:
+        recipe_path: {type: string}
+        data_path:   {type: string}
+        seeds:       {type: array, items: {type: integer}}
+        splits:      {type: array, items: {type: string}}
+      required: [recipe_path, data_path, seeds]
+
   compute_stability:
     description: >
       Given a list of training_run ids, compute mean / stddev of the
       primary metric. Returns the stability table that goes into the
       cv_result body.
+    schema:
+      properties:
+        training_run_ids: {type: array, items: {type: string}}
+      required: [training_run_ids]

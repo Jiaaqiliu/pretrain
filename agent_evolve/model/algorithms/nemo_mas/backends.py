@@ -6,8 +6,7 @@ Two tiers:
     sample_jsonl, count_by_field, length_distribution, format_validate,
     minhash_dedup, mix_sources, write_jsonl, filter_by_gold,
     apply_format_filter, compute_stability, plot_loss_curve,
-    compute_data_gap_table, scaffold_runner, read_runner, edit_runner,
-    check_pipeline_coverage, diff_yaml, render_recipe_diff,
+    compute_data_gap_table, diff_yaml, render_recipe_diff,
     read_training_log, read_checkpoint_metric.
 
   * **Compute-bound bridge** — wraps an actual ``TrainingJobRunner``
@@ -405,67 +404,12 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
         # author the diff; we package it.
         return _ok(rendered=f"```yaml\n{proposal_body.strip()}\n```")
 
-    # ── Engineer: runner scaffold + reads ───────────────────────
-
-    _RUNNER_TEMPLATES = {
-        ("sft", "templates/sft_torchrun_lora.py"): "_template_sft_torchrun_lora",
-        ("sft", "templates/sft_k8s_lora.py"): "_template_sft_torchrun_lora",
-        ("rl", "templates/rl_gspo_vllm.py"): "_template_rl_gspo_vllm",
-        ("rl", "templates/rl_dapo_vllm.py"): "_template_rl_gspo_vllm",
-    }
-
-    def scaffold_runner(*, stage: str, template: str) -> str:
-        body = _RUNNER_TEMPLATE_BODIES.get(stage)
-        if body is None:
-            return _err(f"no template for stage {stage!r}; supported: "
-                        f"{sorted(_RUNNER_TEMPLATE_BODIES)}")
-        out = ws / "runner" / f"{stage}_runner.py"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(body, encoding="utf-8")
-        return _ok(path=str(out), stage=stage, template=template,
-                   note="Smoke-test before relying on this — Engineer.run_training_stage skill.")
-
-    def read_runner(*, path: str) -> str:
-        full = _safe_path(ws, path)
-        if not full or not full.exists():
-            return _err(f"path not found: {path}")
-        return _ok(path=str(full), text=full.read_text(encoding="utf-8"))
-
-    def edit_runner(*, path: str, old_text: str, new_text: str) -> str:
-        full = _safe_path(ws, path)
-        if not full or not full.exists():
-            return _err(f"path not found: {path}")
-        text = full.read_text(encoding="utf-8")
-        if old_text not in text:
-            return _err("old_text not found in file (no edit performed)")
-        if text.count(old_text) > 1:
-            return _err("old_text occurs more than once; refusing ambiguous edit")
-        full.write_text(text.replace(old_text, new_text), encoding="utf-8")
-        return _ok(path=str(full))
-
-    def check_pipeline_coverage() -> str:
-        pipeline = ws / "train" / "pipeline.yaml"
-        runners_dir = ws / "runner"
-        declared: list[str] = []
-        if pipeline.exists():
-            text = pipeline.read_text(encoding="utf-8")
-            # Naive parse: lines starting with "- " under "stages:".
-            in_stages = False
-            for line in text.splitlines():
-                if line.strip().startswith("stages:"):
-                    in_stages = True
-                    continue
-                if in_stages:
-                    if line.startswith("  - "):
-                        declared.append(line.split("- ", 1)[1].strip())
-                    elif line.strip() and not line.startswith(" "):
-                        break
-        present = sorted(p.stem.replace("_runner", "")
-                         for p in runners_dir.glob("*_runner.py")) if runners_dir.exists() else []
-        missing = [s for s in declared if s not in present]
-        return _ok(declared_stages=declared, present_runners=present,
-                   missing=missing,
-                   covered=len(missing) == 0)
+    # ── Engineer: training log + checkpoint metric reads ────────
+    #
+    # Runner scaffolding tools were removed: training always goes through
+    # agent_evolve/model/runners/stages/*.py via the StageRegistry, not
+    # through workspace-scaffolded scripts. The Engineer role reads logs
+    # and metrics produced by those platform runners.
 
     def read_training_log(*, job_id: str) -> str:
         log = ws / "logs" / f"{job_id}.log"
@@ -513,10 +457,6 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
         "write_jsonl":               write_jsonl,
         "diff_yaml":                 diff_yaml,
         "render_recipe_diff":        render_recipe_diff,
-        "scaffold_runner":           scaffold_runner,
-        "read_runner":               read_runner,
-        "edit_runner":               edit_runner,
-        "check_pipeline_coverage":   check_pipeline_coverage,
         "read_training_log":         read_training_log,
         "read_checkpoint_metric":    read_checkpoint_metric,
         "compute_stability":         compute_stability,
@@ -597,13 +537,14 @@ class BackendBridge:
             log_every=log_every,
         )
 
-    def launch_training(self, *, runner_path: str, recipe_path: str,
+    def launch_training(self, *, recipe_path: str,
                         data_path: str, ckpt_out: str,
                         max_steps: int | None = None,
                         monitor: bool = True) -> str:
-        # The actual TrainingJobRunner expects (workspace, node, budget,
-        # benchmark) — not raw paths. We construct a synthetic node from
-        # the args and delegate to backend.run_trial.
+        # Training always runs through the platform's StageRegistry — the
+        # backend's run_trial dispatches to model/runners/stages/*.py.
+        # We never shell out to a workspace-local script; there's no
+        # runner_path argument.
         try:
             from agent_evolve.model.types import (
                 CheckpointRef, TrainingSearchNode, TrialBudget,
@@ -614,7 +555,7 @@ class BackendBridge:
             node_id=f"node-nemomas-{uuid.uuid4().hex[:8]}",
             parent_id="",
             branch_id=0,
-            mutation_plan=f"manual launch via runner={runner_path}",
+            mutation_plan=f"manual launch recipe={recipe_path} data={data_path}",
             workspace_patch=None,
         )
         budget = TrialBudget(seconds=None, steps=max_steps, tokens=None)
@@ -648,7 +589,7 @@ class BackendBridge:
         ids = []
         for s in seeds:
             r = self.launch_training(
-                runner_path="", recipe_path=recipe_path,
+                recipe_path=recipe_path,
                 data_path=data_path, ckpt_out=f"cv/seed{s}/",
                 max_steps=None, monitor=True,
             )
@@ -732,7 +673,7 @@ def demo_compute_handlers() -> dict[str, Callable[..., str]]:
                    error_buckets={"format_error": 5, "wrong_rule": 30},
                    note="DEMO MODE — numbers are placeholders.")
 
-    def launch_training(*, runner_path: str, recipe_path: str,
+    def launch_training(*, recipe_path: str,
                         data_path: str, ckpt_out: str,
                         max_steps: int | None = None,
                         monitor: bool = True) -> str:
@@ -807,97 +748,3 @@ def _fingerprint(shingles: set[str]) -> str:
         h.update(s.encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()[:16]
-
-
-# ── Runner template bodies (referenced by scaffold_runner) ──────────
-
-
-_RUNNER_TEMPLATE_BODIES = {
-    "sft": '''"""SFT runner (scaffolded by nemo_mas Engineer).
-
-Reads recipe + dataset paths from CLI args, loads the relevant YAMLs at
-launch time so Theorist's recipe diffs land without rescaffolding.
-
-Writes metric.json next to the checkpoint with:
-  final_train_loss, final_step, wallclock_seconds, peak_gpu_memory_gb
-"""
-
-import argparse, json, time, sys
-from pathlib import Path
-
-# TODO: wire in your training framework (transformers + peft + accelerate, etc.)
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--recipe", required=True)
-    ap.add_argument("--data", required=True)
-    ap.add_argument("--ckpt-out", required=True)
-    ap.add_argument("--max-steps", type=int, default=None)
-    args = ap.parse_args()
-
-    recipe = Path(args.recipe)
-    data = Path(args.data)
-    ckpt_out = Path(args.ckpt_out)
-    ckpt_out.mkdir(parents=True, exist_ok=True)
-
-    t0 = time.time()
-    # ... (your training loop here) ...
-    final_loss = 0.42  # placeholder
-    final_step = args.max_steps or 1000
-
-    metric = {
-        "final_train_loss": final_loss,
-        "final_step": final_step,
-        "wallclock_seconds": time.time() - t0,
-        "peak_gpu_memory_gb": 0.0,
-    }
-    (ckpt_out / "metric.json").write_text(json.dumps(metric, indent=2))
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-''',
-    "rl": '''"""RL runner (scaffolded by nemo_mas Engineer).
-
-GSPO / DAPO style. Loads SFT ckpt as policy, spins vLLM rollout at the
-Kaggle eval contract (temp=0.0 — see benchmark_reference.md), generates
-n_samples per prompt, computes advantage via rl/advantage.py, takes a
-policy-gradient step.
-
-Logs KL-to-reference every step — RL diverges silently if KL grows.
-"""
-
-import argparse, json, time, sys
-from pathlib import Path
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--initial-ckpt", required=True)
-    ap.add_argument("--rl-config", default="rl/rollout.yaml")
-    ap.add_argument("--ckpt-out", required=True)
-    ap.add_argument("--max-steps", type=int, default=200)
-    args = ap.parse_args()
-
-    ckpt_out = Path(args.ckpt_out)
-    ckpt_out.mkdir(parents=True, exist_ok=True)
-
-    # ... (rollout + advantage + PG update loop here) ...
-    metric = {
-        "final_train_loss": 0.0,
-        "final_step": args.max_steps,
-        "mean_reward": 0.5,
-        "kl_to_ref": 0.02,
-        "n_rollouts": args.max_steps * 8,
-        "wallclock_seconds": 0.0,
-    }
-    (ckpt_out / "metric.json").write_text(json.dumps(metric, indent=2))
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-''',
-}

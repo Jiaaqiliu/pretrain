@@ -40,7 +40,6 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
         "recipe_proposal",
     }) | _CROSS_CUTTING,
     "engineer": frozenset({
-        "runner_capability",
         "training_run",
         "cv_result",
     }) | _CROSS_CUTTING,

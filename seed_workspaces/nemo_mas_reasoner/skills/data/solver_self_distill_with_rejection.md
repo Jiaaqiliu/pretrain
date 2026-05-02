@@ -30,9 +30,9 @@ prohibitive.
   in the `distill_batch` body.
 - MUST filter by gold answer (rejection sampling) — never accept
   rows without a gold to verify against.
-- DO NOT generate from a checkpoint that hasn't passed
-  `runner_capability` smoke test (`mem_search(<ckpt>, kind="training_run")`
-  to confirm).
+- DO NOT generate from a checkpoint that hasn't produced at least
+  one successful `training_run` record (`mem_search(<ckpt>,
+  kind="training_run")` to confirm).
 
 ## Procedure
 

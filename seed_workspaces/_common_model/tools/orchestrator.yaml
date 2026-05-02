@@ -1,0 +1,32 @@
+# Platform orchestrator tools — spawning + resuming workers.
+# Only the Orchestrator role gets these; workers cannot spawn.
+
+tools:
+  spawn_and_run_subagent:
+    description: >
+      Spawn a fresh worker for one focused task. Role is one of
+      analyst / data_engineer / theorist / engineer. The worker gets a
+      new Bedrock conversation, its role prompt + role tools, and runs
+      until it returns `end_turn` or hits its turn limit. Returns the
+      worker's final text summary plus the list of record ids it wrote.
+    schema:
+      properties:
+        role:             {type: string}
+        task:             {type: string}
+        suggested_skills: {type: array, items: {type: string}}
+        budget_tokens:    {type: integer}
+      required: [role, task]
+
+  call_existing_agent:
+    description: >
+      Resume a previously spawned worker with a new task message. Use
+      when you want a worker to revisit its own prior analysis with
+      fresh evidence (e.g. "given cv_result rec_X, was your hypothesis
+      correct?"). The worker's full message history is preserved.
+      Only works within the same cycle; cross-cycle continuity goes
+      through memory records.
+    schema:
+      properties:
+        agent_id: {type: string}
+        task:     {type: string}
+      required: [agent_id, task]

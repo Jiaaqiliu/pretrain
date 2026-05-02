@@ -1,41 +1,19 @@
 # Tools available to the Orchestrator (no execution, no memory writes).
+#
+# The Orchestrator does not write records — workers do. Platform tools
+# (spawn_*, mem_search, mem_recent, mem_get, read_file, list_dir) are
+# inherited by name from seed_workspaces/_common_model/tools/.
+
 tools:
-  spawn_and_run_subagent:
-    description: >
-      Spawn a fresh worker for one focused task. Args:
-      role (analyst | data_engineer | theorist | engineer),
-      task (the user message — see task crafting guideline in system.md),
-      suggested_skills (optional list of skill names to hint at),
-      budget_tokens (default 40000, hard cap 100000).
-      Returns the worker's final text summary plus list of new record ids.
+  # ── Spawning (orchestrator-only; schemas from _common_model) ──
+  spawn_and_run_subagent: {}
+  call_existing_agent:    {}
 
-  call_existing_agent:
-    description: >
-      Resume a previously spawned worker with a new task message. Use this
-      when you want a worker to revisit its own prior analysis with fresh
-      evidence (e.g., "given cv_result rec_X, was your hypothesis correct?").
-      Args: agent_id (returned by previous spawn), task.
+  # ── Read-only memory (no mem_write for the orchestrator) ──
+  mem_search: {}
+  mem_recent: {}
+  mem_get:    {}
 
-  mem_search:
-    description: >
-      BM25 search over the typed-record memory. Args: query (str),
-      kind (optional filter), author (optional), tags (optional list),
-      cycle_range (optional [min,max]), top_k (default 8). Returns
-      [{id, kind, author, cycle_id, title, score, snippet}].
-
-  mem_recent:
-    description: >
-      Most recent N records, optionally filtered by kind / author / tags.
-      Args: kind?, author?, tags?, k (default 10).
-
-  mem_get:
-    description: "Fetch one full record by id."
-
-  read_file:
-    description: >
-      Read a file under the workspace (prompts/, skills/, data/recipes/,
-      etc.). Read-only; cannot read memory/ or model/ checkpoints.
-
-  list_dir:
-    description: >
-      List entries under a workspace directory.
+  # ── Read-only filesystem ──
+  read_file:  {}
+  list_dir:   {}

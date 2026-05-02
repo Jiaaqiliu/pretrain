@@ -8,43 +8,38 @@ mem_write_kinds:
   - failed_attempt
 
 tools:
-  # Memory
+  # ── Platform tools (schemas from _common_model) ──
   mem_write:
     description: >
       Append a typed record. `recipe_proposal` MUST include refs to at
       least one `eval_report` or `data_gap`. Body MUST contain a
       concrete diff (YAML form or unified diff). `hypothesis` MUST
       include the smallest experiment that would test it.
-  mem_search:
-    description: "BM25 search. Args: query, kind?, author?, tags?, cycle_range?, top_k=8."
-  mem_recent:
-    description: "Recent records. Args: kind?, author?, tags?, k=10."
-  mem_get:
-    description: "Full record by id."
-  mem_link:
-    description: "Add a refs edge after the fact."
+  mem_search:  {}
+  mem_recent:  {}
+  mem_get:     {}
+  mem_link:    {}
+  skill_index: {}
+  skill_load:  {}
+  read_file:   {}
+  list_dir:    {}
 
-  # Skills
-  skill_index:
-    description: "List skills under skills/<domain>/."
-  skill_load:
-    description: "Read full markdown for one skill."
-
-  # Read-only
-  read_file:
-    description: >
-      Read a workspace file (prompts, skills, data/recipes, train/, eval/).
-      Cannot read memory/ raw files (use mem_* instead).
-  list_dir:
-    description: "List a workspace directory."
-
-  # Helpers (computation, no side-effects)
+  # ── Backend tools (computation only, no side effects) ──
   diff_yaml:
     description: >
       Compute a structural diff between two YAML strings or paths.
       Useful for showing what your recipe_proposal would change.
+    schema:
+      properties:
+        a: {type: string}
+        b: {type: string}
+      required: [a, b]
+
   render_recipe_diff:
     description: >
-      Take a recipe_proposal body and produce a clean unified-diff
-      against the current data/recipes/default.yaml + train/*.yaml.
+      Take a recipe_proposal body and produce a clean fenced diff.
       Use to make your proposals reviewable.
+    schema:
+      properties:
+        proposal_body: {type: string}
+      required: [proposal_body]

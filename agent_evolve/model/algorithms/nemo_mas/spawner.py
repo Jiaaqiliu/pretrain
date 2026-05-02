@@ -225,38 +225,18 @@ class SpawnHandler:
         return json.dumps({"ok": True, "agent_id": agent_id,
                            "result": result_text, "new_record_ids": new_ids})
 
-    # ── Spec helpers (used by orchestrator.py to build its tools) ─
+    # ── Handler helpers (specs come from YAML; orchestrator.py merges these in) ─
 
     @property
     def spawn_specs_and_handlers(self) -> tuple[list[dict], dict[str, Callable[..., str]]]:
-        from .tools import _spec  # internal helper from same package
+        """Return ``(specs=[], handlers={...})`` for spawn tools.
 
-        roles = sorted(KIND_WHITELIST)
-        specs = [
-            _spec(
-                "spawn_and_run_subagent",
-                "Spawn a fresh worker for one focused task. Returns the worker's "
-                "final text + new record ids it wrote. The orchestrator drafts "
-                "the task message — see system.md task crafting guideline.",
-                {
-                    "role": {"type": "string", "enum": roles},
-                    "task": {"type": "string"},
-                    "suggested_skills": {"type": "array",
-                                         "items": {"type": "string"}},
-                    "budget_tokens": {"type": "integer"},
-                },
-                ["role", "task"],
-            ),
-            _spec(
-                "call_existing_agent",
-                "Resume a previously-spawned worker with a new task message.",
-                {"agent_id": {"type": "string"},
-                 "task": {"type": "string"}},
-                ["agent_id", "task"],
-            ),
-        ]
+        Specs come from ``_common_model/tools/orchestrator.yaml`` now;
+        this method kept for backward compatibility returns an empty
+        spec list and the two handler callables.
+        """
         handlers: dict[str, Callable[..., str]] = {
             "spawn_and_run_subagent": self.spawn_and_run_subagent,
             "call_existing_agent": self.call_existing_agent,
         }
-        return specs, handlers
+        return [], handlers

@@ -36,7 +36,7 @@ from typing import Any
 from ...types import MCGSCycleReport, TrainingSearchNodeSummary
 from .memory import RecipeMemory
 from .spawner import SpawnHandler
-from .tools import BackendToolRegistry, _spec
+from .tools import BackendToolRegistry, build_role_tools
 
 logger = logging.getLogger(__name__)
 
@@ -183,77 +183,25 @@ class NemoMASAlgorithm:
         memory: RecipeMemory,
         workspace_root: Path,
     ) -> tuple[list[dict], dict]:
-        # Orchestrator has no mem_write; read-only memory + spawn + file.
-        specs: list[dict] = []
-        handlers: dict = {}
+        """Build the orchestrator's (specs, handlers) bundle from YAML.
 
-        # spawn tools
-        spawn_specs, spawn_handlers = spawner.spawn_specs_and_handlers
-        specs.extend(spawn_specs)
-        handlers.update(spawn_handlers)
+        Tool declarations come from ``<workspace>/tools/orchestrator.yaml``
+        + ``_common_model/tools/``; spawn handlers are supplied by the
+        caller's ``SpawnHandler`` instance (there is one per cycle) and
+        passed in via the ``backend_registry`` kwarg so they land on the
+        named tools from YAML.
 
-        # memory read-only
-        def mem_search(*, query: str, kind: str | None = None,
-                       author: str | None = None, tags: list[str] | None = None,
-                       cycle_range: list[str] | None = None,
-                       top_k: int = 8) -> str:
-            cr = tuple(cycle_range) if cycle_range and len(cycle_range) == 2 else None
-            hits = memory.search(query=query, kind=kind, author=author,
-                                 tags=tags, cycle_range=cr, top_k=top_k)  # type: ignore[arg-type]
-            return json.dumps([
-                {"id": r.id, "kind": r.kind, "author": r.author,
-                 "cycle_id": r.cycle_id, "title": r.title,
-                 "score": round(s, 4), "snippet": r.body[:200]}
-                for r, s in hits
-            ])
-
-        def mem_recent(*, kind: str | None = None, author: str | None = None,
-                       tags: list[str] | None = None, k: int = 10) -> str:
-            recs = memory.recent(kind=kind, author=author, tags=tags, k=k)
-            return json.dumps([
-                {"id": r.id, "kind": r.kind, "author": r.author,
-                 "cycle_id": r.cycle_id, "title": r.title, "tags": list(r.tags),
-                 "refs": list(r.refs), "ts": r.ts}
-                for r in recs
-            ])
-
-        def mem_get(*, id: str) -> str:
-            rec = memory.get(id)
-            if rec is None:
-                return json.dumps({"ok": False, "error": f"id {id!r} not found"})
-            return json.dumps({"ok": True, **rec.to_dict()})
-
-        specs.extend([
-            _spec("mem_search",
-                  "BM25 search (read-only) over the typed-record memory.",
-                  {"query": {"type": "string"},
-                   "kind": {"type": "string"},
-                   "author": {"type": "string"},
-                   "tags": {"type": "array", "items": {"type": "string"}},
-                   "cycle_range": {"type": "array", "items": {"type": "string"}},
-                   "top_k": {"type": "integer", "default": 8}},
-                  ["query"]),
-            _spec("mem_recent",
-                  "Most recent N records (read-only).",
-                  {"kind": {"type": "string"},
-                   "author": {"type": "string"},
-                   "tags": {"type": "array", "items": {"type": "string"}},
-                   "k": {"type": "integer", "default": 10}},
-                  []),
-            _spec("mem_get", "Fetch one full record by id.",
-                  {"id": {"type": "string"}}, ["id"]),
-        ])
-        handlers.update({"mem_search": mem_search,
-                         "mem_recent": mem_recent,
-                         "mem_get": mem_get})
-
-        # File read-only (orchestrator may inspect prompts/skills/data configs).
-        from .tools import _file_tools
-        f_specs, f_handlers = _file_tools(workspace_root)
-        specs.extend(f_specs)
-        handlers.update(f_handlers)
-
-        return specs, handlers
+        The orchestrator role YAML intentionally omits ``mem_write``,
+        so the orchestrator cannot write records — only read.
+        """
+        spawn_handlers = spawner.spawn_specs_and_handlers[1]
+        return build_role_tools(
+            "orchestrator",
+            memory=memory,
+            skills_root=workspace_root / "skills",
+            workspace_root=workspace_root,
+            backend_registry=spawn_handlers,
+        )
 
     def _build_orchestrator_system_prompt(
         self, *, workspace_root: Path, memory: RecipeMemory,

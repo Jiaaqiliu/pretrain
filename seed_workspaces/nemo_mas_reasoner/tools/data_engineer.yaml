@@ -1,4 +1,7 @@
 # Tools available to DataEngineer workers.
+#
+# Platform tools (mem_*, skill_*, read_file, list_dir) are inherited by
+# name from seed_workspaces/_common_model/tools/.
 
 mem_write_kinds:
   - distill_batch
@@ -7,78 +10,116 @@ mem_write_kinds:
   - failed_attempt
 
 tools:
-  # Memory
+  # ── Platform tools (schemas from _common_model) ──
   mem_write:
     description: >
-      Append a typed record. Required: kind, title, body.
-      `dataset_snapshot` body MUST include per-source counts and diff vs
-      the previous snapshot. `distill_batch` body MUST include source,
-      domain, count, cost, sample rows.
-  mem_search:
-    description: "BM25 search. Args: query, kind?, author?, tags?, cycle_range?, top_k=8."
-  mem_recent:
-    description: "Recent records. Args: kind?, author?, tags?, k=10."
-  mem_get:
-    description: "Full record by id."
+      Append a typed record. `dataset_snapshot` body MUST include
+      per-source counts and diff vs the previous snapshot.
+      `distill_batch` body MUST include source, domain, count, cost,
+      sample rows.
+  mem_search:  {}
+  mem_recent:  {}
+  mem_get:     {}
+  mem_link:    {}
+  skill_index: {}
+  skill_load:  {}
+  read_file:   {}
+  list_dir:    {}
 
-  # Skills
-  skill_index:
-    description: "List skills under skills/<domain>/."
-  skill_load:
-    description: "Read full markdown for one skill."
-
-  # Read-only access
-  read_file:
-    description: "Read a workspace file."
-  list_dir:
-    description: "List a workspace directory."
-
-  # Distill / generation
+  # ── Backend tools ──
   call_teacher_model:
     description: >
-      Call a teacher model on a list of prompts. Args: model
-      (e.g. 'claude-opus-4-6', 'nemotron-ultra-340b'), prompts (list),
-      max_tokens (default 8000), temperature (default 0.7),
-      system_prompt (optional). Returns list of completions + cost.
-      Refuses if total expected token cost > 5x the worker's budget.
+      Call a teacher model (e.g. claude-opus-4-6, nemotron-ultra-340b)
+      on a list of prompts. Returns list of completions + cost. Refuses
+      if total expected token cost > 5x the worker's budget.
+    schema:
+      properties:
+        model:         {type: string}
+        prompts:       {type: array, items: {type: string}}
+        max_tokens:    {type: integer, default: 8000}
+        temperature:   {type: number,  default: 0.7}
+        system_prompt: {type: string}
+      required: [model, prompts]
+
   load_checkpoint_for_inference:
     description: >
-      Load a previously-trained checkpoint for self-distill. Args:
-      ckpt_path. Returns an inference handle for batch_generate.
+      Load a previously-trained checkpoint for self-distill. Returns
+      an inference handle for subsequent batch_generate calls.
+    schema:
+      properties:
+        ckpt_path: {type: string}
+      required: [ckpt_path]
+
   batch_generate:
     description: >
-      Generate completions from a loaded checkpoint. Args: handle,
-      prompts (list), sampling_config (matches Kaggle eval contract
-      by default: temperature=1.0, top_p=1.0, max_tokens=3584).
+      Generate completions from a loaded checkpoint with sampling
+      config matching the Kaggle eval contract by default
+      (temperature=0.0, top_p=1.0, max_tokens=7680).
+    schema:
+      properties:
+        handle:          {type: string}
+        prompts:         {type: array, items: {type: string}}
+        sampling_config: {type: object}
+      required: [handle, prompts]
+
   filter_by_gold:
     description: >
       Rejection sampling: keep only generations whose extracted boxed
-      answer matches the gold. Args: generations, golds. Returns
-      kept rows + reject reasons.
+      answer matches gold. Returns kept rows + reject reasons.
+    schema:
+      properties:
+        generations: {type: array}
+        golds:       {type: array}
+      required: [generations, golds]
 
-  # Curation
   minhash_dedup:
     description: >
-      Near-duplicate removal via MinHash LSH. Args: input_path (jsonl),
-      key_field (e.g. 'prompt_rendered'), threshold (default 0.85).
-      Returns dedup'd jsonl path.
+      Near-duplicate removal via shingle fingerprint (not full MinHash;
+      threshold arg is recorded but not used by local impl). Returns
+      the dedup'd jsonl path.
+    schema:
+      properties:
+        input_path: {type: string}
+        key_field:  {type: string}
+        threshold:  {type: number, default: 0.85}
+      required: [input_path, key_field]
+
   apply_format_filter:
     description: >
-      Apply data/recipes/default.yaml filters to a JSONL. Returns
-      filtered jsonl path + counts of dropped rows by reason.
+      Apply data/recipes/default.yaml filters to a JSONL
+      (\\boxed{}, [verify]: PASS, length cap). Returns filtered path
+      + per-reason drop counts.
+    schema:
+      properties:
+        input_path: {type: string}
+      required: [input_path]
+
   format_validate:
     description: >
-      Schema check: ensure each row has required fields (prompt_rendered,
-      completion, category, ...) and types. Returns ok/fail + first 10
-      offending rows.
+      Schema check: each row has required fields (prompt_rendered,
+      completion, category, source) and types. Returns verdict +
+      first 10 offending rows.
+    schema:
+      properties:
+        path: {type: string}
+      required: [path]
+
   mix_sources:
     description: >
-      Build the final train.jsonl per data/mix.yaml weights. Args:
-      sources (list of jsonl paths), weights (list of floats),
-      curriculum_yaml (optional). Returns final path + per-source counts.
+      Build the final train.jsonl per data/mix.yaml weights. Returns
+      final path + per-source counts.
+    schema:
+      properties:
+        sources:         {type: array, items: {type: string}}
+        weights:         {type: array, items: {type: number}}
+        curriculum_yaml: {type: string}
+      required: [sources, weights]
 
-  # Output
   write_jsonl:
     description: >
       Write rows to a JSONL file under data/generated/ or data/final/.
-      Args: path (relative to workspace), rows (list of dicts).
+    schema:
+      properties:
+        path: {type: string}
+        rows: {type: array}
+      required: [path, rows]

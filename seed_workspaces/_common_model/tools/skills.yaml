@@ -1,0 +1,22 @@
+# Platform skill tools — read markdown playbooks from `skills/<role>/`.
+
+tools:
+  skill_index:
+    description: >
+      List skills, optionally under one domain (`skills/<domain>/`).
+      Returns [{name, when_to_use}] so the worker can decide which
+      skill to load in full.
+    schema:
+      properties:
+        domain: {type: string}
+      required: []
+
+  skill_load:
+    description: >
+      Read the full markdown body for one skill. Name format is
+      "<domain>/<skill>" (e.g. "analyst/audit_jsonl_quality") or just
+      "<skill>" to search across domains.
+    schema:
+      properties:
+        name: {type: string}
+      required: [name]

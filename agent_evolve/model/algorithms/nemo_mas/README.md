@@ -128,8 +128,8 @@ The algorithm exposes one knob: `backend_registry: Mapping[str, Callable]`.
 Compose it from:
 
 * **`local_handlers(workspace_root)`** — pure-Python tools that work
-  anywhere (sample_jsonl, format_validate, minhash_dedup, scaffold_runner,
-  diff_yaml, etc.).
+  anywhere (sample_jsonl, format_validate, minhash_dedup, diff_yaml,
+  read_training_log, read_checkpoint_metric, etc.).
 * **`BackendBridge(workspace_root=, benchmark=, backend=).as_registry()`** —
   delegates compute-bound tools (`run_eval`, `launch_training`,
   `rerun_recipe_with_seeds`, `load_checkpoint_for_inference`,
@@ -175,7 +175,7 @@ distill needs whatever LLM client you're using. Wire it explicitly.
 | Promotion | `PromotionPolicy` over node metric | `cv_result` tagged "stable" with new-best mean |
 | Memory | `NodeMemoryStore` (BM25-lite, per-node) | `RecipeMemory` (BM25Okapi, typed records, ref DAG) |
 | Inter-step communication | Implicit via graph + workspace patches | Explicit via mem_write + refs (auditable) |
-| Adds new dirs to workspace | No | `runner/`, `backend/`, `skills/`, `memory/records.jsonl` |
+| Adds new dirs to workspace | No | `backend/`, `skills/`, `memory/records.jsonl` (training always runs through `agent_evolve/model/runners/stages/*.py` — no workspace-local runners) |
 | External deps | None new | None new |
 | Best for | Hyperparameter sweeps where the reward signal is clean | Multi-axis exploration (data / recipe / RL) where evidence trail matters |
 

@@ -1,6 +1,11 @@
 # Tools available to Analyst workers.
-# Tool descriptions are shown to the LLM (evolvable).
-# mem_write is restricted to the kind whitelist below.
+#
+# Platform tools (mem_*, skill_*, read_file, list_dir) are inherited by
+# name from seed_workspaces/_common_model/tools/. Only override their
+# description/schema here if you want role-specific wording.
+#
+# `mem_write_kinds` below is authoritative for this role's whitelist
+# (platform uses it to build the validator).
 
 mem_write_kinds:
   - data_audit_finding
@@ -13,66 +18,87 @@ mem_write_kinds:
   - failed_attempt
 
 tools:
-  # Memory
-  mem_write:
-    description: >
-      Append a typed record to the memory store. Required: kind, title, body.
-      Optional: tags (list), refs (list of ids). The 'author' field is set
-      automatically. Writing a kind not in the whitelist returns an error.
-      `breakthrough` requires len(refs)>=1.
-  mem_search:
-    description: "BM25 search. Args: query, kind?, author?, tags?, cycle_range?, top_k=8."
-  mem_recent:
-    description: "Recent records. Args: kind?, author?, tags?, k=10."
-  mem_get:
-    description: "Full record by id."
-  mem_link:
-    description: "Add a refs edge from one record to another (cannot remove)."
+  # ── Platform tools (schemas from _common_model) ──
+  mem_write:   {}
+  mem_search:  {}
+  mem_recent:  {}
+  mem_get:     {}
+  mem_link:    {}
+  skill_index: {}
+  skill_load:  {}
+  read_file:   {}
+  list_dir:    {}
 
-  # Skills
-  skill_index:
-    description: "List skills in skills/<domain>/ with their 'When to use' line."
-  skill_load:
-    description: "Read full markdown for one skill."
-
-  # Read-only file access
-  read_file:
-    description: "Read a workspace file. Cannot read model/ checkpoints."
-  list_dir:
-    description: "List a workspace directory."
-
-  # Data inspection
+  # ── Backend tools (Analyst-specific; schemas authoritative here) ──
   sample_jsonl:
     description: >
-      Sample N rows from a JSONL file. Args: path, n (default 50),
-      seed (default 0). Returns rows + a per-field type/length summary.
+      Sample N rows from a JSONL file. Returns rows + per-field summary
+      (type histogram + string-length p50/p95).
+    schema:
+      properties:
+        path: {type: string}
+        n:    {type: integer, default: 50}
+        seed: {type: integer, default: 0}
+      required: [path]
+
   count_by_field:
     description: >
-      Group-by count over a JSONL file. Args: path, field (e.g. 'category').
+      Group-by count over a JSONL file (e.g. count by `category`).
       Returns {value: count}.
+    schema:
+      properties:
+        path:  {type: string}
+        field: {type: string}
+      required: [path, field]
+
   length_distribution:
     description: >
-      Token-length histogram for a JSONL field. Args: path, field
-      (e.g. 'completion'), tokenizer (default 'nemotron-3-nano').
+      Token-length histogram for a JSONL field. Returns p50/p95/p99 +
+      mean + max.
+    schema:
+      properties:
+        path:      {type: string}
+        field:     {type: string}
+        tokenizer: {type: string, default: "nemotron-3-nano"}
+      required: [path, field]
 
-  # Eval execution (Analyst can run eval, not training)
   run_eval:
     description: >
-      Run a full eval pass on a checkpoint against a split. Args:
-      ckpt_path, split (e.g. 'kaggle_dev_local'), limit (optional row cap).
-      Returns: per-category accuracy, error-bucket counts, jsonl path of
-      per-row outputs.
+      Run a full eval pass on a checkpoint against a split. Returns
+      per-category accuracy, error-bucket counts, and the jsonl path
+      of per-row outputs.
+    schema:
+      properties:
+        ckpt_path: {type: string}
+        split:     {type: string}
+        limit:     {type: integer}
+      required: [ckpt_path, split]
+
   run_short_training:
     description: >
-      Launch a short training run (default 200 steps) for profiling only.
-      Args: recipe_diff (yaml or unified diff), max_steps (default 200),
-      log_every (default 10). Returns loss curve + status.
+      Launch a short training run for profiling only (default 200
+      steps). Returns loss curve + status.
+    schema:
+      properties:
+        recipe_diff: {type: string}
+        max_steps:   {type: integer, default: 200}
+        log_every:   {type: integer, default: 10}
+      required: [recipe_diff]
+
   plot_loss_curve:
     description: >
-      Generate a PNG of loss vs step for one or more profile runs.
-      Args: training_run_ids (list). Returns PNG path.
+      Generate a PNG (or markdown table in local mode) of loss vs step
+      for one or more profile runs.
+    schema:
+      properties:
+        training_run_ids: {type: array, items: {type: string}}
+      required: [training_run_ids]
+
   compute_data_gap_table:
     description: >
-      Helper for compute_data_gap skill: cross-tabulate
-      eval errors by (category, length_bucket) to surface gaps.
-      Args: eval_report_id. Returns a markdown table.
+      Cross-tabulate eval errors by (category, length_bucket) to surface
+      where the model is weak. Used by the `compute_data_gap` skill.
+    schema:
+      properties:
+        eval_report_id: {type: string}
+      required: [eval_report_id]

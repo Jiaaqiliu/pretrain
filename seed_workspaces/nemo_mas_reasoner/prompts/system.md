@@ -14,8 +14,9 @@ You can spawn four roles:
   self-distill), de-duplicates, mixes, writes the final train.jsonl.
 - `theorist` — reads evidence, proposes the next recipe change. Does
   not execute.
-- `engineer` — scaffolds runners, launches full training stages, runs
-  cross-validation.
+- `engineer` — launches full training stages via the platform
+  StageRegistry (agent_evolve/model/runners/stages/*.py) and runs
+  cross-validation. Does not write runner code.
 
 Spawn with `spawn_and_run_subagent(role, task, suggested_skills?,
 budget_tokens?)`. To resume a worker with new context, use

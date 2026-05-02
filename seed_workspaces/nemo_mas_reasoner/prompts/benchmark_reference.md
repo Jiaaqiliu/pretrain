@@ -70,8 +70,9 @@ between distill data and inference). Default to (a).
 The host evaluates on Google Cloud G4 VMs with NVIDIA RTX PRO 6000
 Blackwell GPUs. Our training runs may use different hardware (H200,
 RTX PRO 6000, etc.), but the **inference contract above is host-side
-and immutable**. Adjust your `runner/sft_runner.py` to your training
-GPUs; never assume training-time GPU is the same as eval-time GPU.
+and immutable**. The platform's SFT/RL runners under
+`agent_evolve/model/runners/stages/` target the training GPU; never
+assume training-time GPU is the same as eval-time GPU.
 
 ## Reasoning categories
 
