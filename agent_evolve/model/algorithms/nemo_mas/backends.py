@@ -487,6 +487,13 @@ class BackendBridge:
         backend: Any,
     ) -> None:
         self.workspace_root = Path(workspace_root)
+        # The platform backend expects a ``TrainingWorkspace`` object with a
+        # ``.root`` attribute, not a raw ``Path``. Passing a ``Path`` makes
+        # ``workspace.root`` resolve to ``"/"`` (the filesystem root), which
+        # then fails as "pipeline missing: /train/pipeline.yaml" before any
+        # stage runs. Load the wrapper once and reuse it for every call.
+        from agent_evolve.model.workspace import TrainingWorkspace
+        self.workspace = TrainingWorkspace(self.workspace_root)
         self.benchmark = benchmark
         self.backend = backend
         self._infer_handles: dict[str, Any] = {}
@@ -514,7 +521,7 @@ class BackendBridge:
                              kind="adapter")
         try:
             out_path = self.benchmark.evaluate(
-                self.workspace_root, ckpt, self.backend, split,
+                self.workspace, ckpt, self.backend, split,
             )
         except Exception as e:                # noqa: BLE001
             return _err(f"benchmark.evaluate failed: {e}")
@@ -561,7 +568,7 @@ class BackendBridge:
         budget = TrialBudget(seconds=None, steps=max_steps, tokens=None)
         try:
             result = self.backend.run_trial(
-                self.workspace_root, node, budget, self.benchmark,
+                self.workspace, node, budget, self.benchmark,
             )
         except Exception as e:                # noqa: BLE001
             return _err(f"backend.run_trial failed: {e}")
@@ -607,7 +614,7 @@ class BackendBridge:
         ckpt = CheckpointRef(name=Path(ckpt_path).name, path=ckpt_path,
                              kind="adapter")
         try:
-            client = self.backend.create_sampling_client(self.workspace_root, ckpt)
+            client = self.backend.create_sampling_client(self.workspace, ckpt)
         except Exception as e:                # noqa: BLE001
             return _err(f"create_sampling_client failed: {e}")
         handle = f"infer-{uuid.uuid4().hex[:8]}"

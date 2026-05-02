@@ -1,0 +1,8 @@
+# Training-data sources for real SFT. Each entry has an absolute or
+# workspace-relative ``path``, a ``split`` (only "train" consumed here), and
+# an optional ``format`` (defaults to ``jsonl``). Each row must have
+# ``prompt_rendered`` and ``completion`` keys.
+sources:
+  - path: /fsx/zzsamshi/nemotron-auto-research/data/sft/short_correct.jsonl
+    split: train
+    format: jsonl

@@ -1,0 +1,31 @@
+# Teacher-distillation config for the ``synth_generate`` pipeline stage.
+# Mirrors the verified recipe from ``nemotron-auto-research/scripts/gen_teacher_traces.py``.
+# The output JSONL is written under ``data/synth/`` and automatically
+# appended to ``data/sources.yaml`` so subsequent SFT stages consume it.
+
+teacher_model_path: /fsx/models/NVIDIA-Nemotron-3-Super-120B-A12B-FP8
+prompts_csv: /fsx/zzsamshi/nemotron-auto-research/data/splits/train_local.csv
+out_name: teacher_traces.jsonl
+
+# Domains to sample from the training CSV. CLAUDE.md flagged bits + cipher as
+# the two with the biggest headroom (E-28: bits 2.5%, cipher 17.7%).
+domains: [cipher, bits]
+per_domain: 250  # 500 total for the minimal first cycle
+n_samples: 1
+
+# Filter floor. E-38 used 5000 which rejected cipher (short answers). CLAUDE.md
+# §E-38 revisit decision (a) recommends 2500 to recover cipher traces — that's
+# the minimal-risk setting this seed starts at.
+min_tokens: 2500
+max_tokens: 8192
+
+temperature: 0.8
+top_p: 0.95
+seed: 17
+
+# vLLM engine for 120B FP8. TP=8 uses the whole box — 117 GiB of weights
+# split 8 ways leaves ~125 GiB of KV cache headroom per GPU, so we also
+# bump max_num_seqs from 16 → 32 to raise rollout concurrency.
+tp: 8
+max_num_seqs: 32
+gpu_memory_utilization: 0.9

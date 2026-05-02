@@ -1,0 +1,13 @@
+buckets:
+  - id: format_error
+    description: Output cannot be parsed into a final answer.
+  - id: wrong_rule
+    description: Model inferred the wrong transformation rule.
+  - id: partial_rule
+    description: Model found part of the rule but failed composition.
+  - id: answer_extraction_fail
+    description: Final answer extractor failed.
+  - id: overlong_reasoning
+    description: Output exceeded length or token budget.
+  - id: eval_runtime_error
+    description: Evaluation failed for infrastructure reasons.

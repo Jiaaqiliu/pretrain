@@ -1,0 +1,8 @@
+splits:
+  # Smoke split shipped in the workspace itself.
+  local_holdout: eval/local_holdout.jsonl
+  local_holdout_small: eval/local_holdout_small.jsonl
+  # Real 951-row Kaggle dev split — lives in the sibling nemotron-auto-research
+  # checkout. Keep as an absolute path so forks of this workspace don't have
+  # to duplicate the data.
+  kaggle_dev_local: /fsx/zzsamshi/nemotron-auto-research/data/splits/dev_local.csv

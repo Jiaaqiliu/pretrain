@@ -1,0 +1,7 @@
+sft:
+  name: cross_entropy
+  label_smoothing: 0.0
+
+rl:
+  name: importance_sampling
+  clip: 0.2

@@ -1,0 +1,5 @@
+# Effective batch 32 matches the E-05 recipe (2 epochs × 476 rows ≈ 28 steps).
+per_device_bs: 1
+grad_accum: 32
+max_seq_len: 2560
+log_every: 5
