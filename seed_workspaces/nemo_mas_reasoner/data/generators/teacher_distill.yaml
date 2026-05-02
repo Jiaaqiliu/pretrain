@@ -1,31 +1,46 @@
 # Teacher-distillation config for the ``synth_generate`` pipeline stage.
-# Mirrors the verified recipe from ``nemotron-auto-research/scripts/gen_teacher_traces.py``.
-# The output JSONL is written under ``data/synth/`` and automatically
-# appended to ``data/sources.yaml`` so subsequent SFT stages consume it.
+# Output JSONL goes to ``data/synth/`` and is auto-appended to
+# ``data/sources.yaml`` so subsequent SFT stages consume it.
 
-teacher_model_path: /fsx/models/NVIDIA-Nemotron-3-Super-120B-A12B-FP8
+# Provider options:
+#   vllm_local  — load a local model on GPU via vLLM (e.g. the
+#                 Nemotron-3-Super-120B-FP8 teacher). Heavy; runs in a
+#                 subprocess so CUDA state is reclaimed before SFT.
+#   bedrock     — call AWS Bedrock Converse against a managed model.
+#                 No GPU; uses boto3 + ambient AWS creds on the driver host.
+teacher_provider: bedrock
+
+# For teacher_provider=bedrock this is a Bedrock model / inference-profile
+# ID, not a local path. Claude Sonnet 4.6 is the default — strong
+# reasoning trace quality, and meaningfully cheaper per trace than
+# loading a local 120B model on 8 H200s.
+teacher_model_path: us.anthropic.claude-sonnet-4-6
+
+# AWS region for the bedrock client. us-west-2 has the US Sonnet 4.6
+# inference profile enabled for this account.
+bedrock_region: us-west-2
+
 prompts_csv: /fsx/zzsamshi/nemotron-auto-research/data/splits/train_local.csv
 out_name: teacher_traces.jsonl
 
-# Domains to sample from the training CSV. CLAUDE.md flagged bits + cipher as
-# the two with the biggest headroom (E-28: bits 2.5%, cipher 17.7%).
+# Domains to sample from the training CSV. bits + cipher have the
+# largest headroom on the E-28 baseline (2.5% and 17.7% respectively).
 domains: [cipher, bits]
 per_domain: 250  # 500 total for the minimal first cycle
 n_samples: 1
 
-# Filter floor. E-38 used 5000 which rejected cipher (short answers). CLAUDE.md
-# §E-38 revisit decision (a) recommends 2500 to recover cipher traces — that's
-# the minimal-risk setting this seed starts at.
-min_tokens: 2500
+# Filter floor. Bedrock's outputTokens is Bedrock's own tokenizer (not
+# the teacher's), so the min_tokens floor here counts Bedrock tokens —
+# keep this conservative for the bedrock path.
+min_tokens: 800
 max_tokens: 8192
 
 temperature: 0.8
 top_p: 0.95
 seed: 17
 
-# vLLM engine for 120B FP8. TP=8 uses the whole box — 117 GiB of weights
-# split 8 ways leaves ~125 GiB of KV cache headroom per GPU, so we also
-# bump max_num_seqs from 16 → 32 to raise rollout concurrency.
+# vllm_local-only knobs (ignored when teacher_provider=bedrock). TP=8
+# uses the whole box for 120B FP8; max_num_seqs=32 raises concurrency.
 tp: 8
 max_num_seqs: 32
 gpu_memory_utilization: 0.9
