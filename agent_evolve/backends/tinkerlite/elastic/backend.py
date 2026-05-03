@@ -18,10 +18,14 @@ scheduler's non-blocking API promoted to the backend surface.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
+from ....model.runners.stages.teacher_distill import override_synth_runner
+from ....model.types import EvalPlan
 from ..single_node import SingleNodeTinkerLiteBackend
 from ..single_node.ddp_launcher import override_stage_runner
 from .compute_target import CapacityExhausted, ComputeTarget
@@ -70,6 +74,10 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
         queue_timeout_secs: float = 600.0,
         stage_hard_timeout_secs: float | None = None,
         k8s_queue_budget: int = 4,
+        # Eval knobs — TP size for the eval pod's vLLM instance. Must
+        # match the cluster pod's GPU request. Override with
+        # ``AE_K8S_EVAL_GPUS`` if you want a smaller-footprint eval pod.
+        eval_world_size: int = 8,
         # Inherited from SingleNodeTinkerLiteBackend; default False for a
         # real k8s backend — mock doesn't exercise the scheduler.
         mock: bool = False,
@@ -125,12 +133,14 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
             stage_hard_timeout_secs=stage_hard_timeout_secs,
             k8s_queue_budget=k8s_queue_budget,
         )
+        self.eval_world_size = int(eval_world_size)
 
     # ── Protocol methods ────────────────────────────────────────────
 
     def run_trial(self, workspace, node, budget, benchmark):
         """Drop-in compatible with SingleNodeTinkerLiteBackend.run_trial.
-        Only difference: DDP stages dispatch via the elastic scheduler."""
+        Differences: DDP stages dispatch via the elastic scheduler, and
+        teacher-distill (``vllm_local`` provider) dispatches to k8s too."""
         log_dir = Path(workspace.root) / "logs" / "k8s_stages"
         log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -145,12 +155,118 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
                 stage_label=log_prefix,
             )
 
-        with override_stage_runner(_runner):
+        def _synth_runner(cfg_path: Path) -> None:
+            """Dispatch teacher-distill (vllm_local) to a k8s pod."""
+            import json as _json
+            cfg = _json.loads(Path(cfg_path).read_text())
+            # Inject ``out_result_path`` so the k8s target knows what
+            # sentinel to wait on; point it at the stats file the
+            # teacher module already writes on success.
+            stats_path = Path(cfg["out_path"]).with_suffix(".stats.json")
+            cfg["out_result_path"] = str(stats_path)
+            Path(cfg_path).write_text(_json.dumps(cfg, indent=2))
+
+            # TP size for the pod's vLLM instance. Teacher YAML carries a
+            # ``tensor_parallel_size`` — reuse it; fall back to 8.
+            world_size = int(cfg.get("tensor_parallel_size", 8))
+            self.scheduler.run_stage(
+                cfg_path=Path(cfg_path),
+                world_size=world_size,
+                log_dir=log_dir,
+                stage_label=f"synth-{Path(cfg['out_path']).stem}"[:40]
+                            .replace("_", "-"),
+                mode="synth",
+            )
+
+        with override_stage_runner(_runner), override_synth_runner(_synth_runner):
             return super().run_trial(workspace, node, budget, benchmark)
 
-    # create_training_client / create_sampling_client / run_eval_plan
-    # are inherited unchanged from SingleNodeTinkerLiteBackend. eval keeps
-    # running on the caller's machine — cloudifying it is a follow-up.
+    # create_training_client / create_sampling_client are inherited
+    # unchanged from SingleNodeTinkerLiteBackend.
+
+    # ── Eval (cloudified) ───────────────────────────────────────────
+
+    def run_eval_plan(self, plan: EvalPlan) -> Path:
+        """Dispatch the eval through the elastic scheduler.
+
+        Writes a cfg JSON to the plan's output dir on FSx, then submits a
+        pod that runs ``agent_evolve.model.runners.eval_worker`` against
+        that cfg. Returns the plan's output_dir so the caller's parse
+        path keeps working unchanged.
+
+        Why a separate file from the DDP cfg: the eval pod's worker
+        takes a different payload shape (``plan`` + ``workspace_root`` +
+        ``benchmark_name`` + ``out_result_path``), and reusing the same
+        key names as the DDP cfg would be a footgun.
+        """
+        if self.mock:
+            # Preserve the local smoke path for tests — no pod needed.
+            return super().run_eval_plan(plan)
+
+        ws_root = Path(
+            getattr(self._current_workspace, "root", None)
+            or Path(plan.output_dir).resolve().parents[3]
+        ).resolve()
+
+        # cfg + sentinel both under the plan's output dir so a failed
+        # pod doesn't pollute unrelated paths.
+        output_dir = Path(plan.output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        cfg_path = output_dir / ".eval_config.json"
+        result_path = output_dir / ".eval_result.json"
+
+        benchmark_name = (
+            plan.benchmark_name
+            or getattr(self._current_benchmark, "name", "nemo_reasoner")
+        )
+
+        cfg = {
+            "plan": {
+                "benchmark_name": plan.benchmark_name,
+                "split": plan.split,
+                "checkpoint": {
+                    "name": plan.checkpoint.name,
+                    "path": plan.checkpoint.path,
+                    "kind": plan.checkpoint.kind,
+                    "metadata": plan.checkpoint.metadata,
+                },
+                "config_path": plan.config_path,
+                "output_dir": plan.output_dir,
+                "generation_config": plan.generation_config,
+                "metadata": plan.metadata,
+            },
+            "workspace_root": str(ws_root),
+            "benchmark_name": benchmark_name,
+            "split": plan.split,
+            "out_result_path": str(result_path),
+        }
+        cfg_path.write_text(json.dumps(cfg, indent=2))
+
+        # Eval stage world_size = TP size for the pod's vLLM instance.
+        # Override per-run via AE_K8S_EVAL_GPUS.
+        world_size = int(os.environ.get(
+            "AE_K8S_EVAL_GPUS", str(self.eval_world_size),
+        ))
+        log_dir = Path(ws_root) / "logs" / "k8s_stages"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        stage_label = f"eval-{plan.checkpoint.name}".replace("_", "-")[:40]
+        logger.info(
+            "[elastic] dispatching eval via k8s (ckpt=%s split=%s world=%d)",
+            plan.checkpoint.name, plan.split, world_size,
+        )
+        self.scheduler.run_stage(
+            cfg_path=cfg_path,
+            world_size=world_size,
+            log_dir=log_dir,
+            stage_label=stage_label,
+            mode="eval",
+        )
+
+        # The scheduler read ``out_result_path`` from the cfg and confirmed
+        # the pod exited 0; the pod wrote metrics.json + predictions.jsonl
+        # under output_dir directly. Caller parses from there.
+        return output_dir
 
     # ── Non-Protocol extras: parallel fan-out ───────────────────────
 

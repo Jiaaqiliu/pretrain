@@ -115,6 +115,7 @@ class LocalComputeTarget:
         log_dir: Path,
         *,
         stage_label: str = "stage",
+        mode: str = "ddp",
     ) -> TargetHandle:
         cfg_path = Path(cfg_path)
         log_dir = Path(log_dir)
@@ -148,15 +149,24 @@ class LocalComputeTarget:
         # Bind the subprocess to the leased GPUs.
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in lease.gpu_ids)
 
-        cmd = [
-            sys.executable,
-            "-m", "torch.distributed.run",
-            f"--nproc_per_node={world_size}",
-            "--master_addr=127.0.0.1",
-            f"--master_port={29500 + (hash(str(cfg_path)) % 1000)}",
-            "-m", "agent_evolve.model.runners.ddp_worker",
-            "--config", str(cfg_path),
-        ]
+        if mode == "ddp":
+            cmd = [
+                sys.executable,
+                "-m", "torch.distributed.run",
+                f"--nproc_per_node={world_size}",
+                "--master_addr=127.0.0.1",
+                f"--master_port={29500 + (hash(str(cfg_path)) % 1000)}",
+                "-m", "agent_evolve.model.runners.ddp_worker",
+                "--config", str(cfg_path),
+            ]
+        elif mode == "eval":
+            cmd = [
+                sys.executable,
+                "-m", "agent_evolve.model.runners.eval_worker",
+                "--config", str(cfg_path),
+            ]
+        else:
+            raise ValueError(f"unknown local submit mode: {mode!r}")
         log_path = log_dir / f"{stage_label}.local.log"
         log_fp = open(log_path, "ab", buffering=0)
         proc = subprocess.Popen(cmd, env=env, stdout=log_fp, stderr=subprocess.STDOUT)

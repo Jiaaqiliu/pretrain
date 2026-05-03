@@ -326,11 +326,12 @@ def build_algorithm(*, mode: str, workspace_root: Path, backend_kind: str = "loc
                     if os.environ.get("AE_K8S_NODE_LABEL", "1") == "1"
                     else None
                 ),
-                # Hard constraints from the plan: 2 concurrent Jobs max, no
-                # local fallback. Missing kubeconfig / namespace raises at
-                # construction rather than silently running on local GPUs.
+                # Hard constraints from the plan: concurrent Jobs capped via
+                # AE_K8S_QUEUE_BUDGET (default 2), no local fallback. Missing
+                # kubeconfig / namespace raises at construction rather than
+                # silently running on local GPUs.
                 local_enabled=False,
-                k8s_queue_budget=2,
+                k8s_queue_budget=int(os.environ.get("AE_K8S_QUEUE_BUDGET", "2")),
                 queue_timeout_secs=float(
                     os.environ.get("AE_K8S_QUEUE_TIMEOUT", "900")
                 ),

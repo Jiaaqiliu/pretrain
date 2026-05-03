@@ -171,6 +171,7 @@ class K8sComputeTarget:
         log_dir: Path,
         *,
         stage_label: str = "stage",
+        mode: str = "ddp",
     ) -> TargetHandle:
         import json
         cfg_path = Path(cfg_path)
@@ -197,6 +198,7 @@ class K8sComputeTarget:
             run_as_uid=self.run_as_uid,
             run_as_gid=self.run_as_gid,
             fs_group=self.fs_group,
+            mode=mode,
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=manifest)
         logger.info("submitted k8s Job %s/%s (ws=%d cfg=%s)",

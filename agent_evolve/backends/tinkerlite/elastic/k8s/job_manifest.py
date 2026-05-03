@@ -1,24 +1,27 @@
-"""Builder for ``batch/v1`` Job manifests that run ``train_worker_ddp``.
+"""Builder for ``batch/v1`` Job manifests that run a-evolve workers.
 
-Single-pod DDP (``nproc_per_node=world_size``) only — cross-node DDP needs
-a different orchestrator (PyTorchJob / MPIJob) and is out of scope for
-this backend.
+Two modes, selected via ``mode``:
+
+* ``"ddp"`` (default) — wraps the command in ``torch.distributed.run`` and
+  runs ``agent_evolve.model.runners.ddp_worker``. Single-pod DDP
+  (``nproc_per_node=world_size``); cross-node DDP needs PyTorchJob/MPIJob
+  and is out of scope.
+* ``"eval"`` — runs ``agent_evolve.model.runners.eval_worker`` directly
+  (vLLM spawns its own TP workers; no torchrun). ``world_size`` is the
+  GPU count requested for the pod (TP size).
 
 Design choices:
 
 - Code lives on an FSx PVC mounted at ``/fsx`` in the pod; we do NOT bake
   code into the image. This lets iteration be "save file → resubmit Job"
   with no rebuild.
-- Command line is byte-identical to the local torchrun command in
-  ``local_target`` — same entrypoint, same ``--config`` flag, same worker
-  module. Only the execution environment differs.
 - ``restartPolicy=Never`` + ``backoffLimit=0`` — we want exactly-once
   execution; the scheduler retries explicitly, not k8s.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 
 def build_job_manifest(
@@ -39,6 +42,7 @@ def build_job_manifest(
     run_as_uid: int | None = 1000,
     run_as_gid: int | None = 1000,
     fs_group: int | None = 1000,
+    mode: Literal["ddp", "eval"] = "ddp",
 ) -> dict[str, Any]:
     """Return a plain-dict Job manifest; caller feeds it to ``kubernetes.client``.
 
@@ -67,15 +71,22 @@ def build_job_manifest(
         # cache writes from failing.
         "HOME": "/tmp",
     }
+    # vLLM on this cluster hits flashinfer compile errors; the eval
+    # and synth (teacher_distill vllm_local) pods both spin up vLLM,
+    # so bake the disable flags into their env by default. DDP pods
+    # don't import vllm, so skip.
+    if mode in ("eval", "synth"):
+        env.update({
+            "VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER": "0",
+            "VLLM_USE_FLASHINFER_MOE_FP8": "0",
+            "VLLM_USE_FLASHINFER_MOE_FP4": "0",
+            "VLLM_ALLREDUCE_USE_FLASHINFER": "0",
+        })
     if extra_env:
         env.update(extra_env)
 
-    container: dict[str, Any] = {
-        "name": "trainer",
-        "image": image,
-        "imagePullPolicy": "IfNotPresent",
-        "workingDir": ae_root_in_pod,
-        "command": [
+    if mode == "ddp":
+        command = [
             "python",
             "-m", "torch.distributed.run",
             f"--nproc_per_node={world_size}",
@@ -83,7 +94,34 @@ def build_job_manifest(
             f"--master_port={master_port}",
             "-m", "agent_evolve.model.runners.ddp_worker",
             "--config", cfg_path,
-        ],
+        ]
+        container_name = "trainer"
+    elif mode == "eval":
+        # vLLM spawns its own TP workers; no torchrun required.
+        command = [
+            "python",
+            "-m", "agent_evolve.model.runners.eval_worker",
+            "--config", cfg_path,
+        ]
+        container_name = "evaluator"
+    elif mode == "synth":
+        # Teacher-distill vllm_local: same module used for local subprocess,
+        # just invoked inside a pod instead of on the host.
+        command = [
+            "python",
+            "-m", "agent_evolve.model.runners.stages.teacher_distill",
+            "--config", cfg_path,
+        ]
+        container_name = "teacher"
+    else:
+        raise ValueError(f"unknown manifest mode: {mode!r}")
+
+    container: dict[str, Any] = {
+        "name": container_name,
+        "image": image,
+        "imagePullPolicy": "IfNotPresent",
+        "workingDir": ae_root_in_pod,
+        "command": command,
         "env": [{"name": k, "value": v} for k, v in env.items()],
         "resources": {
             "limits": {gpu_resource_key: str(world_size)},

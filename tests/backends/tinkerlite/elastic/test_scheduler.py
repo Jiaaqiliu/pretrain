@@ -33,12 +33,13 @@ class FakeTarget:
     def capacity_probe(self, required_gpus: int) -> CapacityReport:
         return self.report
 
-    def submit(self, cfg_path, world_size, log_dir, *, stage_label: str = "stage") -> TargetHandle:
+    def submit(self, cfg_path, world_size, log_dir, *, stage_label: str = "stage",
+               mode: str = "ddp") -> TargetHandle:
         h = TargetHandle(
             target_name=self.name,
             cfg_path=Path(cfg_path),
             result_path=Path(cfg_path).with_suffix(".result.json"),
-            inner={"label": stage_label},
+            inner={"label": stage_label, "mode": mode},
         )
         self.submitted.append(h)
         return h

@@ -90,8 +90,13 @@ class ElasticScheduler:
         log_dir: Path,
         *,
         stage_label: str = "stage",
+        mode: str = "ddp",
     ) -> dict:
-        """Submit + wait for a DDP stage. Returns the parsed ``.ddp_result.json``.
+        """Submit + wait for a stage. Returns the parsed result JSON.
+
+        ``mode`` is forwarded to each target's ``submit`` and selects the
+        pod entrypoint: ``"ddp"`` (default) runs torchrun + ddp_worker;
+        ``"eval"`` runs eval_worker directly (no torchrun).
 
         Policy is strictly priority-first: the primary target (k8s by
         convention) gets both the run-now and the queue opportunity before
@@ -112,7 +117,10 @@ class ElasticScheduler:
                 "[elastic] %s ready (avail=%s); submitting",
                 primary.name, primary_report.available_gpus,
             )
-            handle = primary.submit(cfg_path, world_size, log_dir, stage_label=stage_label)
+            handle = primary.submit(
+                cfg_path, world_size, log_dir,
+                stage_label=stage_label, mode=mode,
+            )
             return primary.wait(handle, timeout=self.stage_hard_timeout_secs)
 
         if primary_report.can_queue:
@@ -120,7 +128,10 @@ class ElasticScheduler:
                 "[elastic] %s has no immediate capacity; queueing up to %.0fs",
                 primary.name, self.queue_timeout_secs,
             )
-            handle = primary.submit(cfg_path, world_size, log_dir, stage_label=stage_label)
+            handle = primary.submit(
+                cfg_path, world_size, log_dir,
+                stage_label=stage_label, mode=mode,
+            )
             try:
                 return primary.wait_with_pending_timeout(
                     handle, pending_timeout=self.queue_timeout_secs,
@@ -133,11 +144,17 @@ class ElasticScheduler:
         for t, r in reports[1:]:
             if r.can_run_now:
                 logger.info("[elastic] falling back to %s (run-now)", t.name)
-                handle = t.submit(cfg_path, world_size, log_dir, stage_label=stage_label)
+                handle = t.submit(
+                    cfg_path, world_size, log_dir,
+                    stage_label=stage_label, mode=mode,
+                )
                 return t.wait(handle, timeout=self.stage_hard_timeout_secs)
             if r.can_queue:
                 logger.info("[elastic] falling back to %s (queued)", t.name)
-                handle = t.submit(cfg_path, world_size, log_dir, stage_label=stage_label)
+                handle = t.submit(
+                    cfg_path, world_size, log_dir,
+                    stage_label=stage_label, mode=mode,
+                )
                 return t.wait_with_pending_timeout(
                     handle, pending_timeout=self.queue_timeout_secs,
                 )

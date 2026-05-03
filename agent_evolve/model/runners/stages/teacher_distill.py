@@ -64,6 +64,34 @@ _FLASHINFER_OFF = {
 }
 
 
+# Module-level hook mirroring ``override_stage_runner`` in the DDP path.
+# Backends that know how to dispatch a GPU job to an external cluster
+# (e.g. ``K8sTinkerLiteBackend``) register a callable here so the local
+# subprocess fork can be skipped entirely.
+#
+# Signature: ``fn(cfg_path: Path) -> None``. The callable is responsible
+# for making ``cfg['out_path']`` and ``cfg['out_path'].with_suffix(.stats.json)``
+# appear on disk before returning; raises on failure.
+from contextlib import contextmanager
+
+_SYNTH_RUNNER_OVERRIDE = None  # type: ignore[var-annotated]
+
+
+@contextmanager
+def override_synth_runner(fn):
+    """Swap the teacher-distill subprocess dispatch for ``fn``.
+
+    Scope is the ``with`` block; the old value is always restored.
+    """
+    global _SYNTH_RUNNER_OVERRIDE
+    prev = _SYNTH_RUNNER_OVERRIDE
+    _SYNTH_RUNNER_OVERRIDE = fn
+    try:
+        yield
+    finally:
+        _SYNTH_RUNNER_OVERRIDE = prev
+
+
 # ── Public entry point ───────────────────────────────────────────────────
 
 def run_synth_stage(
@@ -149,15 +177,23 @@ def _run_real_synth(workspace: Any, stage: dict) -> tuple[Path, dict[str, Any]]:
 
 
 def _run_real_synth_subprocess(cfg: dict) -> None:
-    """Launch the real synth in a child Python process.
+    """Launch the real synth in a child Python process — or a k8s pod.
 
     When the child exits, the OS releases every byte of CUDA state the
     teacher's TP workers were holding. The parent then sees a clean GPU for
     the subsequent SFT stage.
+
+    If an override is registered via :func:`override_synth_runner`, the
+    override owns dispatch (e.g. submits to a k8s pod). Otherwise we
+    spawn a local subprocess.
     """
     cfg_path = Path(cfg["out_path"]).with_suffix(".cfg.json")
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(json.dumps(cfg, indent=2))
+
+    if _SYNTH_RUNNER_OVERRIDE is not None:
+        _SYNTH_RUNNER_OVERRIDE(cfg_path)
+        return
 
     env = os.environ.copy()
     for k, v in _FLASHINFER_OFF.items():
