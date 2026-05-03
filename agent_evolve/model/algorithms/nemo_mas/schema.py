@@ -23,7 +23,7 @@ from typing import Callable, Iterable
 _CROSS_CUTTING = frozenset({"breakthrough", "failed_attempt"})
 
 KIND_WHITELIST: dict[str, frozenset[str]] = {
-    "analyst": frozenset({
+    "applied_scientist": frozenset({
         "data_audit_finding",
         "benchmark_rule",
         "profile_run",
@@ -31,15 +31,15 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
         "error_pattern",
         "data_gap",
     }) | _CROSS_CUTTING,
-    "data_engineer": frozenset({
+    "data_scientist": frozenset({
         "distill_batch",
         "dataset_snapshot",
     }) | _CROSS_CUTTING,
-    "theorist": frozenset({
+    "research_scientist": frozenset({
         "hypothesis",
         "recipe_proposal",
     }) | _CROSS_CUTTING,
-    "engineer": frozenset({
+    "machine_learning_engineer": frozenset({
         "training_run",
         "cv_result",
     }) | _CROSS_CUTTING,
@@ -49,10 +49,10 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
 # and friendly error messages). Internal kinds prefixed with `_` are
 # system records (e.g. links) and never returned by normal queries.
 ALL_KINDS: frozenset[str] = (
-    KIND_WHITELIST["analyst"]
-    | KIND_WHITELIST["data_engineer"]
-    | KIND_WHITELIST["theorist"]
-    | KIND_WHITELIST["engineer"]
+    KIND_WHITELIST["applied_scientist"]
+    | KIND_WHITELIST["data_scientist"]
+    | KIND_WHITELIST["research_scientist"]
+    | KIND_WHITELIST["machine_learning_engineer"]
 )
 
 INTERNAL_KINDS: frozenset[str] = frozenset({"_link"})

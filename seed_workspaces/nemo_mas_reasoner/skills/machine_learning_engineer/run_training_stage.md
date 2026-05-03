@@ -16,8 +16,8 @@ correct `@register_stage` implementation (`sft`, `rl`,
 
 ## Inputs
 
-- `recipe_proposal_id` (Theorist's proposal you're executing)
-- `dataset_snapshot_id` (DataEngineer's data you're training on)
+- `recipe_proposal_id` (ResearchScientist's proposal you're executing)
+- `dataset_snapshot_id` (DataScientist's data you're training on)
 - Stage to run (`sft` or `rl`) — derived from
   `train/pipeline.yaml::stages` in the recipe
 
@@ -84,7 +84,7 @@ body: |
   Loss trajectory:   <last 10 logged losses, if available>
   Hypothesis:        <e.g. "LR too high — see profile_run rec_X
                        which suggested 5e-6 not 2e-5">
-  Recommendation:    <e.g. "Theorist should propose a revised
+  Recommendation:    <e.g. "ResearchScientist should propose a revised
                        recipe with lower LR before retrying">
 tags: ["divergence", "<stage>"]
 refs: [<recipe_proposal_id>, <dataset_snapshot_id>]
@@ -97,7 +97,7 @@ refs: [<recipe_proposal_id>, <dataset_snapshot_id>]
 - Use a per-cycle overlay dir for the recipe; never mutate
   workspace YAML in place during a run.
 - Non-success runs are NOT `training_run` records — they are
-  `failed_attempt`. Theorist treats them differently.
+  `failed_attempt`. ResearchScientist treats them differently.
 - Training is implemented in `agent_evolve/model/runners/stages/`.
   Do NOT create or edit workspace-local runner scripts.
 
@@ -111,8 +111,8 @@ refs: [<recipe_proposal_id>, <dataset_snapshot_id>]
 - Do NOT race two training runs on overlapping GPUs. Confirm
   via the backend that the GPU set is free before launching.
 - Do NOT modify the proposed recipe to "make it work" if it
-  diverges. Surface the divergence; Theorist proposes a fix.
+  diverges. Surface the divergence; ResearchScientist proposes a fix.
 - Do NOT attempt to scaffold a workspace-local runner as a
   workaround for a missing platform stage. Write a
   `failed_attempt` with a concrete "needs @register_stage('<X>')"
-  body so Theorist / platform owners know.
+  body so ResearchScientist / platform owners know.

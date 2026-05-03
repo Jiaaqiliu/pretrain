@@ -4,7 +4,7 @@ When to use: after you've written an `eval_report` + a few
 `error_pattern` records, AND inspecting the dataset distribution
 suggests the failures correlate with under-representation. This
 skill turns the diagnosis into a concrete `data_gap` that
-DataEngineer can directly act on.
+DataScientist can directly act on.
 
 ## Inputs
 
@@ -34,7 +34,7 @@ DataEngineer can directly act on.
    a data shortage — e.g. `format_error` is usually a recipe issue
    (boxing discipline), not a data-volume issue.
 7. For each gap, propose concrete next-batch params (these go in
-   the body so DataEngineer can execute directly).
+   the body so DataScientist can execute directly).
 
 ## Output
 
@@ -58,7 +58,7 @@ body: |
     Training rows here: <M>  (<%> of training)
     Imbalance:          eval-error share / training-data share = <ratio>
 
-  Proposed next batch (DataEngineer reads this):
+  Proposed next batch (DataScientist reads this):
     method:             teacher_distill | solver_self_distill
     teacher_model:      <which one>     (if teacher_distill)
     source_ckpt:        <ckpt path>     (if solver_self_distill)
@@ -70,7 +70,7 @@ body: |
     expected_yield:     <Y>%            (justify with prior similar batches)
     estimated_cost:     <USD or token count>
 
-  Acceptance criteria (Analyst will re-audit):
+  Acceptance criteria (AppliedScientist will re-audit):
     - Schema valid: 100%
     - Length p95 in target bucket
     - Format valid (boxing): >90%
@@ -81,14 +81,14 @@ refs: [<eval_report_id>, <dataset_snapshot_id>]
 ## Anti-patterns
 
 - Do NOT write a `data_gap` for `format_error` failures — those are
-  recipe issues (boxing discipline). Theorist proposes a recipe
+  recipe issues (boxing discipline). ResearchScientist proposes a recipe
   change, not more data.
 - Do NOT write a `data_gap` without a concrete proposed-next-batch
-  spec. "We need more data" is not actionable — DataEngineer will
+  spec. "We need more data" is not actionable — DataScientist will
   refuse it.
 - Do NOT propose target counts > 2x the existing per-category
   training count without explicit justification (avoid
   category-imbalance cascades).
 - Do NOT write more than 3 `data_gap`s per eval. If you have more
   candidates, list the top 3 and note the rest in the body — let
-  Theorist + Orchestrator prioritize.
+  ResearchScientist + Orchestrator prioritize.

@@ -35,17 +35,17 @@ and let Orchestrator decide.
 3. `rerun_recipe_with_seeds(recipe_path=<overlay>,
    data_path=<from snapshot>, seeds=[<seed1>, <seed2>, <seed3>],
    splits=[<split>])` → list of new training_run ids.
-4. For each rerun, after it completes: spawn an Analyst (in your
-   final response, request this — Engineer doesn't spawn
+4. For each rerun, after it completes: spawn an AppliedScientist (in your
+   final response, request this — MachineLearningEngineer doesn't spawn
    Analysts) to run eval and write `eval_report`.
 
    *Note*: this skill PRODUCES the training_runs and the
-   `cv_result`. Engineer doesn't run the eval itself — that's
-   Analyst's tool. So the flow is: launch reruns → wait for
+   `cv_result`. MachineLearningEngineer doesn't run the eval itself — that's
+   AppliedScientist's tool. So the flow is: launch reruns → wait for
    completion → write a `cv_result` placeholder that lists the
-   training_run_ids and asks Orchestrator to spawn Analyst evals.
+   training_run_ids and asks Orchestrator to spawn AppliedScientist evals.
 
-   Once Analyst eval_reports are in, a follow-up Engineer spawn
+   Once AppliedScientist eval_reports are in, a follow-up MachineLearningEngineer spawn
    updates the cv_result placeholder via `mem_link` to add
    `refs` to the eval_reports, OR writes a new finalized
    `cv_result`.
@@ -75,7 +75,7 @@ refs: [<training_run_id>, <recipe_proposal_id>, <dataset_snapshot_id>,
 ```
 
 Final cv_result (after eval_reports are in, written by a follow-up
-Engineer spawn, NOT a mem_link patch — refs are append-only and
+MachineLearningEngineer spawn, NOT a mem_link patch — refs are append-only and
 the prior placeholder stays as-is for audit):
 
 ```yaml
@@ -96,7 +96,7 @@ body: |
   Verdict: stable | unstable
   Promotion recommendation:
     If stable: PROMOTE — submit recipe rec_<proposal> to leaderboard.
-    If unstable: DO NOT PROMOTE — Theorist should propose
+    If unstable: DO NOT PROMOTE — ResearchScientist should propose
                  (a) more data, (b) lower LR, or (c) larger
                  LoRA rank to stabilize. Cite this cv_result.
 tags: ["cv", "final", <verdict>]
@@ -111,7 +111,7 @@ refs: [<training_run_id>, <recipe_proposal_id>, <dataset_snapshot_id>,
   is not CV; it's a sweep). Same recipe, different **training**
   seed.
 - Do NOT "rerun eval with different seeds" — eval is deterministic
-  at temp=0.0; that's a no-op and Analyst should refuse.
+  at temp=0.0; that's a no-op and AppliedScientist should refuse.
 - Do NOT skip the stability threshold in the body. The threshold
   is part of the result; future Theorists need to know what gate
   was applied.

@@ -71,14 +71,14 @@ the model size or LoRA rank changes meaningfully.)
    converges to a less-overshot weight.
 4. Rollback: if eval doesn't improve, revert to defaults. If eval
    regresses > 0.005, the long-CoT data may itself be the issue
-   (over-length traces) — DataEngineer should re-mix with stricter
+   (over-length traces) — DataScientist should re-mix with stricter
    length filter rather than tweaking the recipe further.
 
 ## Anti-patterns
 
 - Do NOT apply this pattern to short data — it under-trains.
 - Do NOT combine this change with another change in the same
-  proposal. (Theorist hard rule: one change per proposal.)
+  proposal. (ResearchScientist hard rule: one change per proposal.)
 - Do NOT update the numbers in the table above without writing a
   `breakthrough` first explaining the new evidence — this skill is
   the canonical reference, treat it like protected configuration.

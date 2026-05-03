@@ -7,7 +7,7 @@ peer to the workspace:
 
     seed_workspaces/
       _common_model/tools/{memory,skills,filesystem,orchestrator}.yaml
-      <workspace>/tools/{analyst,data_engineer,theorist,engineer,orchestrator}.yaml
+      <workspace>/tools/{applied_scientist,data_scientist,research_scientist,machine_learning_engineer,orchestrator}.yaml
 
 Resolution per tool name inside a role YAML:
   1. If the role YAML provides ``schema:`` inline, use it (override).

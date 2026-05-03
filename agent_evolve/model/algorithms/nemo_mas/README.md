@@ -16,7 +16,7 @@ share a typed-record **memory** (BM25, JSONL, append-only, ref-validated).
   Orchestrator (no writes, no exec)
       │  spawn_and_run_subagent(role, task)
       ▼
-  [Analyst] [DataEngineer] [Theorist] [Engineer]
+  [AppliedScientist] [DataScientist] [ResearchScientist] [MLEngineer]
       │            │            │          │
       └────────────┴──► RecipeMemory (BM25, typed records, refs DAG)
                               │
@@ -44,19 +44,19 @@ All workers share: `mem_write/search/recent/get/link`, `skill_index`,
 - **Extra tools:** `spawn_and_run_subagent`, `call_existing_agent`, `mem_search`, `mem_recent`, `mem_get`, `read_file`, `list_dir`
 - **Writes:** none · **Skills:** none
 
-### Analyst — `prompts/analyst.md`, `skills/analyst/`
+### Applied Scientist — `prompts/applied_scientist.md`, `skills/applied_scientist/`
 
 - **Backend tools:** `sample_jsonl`, `count_by_field`, `length_distribution`, `run_eval`, `run_short_training`, `plot_loss_curve`, `compute_data_gap_table`
 - **Writes:** `data_audit_finding`, `benchmark_rule`, `profile_run`, `eval_report`, `error_pattern`, `data_gap` (+ `breakthrough`, `failed_attempt`)
 - **Skills:** `audit_jsonl_quality`, `categorize_eval_errors`, `compute_data_gap`, `probe_benchmark_format`, `profile_lr_sweep`
 
-### Data Engineer — `prompts/data_engineer.md`, `skills/data/`
+### Data Scientist — `prompts/data_scientist.md`, `skills/data_scientist/`
 
 - **Backend tools:** `call_teacher_model`, `load_checkpoint_for_inference`, `batch_generate`, `filter_by_gold`, `minhash_dedup`, `apply_format_filter`, `format_validate`, `mix_sources`, `write_jsonl`
 - **Writes:** `distill_batch`, `dataset_snapshot` (+ cross-cutting)
 - **Skills:** `format_validate`, `minhash_dedup`, `mix_by_curriculum`, `solver_self_distill_with_rejection`, `teacher_distill_long_cot`
 
-### Theorist — `prompts/theorist.md`, `skills/theorist/`
+### Research Scientist — `prompts/research_scientist.md`, `skills/research_scientist/`
 
 Reasoning + records only, no side effects.
 
@@ -64,10 +64,10 @@ Reasoning + records only, no side effects.
 - **Writes:** `hypothesis`, `recipe_proposal` (+ cross-cutting)
 - **Skills:** `failure_pattern_recognition`, `lr_warmup_for_long_cot`, `propose_recipe_from_gap`, `when_to_skip_sft`
 
-### Engineer — `prompts/engineer.md`, `skills/engineer/`
+### Machine Learning Engineer — `prompts/machine_learning_engineer.md`, `skills/machine_learning_engineer/`
 
 Training always routes through the platform `StageRegistry`
-(`agent_evolve/model/runners/stages/*.py`). Engineer **never** scaffolds
+(`agent_evolve/model/runners/stages/*.py`). MLE **never** scaffolds
 runner scripts.
 
 - **Backend tools:** `launch_training`, `read_training_log`, `read_checkpoint_metric`, `rerun_recipe_with_seeds`, `compute_stability`
@@ -80,13 +80,13 @@ Enforced on every `mem_write`; violations return a structured error.
 
 | kind | author | refs required |
 |---|---|---|
-| `data_audit_finding`, `benchmark_rule`, `profile_run`, `error_pattern`, `data_gap` | analyst | — |
-| `eval_report` | analyst | ≥1 `training_run` |
-| `distill_batch`, `dataset_snapshot` | data_engineer | — |
-| `hypothesis` | theorist | — |
-| `recipe_proposal` | theorist | ≥1 `eval_report` or `data_gap` |
-| `training_run` | engineer | ≥1 `recipe_proposal` **and** ≥1 `dataset_snapshot` |
-| `cv_result` | engineer | ≥1 `training_run` |
+| `data_audit_finding`, `benchmark_rule`, `profile_run`, `error_pattern`, `data_gap` | applied_scientist | — |
+| `eval_report` | applied_scientist | ≥1 `training_run` |
+| `distill_batch`, `dataset_snapshot` | data_scientist | — |
+| `hypothesis` | research_scientist | — |
+| `recipe_proposal` | research_scientist | ≥1 `eval_report` or `data_gap` |
+| `training_run` | machine_learning_engineer | ≥1 `recipe_proposal` **and** ≥1 `dataset_snapshot` |
+| `cv_result` | machine_learning_engineer | ≥1 `training_run` |
 | `breakthrough` | any | ≥1 (any kind) |
 | `failed_attempt` | any | — |
 
@@ -161,7 +161,7 @@ algo = NemoMASAlgorithm(backend_registry={
 | | `mcgs` | `nemo_mas` |
 |---|---|---|
 | Search | UCT graph + branches + top-k | LLM orchestrator + 4 workers |
-| Mutation source | `BaselineMutationProposer` | Theorist's `recipe_proposal` records |
+| Mutation source | `BaselineMutationProposer` | Research Scientist's `recipe_proposal` records |
 | Promotion | `PromotionPolicy` | `cv_result` tagged "stable" |
 | Memory | `NodeMemoryStore` (per-node) | `RecipeMemory` (typed, ref DAG) |
 | Comms | Implicit (graph + patches) | Explicit (`mem_write` + refs, auditable) |

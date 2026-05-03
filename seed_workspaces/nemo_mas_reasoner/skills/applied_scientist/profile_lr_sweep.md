@@ -20,8 +20,8 @@ before committing to a full run.
    new findings as confirmation/refutation rather than redoing.
 2. For each LR:
    - `run_short_training(recipe_diff=<set lr to this value>,
-     max_steps=200, log_every=10)` — Analyst can do this; full
-     training is Engineer's job.
+     max_steps=200, log_every=10)` — AppliedScientist can do this; full
+     training is MachineLearningEngineer's job.
    - Capture: loss trajectory, gradient-norm trajectory (if available),
      final-step loss, NaN events.
 3. `plot_loss_curve(training_run_ids=[...])` — get a single PNG.
@@ -81,6 +81,6 @@ refs: [<all per-LR profile_run ids>]
 - Do NOT skip the train/val identical-loss check. This catches data
   leaks that profile-by-loss-curve would miss.
 - Do NOT extend the sweep beyond 3 points "to be sure" — that's
-  Engineer's job (they can run cv on the top 2 picks).
+  MachineLearningEngineer's job (they can run cv on the top 2 picks).
 - Do NOT write a `recipe_proposal` from your findings. Write
-  `profile_run` records and let Theorist read them.
+  `profile_run` records and let ResearchScientist read them.

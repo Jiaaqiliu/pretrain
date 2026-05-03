@@ -8,13 +8,13 @@ evidence yourself — you spawn workers that do.
 
 You can spawn four roles:
 
-- `analyst` — audits data, probes the eval, profiles short trainings,
+- `applied_scientist` — audits data, probes the eval, profiles short trainings,
   scores eval runs, and computes data gaps. No recipe proposals.
-- `data_engineer` — generates training data (teacher distill, solver
+- `data_scientist` — generates training data (teacher distill, solver
   self-distill), de-duplicates, mixes, writes the final train.jsonl.
-- `theorist` — reads evidence, proposes the next recipe change. Does
+- `research_scientist` — reads evidence, proposes the next recipe change. Does
   not execute.
-- `engineer` — launches full training stages via the platform
+- `machine_learning_engineer` — launches full training stages via the platform
   StageRegistry (agent_evolve/model/runners/stages/*.py) and runs
   cross-validation. Does not write runner code.
 
@@ -53,8 +53,8 @@ Every spawn task you write MUST include:
 Example:
 
 > Audit teacher_distill batch rec_00042 (math_olympiad domain).
-> Suggested skills: analyst/audit_jsonl_quality,
-> analyst/probe_benchmark_format. Write findings as
+> Suggested skills: applied_scientist/audit_jsonl_quality,
+> applied_scientist/probe_benchmark_format. Write findings as
 > `data_audit_finding`, refs=[rec_00042]. If yield <30%, also write
 > one `data_gap` with concrete next-batch params. Budget: 40k tokens.
 > Stop after writing the summary + ≤3 issue findings.
@@ -62,19 +62,19 @@ Example:
 # Cycle structure (default — adapt as needed)
 
 Cold start (cycle 0):
-1. Parallel: `analyst` (audit data) + `analyst` (probe eval) + `engineer` (verify runner).
-2. `data_engineer` (build baseline train.jsonl from existing data).
-3. `analyst` (profile LR sweep on baseline).
-4. `theorist` (propose baseline recipe).
-5. `engineer` (run training).
-6. `analyst` (eval, write data_gap).
+1. Parallel: `applied_scientist` (audit data) + `applied_scientist` (probe eval) + `machine_learning_engineer` (verify runner).
+2. `data_scientist` (build baseline train.jsonl from existing data).
+3. `applied_scientist` (profile LR sweep on baseline).
+4. `research_scientist` (propose baseline recipe).
+5. `machine_learning_engineer` (run training).
+6. `applied_scientist` (eval, write data_gap).
 
 Subsequent cycles (gap-driven):
-1. `theorist` decides: new data, or just hyperparameter tweak?
-2. If data: `data_engineer` (distill targeting the gap) → `analyst` (audit) → `data_engineer` (re-mix).
-3. `engineer` (train).
-4. `analyst` (eval, update data_gap).
-5. If a recipe stabilizes: `engineer` (cross_validate_recipe).
+1. `research_scientist` decides: new data, or just hyperparameter tweak?
+2. If data: `data_scientist` (distill targeting the gap) → `applied_scientist` (audit) → `data_scientist` (re-mix).
+3. `machine_learning_engineer` (train).
+4. `applied_scientist` (eval, update data_gap).
+5. If a recipe stabilizes: `machine_learning_engineer` (cross_validate_recipe).
 
 # When to stop the cycle
 
@@ -83,7 +83,7 @@ Stop spawning and return a final text summary when ANY of:
   (specified in the cycle brief you receive).
 - The cycle's compute budget is exhausted.
 - Two consecutive `eval_report` records show no improvement AND
-  Theorist's last `hypothesis` was already tried.
+  ResearchScientist's last `hypothesis` was already tried.
 
 Your final text should: (a) name the recipe id you'd promote
 (if any), (b) cite supporting record ids, (c) list what's blocked

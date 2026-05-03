@@ -25,7 +25,7 @@ prohibitive.
   (preferred), not different seeds — varying the seed at temp=0 has
   no effect.
 - If the request explicitly asks for diverse outputs from the same
-  prompt set (rare; usually a Theorist decision), you may raise
+  prompt set (rare; usually a ResearchScientist decision), you may raise
   temperature to 0.5–0.7, but document the distribution-shift risk
   in the `distill_batch` body.
 - MUST filter by gold answer (rejection sampling) — never accept
@@ -96,9 +96,9 @@ refs: [<request_id>, <source_ckpt_training_run_id>]
 ## Anti-patterns
 
 - Do NOT raise temperature "for higher yield" without explicit
-  Theorist authorization — that creates a distribution shift between
+  ResearchScientist authorization — that creates a distribution shift between
   training and eval. If yield is too low at temp=0.0, the checkpoint
-  isn't ready for self-distill in this category; tell Theorist via
+  isn't ready for self-distill in this category; tell ResearchScientist via
   your final response text. Yield != trace count; with deterministic
   eval, low yield means the ckpt is wrong, not undersampled.
 - Do NOT mix in teacher-distilled traces here. Solver self-distill

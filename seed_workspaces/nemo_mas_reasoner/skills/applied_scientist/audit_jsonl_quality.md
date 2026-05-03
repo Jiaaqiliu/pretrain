@@ -6,7 +6,7 @@ training mix.
 
 ## Inputs
 
-- `batch_id` (the `distill_batch` record id from DataEngineer) OR a
+- `batch_id` (the `distill_batch` record id from DataScientist) OR a
   direct path to a JSONL file.
 - Optional: target schema (defaults to the Nemotron contract:
   `prompt_rendered`, `completion`, `category`, `source`).
@@ -73,4 +73,4 @@ record describing what concrete next-batch params would fix it
 - Do NOT extrapolate from <50-row samples without saying so in the
   body.
 - Do NOT recommend deletion; only "quarantine" or "reject". Deletion
-  is DataEngineer's call.
+  is DataScientist's call.

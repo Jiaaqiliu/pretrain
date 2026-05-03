@@ -2,8 +2,8 @@
 
 When to use: after one or more `distill_batch`es have been audited
 and accepted, OR when `data/mix.yaml` weights changed (per a
-Theorist `recipe_proposal`). This produces the final
-`data/final/train.jsonl` that Engineer trains on.
+ResearchScientist `recipe_proposal`). This produces the final
+`data/final/train.jsonl` that MachineLearningEngineer trains on.
 
 ## Inputs
 
@@ -22,7 +22,7 @@ Theorist `recipe_proposal`). This produces the final
    "reject"/"quarantine" (`mem_search(<batch_id>,
    kind="data_audit_finding")`). If any batch lacks an audit, refuse
    and ask Orchestrator (in your final response text) to spawn an
-   Analyst first.
+   AppliedScientist first.
 3. Apply per-source filters: `apply_format_filter(<path>)` per
    `data/recipes/default.yaml` (require_verify_pass, max_cot_tokens,
    etc.). Record dropped counts.
@@ -88,11 +88,11 @@ refs: [<all batch ids included>, <previous_snapshot_id>]
 
 - Do NOT include batches that haven't been audited.
 - Do NOT silently mutate `data/mix.yaml` or `data/curriculum.yaml`
-  — those are inputs from Theorist's `recipe_proposal`. Read-only
+  — those are inputs from ResearchScientist's `recipe_proposal`. Read-only
   here.
 - Do NOT skip the diff-vs-previous-snapshot section — that's how
-  Theorist sees what changed without re-reading the whole snapshot.
+  ResearchScientist sees what changed without re-reading the whole snapshot.
 - Do NOT overwrite `data/final/train.jsonl` if the new snapshot
-  shows < 95% of the previous row count UNLESS Theorist's proposal
+  shows < 95% of the previous row count UNLESS ResearchScientist's proposal
   explicitly authorized the shrink. Otherwise refuse with
   `failed_attempt` and let Orchestrator decide.

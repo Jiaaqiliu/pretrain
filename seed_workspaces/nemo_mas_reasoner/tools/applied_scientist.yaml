@@ -1,4 +1,4 @@
-# Tools available to Analyst workers.
+# Tools available to AppliedScientist workers.
 #
 # Platform tools (mem_*, skill_*, read_file, list_dir) are inherited by
 # name from seed_workspaces/_common_model/tools/. Only override their
@@ -29,7 +29,7 @@ tools:
   read_file:   {}
   list_dir:    {}
 
-  # ── Backend tools (Analyst-specific; schemas authoritative here) ──
+  # ── Backend tools (AppliedScientist-specific; schemas authoritative here) ──
   sample_jsonl:
     description: >
       Sample N rows from a JSONL file. Returns rows + per-field summary

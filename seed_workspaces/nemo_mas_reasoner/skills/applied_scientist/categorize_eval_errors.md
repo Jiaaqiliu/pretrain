@@ -3,7 +3,7 @@
 When to use: every time `run_eval` finishes. The raw eval output is a
 per-row list of (input, gold, model_output, score); this skill turns
 it into structured `eval_report` + `error_pattern` records that
-Theorist can act on.
+ResearchScientist can act on.
 
 ## Inputs
 
@@ -35,7 +35,7 @@ Theorist can act on.
 3. Cross-tabulate by `(category, bucket)`. Note the top 3
    (category, bucket) cells by row count.
 4. For each top cell, sample 5 rows; quote 2-3 of them in the
-   `error_pattern` body so Theorist can see the failure shape.
+   `error_pattern` body so ResearchScientist can see the failure shape.
 
 ## Output
 
@@ -88,12 +88,12 @@ refs: [<eval_report_id>]
 ## Anti-patterns
 
 - Do NOT write `recipe_proposal` based on patterns you observed —
-  Theorist's job. Your `error_pattern` should INVITE a hypothesis,
+  ResearchScientist's job. Your `error_pattern` should INVITE a hypothesis,
   not propose a fix.
 - Do NOT lump unrelated failures into one `error_pattern`. One cell
   per record.
 - Do NOT skip the example rows — they are the most useful part for
-  Theorist (and for future BM25 search).
+  ResearchScientist (and for future BM25 search).
 - Do NOT classify by single keyword ("contains 'overflow'"). Use
   the structural signals: regex on `\boxed`, token length,
   parser-error vs parser-success.

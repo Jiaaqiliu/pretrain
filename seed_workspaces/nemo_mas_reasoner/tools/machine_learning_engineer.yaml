@@ -1,8 +1,8 @@
-# Tools available to Engineer workers.
+# Tools available to MachineLearningEngineer workers.
 #
 # NOTE: Training always runs through the platform StageRegistry —
 # agent_evolve/model/runners/stages/*.py — via backend.run_trial. The
-# Engineer role does NOT scaffold or edit workspace-local runner
+# MachineLearningEngineer role does NOT scaffold or edit workspace-local runner
 # scripts; use the platform's @register_stage-based runners instead.
 
 mem_write_kinds:
