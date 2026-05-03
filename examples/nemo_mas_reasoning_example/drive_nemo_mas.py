@@ -383,28 +383,83 @@ def run_via_evolver(*, workspace: Path, work_dir: Path, cycles: int,
         }
 
     # Fallback: directly drive run_cycle with a synthetic LoopContext.
+    # Wrap the seed as a TrainingWorkspace so run_cycle can call
+    # ``workspace.fork(...)`` to isolate each cycle under
+    # ``work_dir/cycles/<id>/workspace`` — keeps the seed read-only and
+    # makes cycle outputs inspectable side-by-side.
     print("[driver] TrainingEvolver unavailable; running direct loop.",
           file=sys.stderr)
     work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        from agent_evolve.model.workspace import TrainingWorkspace
+        ws_obj = TrainingWorkspace(workspace)
+    except Exception as exc:                     # noqa: BLE001
+        print(f"[driver] could not wrap workspace ({exc!r}); "
+              "falling back to raw-path mode (no per-cycle fork).",
+              file=sys.stderr)
+        ws_obj = workspace
+
     reports = []
-    for c in range(1, cycles + 1):
+    # Cycle counter bumps ONLY on cycles that make progress; `null` cycles
+    # are retried up to `null_cycle_retry_limit` times. This is the
+    # cycle-contract (proposal d) driver-side implementation.
+    null_cycle_retry_limit = 3
+    consecutive_nulls = 0
+    produced = 0
+    attempt = 0
+    while produced < cycles:
+        attempt += 1
         ctx = types.SimpleNamespace(
-            cycle=c, workspace=workspace, benchmark=None, backend=None,
+            cycle=produced + 1, workspace=ws_obj, benchmark=None, backend=None,
             config=None, work_dir=work_dir, trial=None, observer=None,
             budget=types.SimpleNamespace(seconds=trial_budget_seconds,
                                          steps=None, tokens=None),
         )
-        with Heartbeat(workspace=workspace, algo=algo, cycle=c):
+        with Heartbeat(workspace=workspace, algo=algo, cycle=produced + 1):
             report = algo.run_cycle(ctx)
+
+        outcome = getattr(report, "cycle_outcome", "trained")
         reports.append({
             "cycle": report.cycle,
+            "attempt": attempt,
+            "outcome": outcome,
+            "wall_seconds": getattr(report, "wall_seconds", None),
+            "orchestrator_turns": getattr(report, "orchestrator_turns", None),
+            "record_counts": getattr(report, "record_counts", {}),
             "trial_node_ids": report.trial_node_ids,
             "incumbent_changed": report.incumbent_changed,
             "best_metric": report.best_metric,
         })
+        print(
+            f"[driver] cycle attempt {attempt} → outcome={outcome} "
+            f"records={len(report.trial_node_ids)} "
+            f"incumbent_changed={report.incumbent_changed}",
+            file=sys.stderr, flush=True,
+        )
+
+        if outcome == "null":
+            consecutive_nulls += 1
+            if consecutive_nulls >= null_cycle_retry_limit:
+                print(
+                    f"[driver] {consecutive_nulls} consecutive null cycles — "
+                    f"aborting to avoid burning Bedrock on no progress.",
+                    file=sys.stderr,
+                )
+                break
+            print(
+                f"[driver] null cycle; retrying ({consecutive_nulls}/"
+                f"{null_cycle_retry_limit})",
+                file=sys.stderr,
+            )
+            continue
+
+        consecutive_nulls = 0
+        produced += 1
+
     return {
         "kind": "direct",
-        "cycles_completed": cycles,
+        "cycles_completed": produced,
+        "total_attempts": attempt,
         "best_metric": reports[-1]["best_metric"] if reports else None,
         "incumbent_node_id": None,
         "per_cycle": reports,

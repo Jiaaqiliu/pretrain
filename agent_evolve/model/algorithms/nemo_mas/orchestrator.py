@@ -29,16 +29,65 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import textwrap
+import time
 from pathlib import Path
 from typing import Any
 
-from ...types import MCGSCycleReport, TrainingSearchNodeSummary
+from ...types import (
+    MCGSCycleReport,
+    TrainingSearchNodeSummary,
+    WorkspaceMutation,
+    WorkspacePatch,
+)
 from .memory import RecipeMemory
 from .spawner import SpawnHandler
 from .tools import BackendToolRegistry, build_role_tools
 
 logger = logging.getLogger(__name__)
+
+
+# ── Cycle contract (proposal d) ────────────────────────────────────────
+
+# Load-bearing kinds that count toward the promotion / trained / partial
+# classification. Ordered so the "strongest" verdict wins.
+_STRONG_KINDS = frozenset({"cv_result"})
+_TRAINED_KINDS = frozenset({"cv_result", "training_run"})
+_PARTIAL_KINDS = frozenset({"eval_report", "recipe_proposal", "data_gap",
+                             "dataset_snapshot", "distill_batch",
+                             "breakthrough"})
+
+
+def _classify_outcome(
+    new_records: list,
+    promoted: bool,
+    *,
+    budget_exhausted: bool,
+) -> str:
+    """Map the records written this cycle onto the 5-state outcome enum.
+
+    Order of checks matters: budget_exhausted wins over everything else
+    (so we don't claim success on a truncated run); promotion then trumps
+    plain training; partial only applies when nothing load-bearing ran.
+    """
+    if budget_exhausted:
+        return "budget_exhausted"
+    if promoted:
+        return "promoted"
+    kinds = {r.kind for r in new_records}
+    if kinds & _TRAINED_KINDS:
+        return "trained"
+    if kinds & _PARTIAL_KINDS:
+        return "partial"
+    return "null"
+
+
+def _count_kinds(records: list) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for r in records:
+        out[r.kind] = out.get(r.kind, 0) + 1
+    return out
 
 
 class NemoMASAlgorithm:
@@ -72,28 +121,78 @@ class NemoMASAlgorithm:
         thinking_effort: str = "",
         backend_registry: BackendToolRegistry | None = None,
         workspace_subdir: str = "",
+        # Cycle contract (proposal d). Null values disable the respective
+        # guard. Tuned for the marathon workload on 3 H200 nodes — override
+        # for smaller / larger runs.
+        cycle_wall_seconds: float | None = 3600.0,
+        cycle_orchestrator_turn_cap: int | None = 80,
+        fork_per_cycle: bool = True,
     ) -> None:
         self.model_id = model_id
         self.thinking_effort = thinking_effort
         self.backend_registry = backend_registry
         self.workspace_subdir = workspace_subdir.strip("/")
+        self.cycle_wall_seconds = cycle_wall_seconds
+        self.cycle_orchestrator_turn_cap = cycle_orchestrator_turn_cap
+        self.fork_per_cycle = fork_per_cycle
 
         # Last-cycle artifacts (for topk_summary / debugging).
         self._last_cycle_records: list[str] = []
         self._last_orchestrator_response: str = ""
+        self._last_cycle_outcome: str = "null"
 
     # ── Loop entry point ───────────────────────────────────────
 
     def run_cycle(self, ctx: Any) -> MCGSCycleReport:
         cycle_id = f"{int(ctx.cycle):04d}"
-        workspace_root = self._resolve_workspace_root(ctx)
+        t0 = time.time()
 
-        records_path = workspace_root / "memory" / "records.jsonl"
+        # Per-cycle forked workspace. Falls back to seed-in-place when the
+        # caller's ctx doesn't give us a TrainingWorkspace (tests, dry runs).
+        seed_root, cycle_root = self._resolve_cycle_root(ctx, cycle_id)
+
+        # ``_common_model/`` is a sibling of the SEED workspace
+        # (``seed_workspaces/_common_model/tools/``). When we fork into
+        # ``work_dir/cycles/<id>/``, that sibling is gone. Pin the lookup
+        # at the seed's sibling so fork + non-fork modes resolve tools the
+        # same way. tools.py honours this env var (see
+        # ``_common_model_tools_dir``). Restore the prior value after the
+        # cycle so we don't leak into other algorithms in the same process.
+        prior_common = os.environ.get("NEMO_MAS_COMMON_MODEL")
+        os.environ["NEMO_MAS_COMMON_MODEL"] = str(
+            seed_root.parent / "_common_model" / "tools"
+        )
+        try:
+            return self._run_cycle_body(
+                ctx=ctx, cycle_id=cycle_id, t0=t0,
+                seed_root=seed_root, cycle_root=cycle_root,
+            )
+        finally:
+            if prior_common is None:
+                os.environ.pop("NEMO_MAS_COMMON_MODEL", None)
+            else:
+                os.environ["NEMO_MAS_COMMON_MODEL"] = prior_common
+
+    def _run_cycle_body(
+        self,
+        *,
+        ctx: Any,
+        cycle_id: str,
+        t0: float,
+        seed_root: Path,
+        cycle_root: Path,
+    ) -> MCGSCycleReport:
+        # Memory lives one level up from the per-cycle forks so state
+        # accumulates across cycles (MCGS's forks keep their own memory
+        # per node; we want a single shared store). Placement:
+        #   <work_dir>/memory/records.jsonl  (preferred, cross-cycle state)
+        #   <seed_root>/memory/records.jsonl (backward compat for dry runs)
+        records_path = self._resolve_records_path(ctx, seed_root)
         memory = RecipeMemory(records_path)
         memory.set_cycle_id(cycle_id)
 
         spawner = SpawnHandler(
-            workspace_root=workspace_root,
+            workspace_root=cycle_root,
             memory=memory,
             backend_registry=self.backend_registry,
             model_id=self.model_id,
@@ -102,33 +201,56 @@ class NemoMASAlgorithm:
 
         # Build the orchestrator's tool set: spawn + memory-read + file-read.
         orchestrator_specs, orchestrator_handlers = self._build_orchestrator_tools(
-            spawner=spawner, memory=memory, workspace_root=workspace_root,
+            spawner=spawner, memory=memory, workspace_root=cycle_root,
         )
 
         system_prompt = self._build_orchestrator_system_prompt(
-            workspace_root=workspace_root, memory=memory,
+            workspace_root=cycle_root, memory=memory,
         )
 
         cycle_brief = self._compose_cycle_brief(ctx, memory)
 
         before_ids = {r.id for r in memory.all_records()}
 
-        result_text = self._run_orchestrator(
-            system_prompt=system_prompt,
-            tools=orchestrator_specs,
-            tool_handlers=orchestrator_handlers,
-            task=cycle_brief,
+        # Run the orchestrator under wall / turn caps. The caps are soft:
+        # BedrockAgent doesn't expose a hook to abort mid-turn, so we
+        # instead cap the conversation length up front and catch over-budget
+        # after the fact. Wall-time check here bounds "how long we'll wait";
+        # finer-grained interruption is a follow-up.
+        result_text, orchestrator_turns, budget_exhausted = (
+            self._run_orchestrator_with_budget(
+                system_prompt=system_prompt,
+                tools=orchestrator_specs,
+                tool_handlers=orchestrator_handlers,
+                task=cycle_brief,
+                wall_seconds=self.cycle_wall_seconds,
+                turn_cap=self.cycle_orchestrator_turn_cap,
+                t0=t0,
+            )
         )
 
-        new_ids = [r.id for r in memory.all_records() if r.id not in before_ids]
+        all_records = memory.all_records()
+        new_records = [r for r in all_records if r.id not in before_ids]
+        new_ids = [r.id for r in new_records]
         self._last_cycle_records = new_ids
         self._last_orchestrator_response = result_text
 
-        # Decide promotion: if any cv_result this cycle is tagged "stable"
-        # AND its mean is the new best across all cv_results in memory,
-        # mark incumbent_changed=True. Otherwise no promotion this cycle.
         incumbent_id, changed, best_metric = self._decide_promotion(
             memory=memory, this_cycle_ids=new_ids,
+        )
+
+        outcome = _classify_outcome(
+            new_records, promoted=changed, budget_exhausted=budget_exhausted,
+        )
+        self._last_cycle_outcome = outcome
+        wall = time.time() - t0
+        kind_counts = _count_kinds(new_records)
+
+        logger.info(
+            "[nemo_mas] cycle=%s outcome=%s wall=%.1fs turns=%d "
+            "records=%d kinds=%s promoted=%s",
+            cycle_id, outcome, wall, orchestrator_turns, len(new_records),
+            kind_counts, changed,
         )
 
         return MCGSCycleReport(
@@ -140,6 +262,10 @@ class NemoMASAlgorithm:
             best_metric=best_metric,
             graph_path=str(records_path),
             report_path="",
+            cycle_outcome=outcome,                    # type: ignore[arg-type]
+            wall_seconds=wall,
+            orchestrator_turns=orchestrator_turns,
+            record_counts=kind_counts,
         )
 
     def topk_summary(self) -> list[TrainingSearchNodeSummary]:
@@ -149,6 +275,163 @@ class NemoMASAlgorithm:
         return []
 
     # ── Helpers ────────────────────────────────────────────────
+
+    def _resolve_cycle_root(
+        self, ctx: Any, cycle_id: str,
+    ) -> tuple[Path, Path]:
+        """Return (seed_root, cycle_root).
+
+        ``seed_root`` is the canonical, read-only seed workspace path.
+        ``cycle_root`` is where this cycle reads + mutates — a forked copy
+        under ``ctx.work_dir/cycles/<cycle_id>/workspace/`` when possible.
+
+        Fork requires a ``TrainingWorkspace``-shaped ``ctx.workspace`` and
+        a ``ctx.work_dir``. When either is missing (tests, dry runs) we
+        fall back to the seed root itself — the caller is responsible for
+        keeping the seed clean in that mode.
+        """
+        seed_root = self._resolve_workspace_root(ctx)
+        if not self.fork_per_cycle:
+            return seed_root, seed_root
+
+        work_dir = getattr(ctx, "work_dir", None)
+        ws = getattr(ctx, "workspace", None)
+        can_fork = (
+            work_dir is not None
+            and ws is not None
+            and hasattr(ws, "fork")
+            and callable(getattr(ws, "fork", None))
+        )
+        if not can_fork:
+            return seed_root, seed_root
+
+        cycle_root_parent = Path(work_dir) / "cycles" / cycle_id
+        # `fork()` places the copy under `<work_dir>/nodes/<node_id>/workspace`.
+        # Pass a virtual work_dir whose `nodes/` dir points at our cycle
+        # slot so the resulting path is `<work_dir>/cycles/<id>/workspace`.
+        virtual_work_dir = cycle_root_parent / ".fork_target"
+        empty_mutation = WorkspaceMutation(
+            mutation_id=f"nemo_mas:cycle-{cycle_id}",
+            parent_node_id="seed",
+            description="nemo_mas per-cycle fork (no mutation)",
+            patch=WorkspacePatch(operations=[]),
+        )
+        try:
+            forked = ws.fork(
+                node_id="workspace",           # → nodes/workspace/workspace
+                mutation=empty_mutation,
+                work_dir=virtual_work_dir,
+            )
+        except Exception:                        # noqa: BLE001
+            logger.exception(
+                "[nemo_mas] per-cycle fork failed; falling back to seed root"
+            )
+            return seed_root, seed_root
+
+        cycle_root = Path(forked.root)
+        logger.info("[nemo_mas] cycle=%s forked workspace to %s",
+                    cycle_id, cycle_root)
+        return seed_root, cycle_root
+
+    def _resolve_records_path(self, ctx: Any, seed_root: Path) -> Path:
+        """Memory file path. Shared across cycles when ``work_dir`` is set."""
+        work_dir = getattr(ctx, "work_dir", None)
+        if work_dir is not None:
+            return Path(work_dir) / "memory" / "records.jsonl"
+        return seed_root / "memory" / "records.jsonl"
+
+    def _run_orchestrator_with_budget(
+        self,
+        *,
+        system_prompt: str,
+        tools: list[dict],
+        tool_handlers: dict,
+        task: str,
+        wall_seconds: float | None,
+        turn_cap: int | None,
+        t0: float,
+    ) -> tuple[str, int, bool]:
+        """Drive the Bedrock orchestrator with soft wall/turn caps.
+
+        Returns ``(result_text, turns_used, budget_exhausted)``.
+
+        "Soft" = we check the caps *between* converse turns by wrapping
+        ``agent._run_converse_loop`` similar to the trace harness. If the
+        cap trips, we signal end-of-conversation via ``agent._stop`` style
+        flagging (BedrockAgent supports cooperative termination by
+        returning early from the loop). The agent's final assistant text
+        is returned as-is; ``budget_exhausted=True`` tells the caller
+        that the cycle should be classified as ``budget_exhausted``
+        regardless of records written.
+        """
+        try:
+            from agent_evolve.harness.agents.arc.bedrock_agent import BedrockAgent
+        except ImportError as e:
+            logger.warning(
+                "BedrockAgent unavailable (%s); orchestrator will not run. "
+                "Returning a no-op response.", e,
+            )
+            return ("(orchestrator did not run — BedrockAgent unavailable)",
+                    0, False)
+
+        max_tokens = 65536 if self.thinking_effort else 16384
+        budget_exhausted = {"value": False}
+        turns = {"count": 0}
+
+        try:
+            agent = BedrockAgent(
+                model_id=self.model_id,
+                system_prompt=system_prompt,
+                tools=tools,
+                tool_handlers=tool_handlers,
+                agent_id=0,
+                max_tokens=max_tokens,
+                thinking_effort=self.thinking_effort,
+            )
+        except Exception as e:                   # noqa: BLE001
+            logger.exception("Orchestrator agent construction failed")
+            return (f"(orchestrator failed: {e})", 0, False)
+
+        real_converse = getattr(agent, "_converse_with_retry", None)
+        if real_converse is not None and (wall_seconds or turn_cap):
+            def guarded(tool_config):
+                # Pre-turn budget check. Return a synthetic "stop" result
+                # that BedrockAgent will treat as an end_turn when it
+                # sees ``stopReason=end_turn``.
+                elapsed = time.time() - t0
+                turns["count"] += 1
+                over_wall = wall_seconds is not None and elapsed >= wall_seconds
+                over_turns = turn_cap is not None and turns["count"] > turn_cap
+                if over_wall or over_turns:
+                    budget_exhausted["value"] = True
+                    reason = []
+                    if over_wall:
+                        reason.append(f"wall {elapsed:.1f}s >= {wall_seconds}s")
+                    if over_turns:
+                        reason.append(f"turns {turns['count']} > {turn_cap}")
+                    logger.warning(
+                        "[nemo_mas] orchestrator budget exhausted (%s); "
+                        "injecting synthetic end_turn", "; ".join(reason),
+                    )
+                    return {
+                        "stopReason": "end_turn",
+                        "output": {"message": {"role": "assistant",
+                                               "content": [{"text":
+                            "(Cycle budget exhausted — terminating cycle.)"}]}},
+                        "usage": {"inputTokens": 0, "outputTokens": 0,
+                                  "totalTokens": 0,
+                                  "cacheReadInputTokens": 0,
+                                  "cacheWriteInputTokens": 0},
+                    }
+                return real_converse(tool_config)
+            agent._converse_with_retry = guarded  # type: ignore[method-assign]
+
+        try:
+            result = agent.call(task)
+        except Exception as e:                   # noqa: BLE001
+            logger.exception("Orchestrator agent failed")
+            return (f"(orchestrator failed: {e})", turns["count"], False)
+        return result, turns["count"], budget_exhausted["value"]
 
     def _resolve_workspace_root(self, ctx: Any) -> Path:
         ws = getattr(ctx, "workspace", None)
@@ -260,39 +543,6 @@ class NemoMASAlgorithm:
               (c) list what's blocked / would benefit from a future cycle.
         """).strip()
         return brief
-
-    def _run_orchestrator(
-        self,
-        *,
-        system_prompt: str,
-        tools: list[dict],
-        tool_handlers: dict,
-        task: str,
-    ) -> str:
-        try:
-            from agent_evolve.harness.agents.arc.bedrock_agent import BedrockAgent
-        except ImportError as e:
-            logger.warning(
-                "BedrockAgent unavailable (%s); orchestrator will not run. "
-                "Returning a no-op response.", e,
-            )
-            return "(orchestrator did not run — BedrockAgent unavailable)"
-
-        max_tokens = 65536 if self.thinking_effort else 16384
-        try:
-            agent = BedrockAgent(
-                model_id=self.model_id,
-                system_prompt=system_prompt,
-                tools=tools,
-                tool_handlers=tool_handlers,
-                agent_id=0,
-                max_tokens=max_tokens,
-                thinking_effort=self.thinking_effort,
-            )
-            return agent.call(task)
-        except Exception as e:                # noqa: BLE001
-            logger.exception("Orchestrator agent failed")
-            return f"(orchestrator failed: {e})"
 
     def _decide_promotion(
         self,

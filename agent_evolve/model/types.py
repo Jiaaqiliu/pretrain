@@ -220,6 +220,15 @@ class TrainingSearchNodeSummary:
     mean_reward: float
 
 
+CycleOutcome = Literal[
+    "promoted",           # wrote a cv_result + incumbent changed (strongest)
+    "trained",            # wrote >= 1 cv_result OR >= 1 training_run (progress)
+    "partial",            # wrote only eval_report / recipe_proposal / data_gap
+    "null",               # wrote 0 load-bearing records — retry this cycle
+    "budget_exhausted",   # hit wall / turn / job ceiling before end_turn
+]
+
+
 @dataclass
 class MCGSCycleReport:
     cycle: int
@@ -230,6 +239,15 @@ class MCGSCycleReport:
     best_metric: float | None
     graph_path: str
     report_path: str
+    # Cycle-contract fields (default for backward compat with call sites
+    # that don't know about the contract yet; see proposal (d) in the
+    # design discussion — `null` cycles should not advance the cycle
+    # counter on the driver side).
+    cycle_outcome: CycleOutcome = "trained"
+    wall_seconds: float = 0.0
+    orchestrator_turns: int = 0
+    # Record-kind counts observed this cycle (for debugging / dashboards).
+    record_counts: dict[str, int] = field(default_factory=dict)
 
 
 # ── Top-level result ─────────────────────────────────────────────────────
