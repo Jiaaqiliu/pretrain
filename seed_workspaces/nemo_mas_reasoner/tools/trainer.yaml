@@ -6,9 +6,10 @@
 # scripts; use the platform's @register_stage-based runners instead.
 
 mem_write_kinds:
-  - training_run        # requires refs to recipe_proposal AND dataset_snapshot
-  - cv_result           # requires refs to >=1 training_run
-  - breakthrough        # requires len(refs) >= 1
+  - training_run         # requires refs to recipe_proposal AND dataset_snapshot
+  - cv_result            # requires refs to >=1 training_run
+  - submission_artifact  # packaged LoRA adapter zip; refs ≥1 training_run
+  - breakthrough         # requires len(refs) >= 1
   - failed_attempt
 
 tools:
@@ -80,3 +81,23 @@ tools:
       properties:
         training_run_ids: {type: array, items: {type: string}}
       required: [training_run_ids]
+
+  pack_submission:
+    description: >
+      Package a LoRA adapter directory into a Kaggle-ready
+      ``submission.zip``. Validates that ``adapter_config.json`` exists
+      and LoRA rank <= 32, then writes a flat zip with the adapter files
+      at the archive root. After calling this, trainer MUST write a
+      ``submission_artifact`` record citing the training_run that
+      produced ckpt_path and including ``zip_path`` + adapter config
+      summary in the body — that record is what the reviewer cites when
+      signing off cp_submission_ready.
+    schema:
+      properties:
+        ckpt_path: {type: string}
+        out_zip:
+          type: string
+          description: Path for the output zip — typically
+                       ``submissions/<cycle>_<slug>.zip`` relative to
+                       the workspace root.
+      required: [ckpt_path, out_zip]

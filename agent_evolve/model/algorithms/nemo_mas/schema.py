@@ -41,6 +41,9 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
         # QA officer duty: verdicts on Quality Plan checkpoint evidence.
         # Exactly one kind per role owns this; the reviewer is it.
         "checkpoint_review",
+        # Result of a kaggle_submit call — the reviewer pipes the CLI's
+        # submission_id + initial status into memory.
+        "kaggle_submission_result",
     }) | _CROSS_CUTTING,
     "data_worker": frozenset({
         "distill_batch",
@@ -56,6 +59,10 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
         "training_run",
         "cv_result",
         "directive_response",
+        # Packaged LoRA adapter zip ready for Kaggle submission. Produced
+        # by pack_submission; body contains zip path + adapter_config
+        # summary. Reviewer cites this when posting cp_submission_ready.
+        "submission_artifact",
     }) | _CROSS_CUTTING,
     # Pseudo-role used when the orchestrator's checkpoint_sign /
     # directive_respond tools write records on its behalf. Not a spawnable
@@ -159,6 +166,11 @@ REF_RULES: dict[str, RefRule] = {
     "checkpoint_review":   _require_min_refs(1),
     # Every orchestrator reply must point at the human_directive it answers.
     "directive_response":  _require_ref_kind("human_directive"),
+    # Packaged adapter zip must trace back to a training_run so reviewers
+    # can audit which checkpoint shipped.
+    "submission_artifact": _require_ref_kind("training_run"),
+    # Kaggle submission result must trace back to the artifact we pushed.
+    "kaggle_submission_result": _require_ref_kind("submission_artifact"),
     # All other kinds: no ref requirements (refs are optional but recommended).
 }
 

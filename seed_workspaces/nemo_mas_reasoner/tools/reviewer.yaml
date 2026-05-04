@@ -14,10 +14,11 @@ mem_write_kinds:
   - eval_report
   - error_pattern
   - data_gap
-  - breakthrough         # requires len(refs) >= 1
+  - breakthrough             # requires len(refs) >= 1
   - failed_attempt
-  - checkpoint_review    # QA-officer duty: verdict on slot evidence
-  - checkpoint_event     # allowed indirectly via checkpoint_sign (auto mode)
+  - checkpoint_review        # QA-officer duty: verdict on slot evidence
+  - checkpoint_event         # allowed indirectly via checkpoint_sign (auto mode)
+  - kaggle_submission_result # result from a kaggle_submit call
 
 tools:
   # ── Platform tools (schemas from _common_model) ──
@@ -85,6 +86,45 @@ tools:
                        requires_evidence kinds.
         note: {type: string}
       required: [slot_id, refs]
+
+  # ── Kaggle submission (reviewer pushes after cp_submission_ready
+  #    verdict=ready_to_sign in auto mode). One submit per run — the
+  #    orchestrator enforces the budget through the cycle brief. ──
+
+  kaggle_submit:
+    description: >
+      Push a submission.zip to the Kaggle competition. Runs on the
+      driver host (not a k8s pod); uses `~/.kaggle/kaggle.json` credentials.
+      ONLY call this once per run, and only after the trainer produced a
+      submission_artifact AND you have posted
+      checkpoint_review_suggest(cp_submission_ready, verdict=ready_to_sign).
+      Returns the submission_id (date stamp from Kaggle) and initial
+      status. Write a ``kaggle_submission_result`` record citing the
+      ``submission_artifact`` in refs.
+    schema:
+      properties:
+        zip_path:
+          type: string
+          description: Path to submission.zip (absolute or relative to
+                       workspace).
+        message:
+          type: string
+          description: Description shown on the Kaggle submission page.
+      required: [zip_path, message]
+
+  kaggle_fetch_score:
+    description: >
+      Poll the Kaggle CLI for the public-LB score of a previously-pushed
+      submission. Public score takes ~30-60 min after submit to appear;
+      call this in a later cycle (or pass the submission_id returned by
+      kaggle_submit).
+    schema:
+      properties:
+        submission_id:
+          type: string
+          description: Kaggle submission date stamp returned by
+                       kaggle_submit. Empty string ⇒ most recent.
+      required: []
 
   # ── Backend tools (Reviewer-specific; schemas authoritative here) ──
   sample_jsonl:

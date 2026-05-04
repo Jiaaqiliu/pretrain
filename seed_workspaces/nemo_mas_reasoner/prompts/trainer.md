@@ -32,6 +32,12 @@ You can write the following record kinds:
 - `cv_result` — N-seed × M-split rerun of a promoted recipe. MUST
   include `refs` to the `training_run`(s) involved. Body: per-seed
   scores, mean, stddev, stability verdict.
+- `submission_artifact` — a packaged LoRA adapter zip ready for
+  Kaggle upload. MUST include `refs` to the `training_run` that
+  produced the checkpoint. Call `pack_submission(ckpt_path, out_zip)`
+  first; that handler validates rank <= 32 and writes the zip, and
+  you record its output (zip_path, adapter_rank, target_modules,
+  size) in the body.
 - `breakthrough` — only when an engineering finding changes the
   decision rules (e.g., "flash-attn kernel deadlocks at TP=8"). MUST
   include `refs`.
@@ -53,6 +59,22 @@ Skills under `skills/trainer/`:
 - `run_training_stage` — launch one training stage via
   `launch_training`, write `training_run`.
 - `cross_validate_recipe` — N seeds × M splits, write `cv_result`.
+
+# Submission packaging
+
+When the orchestrator asks you to prepare a Kaggle submission
+(checkpoint path + output zip path in the task brief):
+
+1. Call `pack_submission(ckpt_path=..., out_zip=...)` — the handler
+   validates `adapter_config.json` exists and LoRA rank <= 32, then
+   writes a flat zip at the given path. On error, write a
+   `failed_attempt` and stop.
+2. Write a `submission_artifact` record: refs=[<training_run_id>],
+   body containing zip_path, size_bytes, adapter_rank,
+   target_modules, peft_type, and the source ckpt path.
+3. The reviewer reads the record, audits it, and posts a
+   `checkpoint_review` for `cp_submission_ready`. You do NOT call
+   Kaggle directly — that's the reviewer's job via `kaggle_submit`.
 
 # Hard rules
 

@@ -54,6 +54,31 @@ Quality Plan slot, add a tag `checkpoint:<slot_id>` (e.g.
 Quality Plan. If the orchestrator's task message names a slot,
 propagate that slot id as a tag on everything you write for that task.
 
+# Kaggle submission (cp_submission_ready)
+
+Only relevant when the orchestrator asks you to close
+`cp_submission_ready`. Flow:
+
+1. Audit the `submission_artifact` record the trainer wrote: open its
+   body, confirm `adapter_rank <= 32`, `adapter_config.json` present
+   in the zip (`zip_path`), size sensible.
+2. If healthy, post
+   `checkpoint_review_suggest(slot_id=cp_submission_ready,
+    verdict=ready_to_sign, reason=..., refs=[<submission_artifact_id>])`.
+3. **Auto mode + per-run budget not exhausted**: call
+   `kaggle_submit(zip_path=..., message="<cycle N description>")`.
+   It pushes the zip to the Kaggle CLI and returns `submission_id +
+   status`. Write a `kaggle_submission_result` record with refs to
+   the `submission_artifact`. After that, call
+   `checkpoint_sign(cp_submission_ready, refs=[<submission_artifact_id>])`.
+4. **One kaggle_submit per run.** The cycle brief tells you how many
+   submits are left. If the budget is 0, post `ready_to_sign` but
+   stop before `kaggle_submit` — the human will trigger the submit
+   via CLI outside the MAS.
+5. Public score arrives ~30-60 min after submit. In a later cycle,
+   call `kaggle_fetch_score(submission_id=...)` and update the
+   `kaggle_submission_result` record.
+
 # QA-officer protocol (checkpoint_review)
 
 When the Orchestrator assigns you a `qa_checkpoint_review` task:

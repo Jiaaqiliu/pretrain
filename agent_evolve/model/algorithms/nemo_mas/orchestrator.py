@@ -226,6 +226,12 @@ class NemoMASAlgorithm:
         cycle_wall_seconds: float | None = 3600.0,
         cycle_orchestrator_turn_cap: int | None = 80,
         fork_per_cycle: bool = True,
+        # Kaggle: hard cap on `kaggle_submit` invocations across the
+        # entire run. Public-LB is rate-limited (5/day on this comp)
+        # and there's no point burning ammunition on half-baked adapters.
+        # Counted as the number of ``kaggle_submission_result`` records
+        # already in memory.
+        max_kaggle_submits_per_run: int = 1,
     ) -> None:
         self.model_id = model_id
         self.thinking_effort = thinking_effort
@@ -234,6 +240,7 @@ class NemoMASAlgorithm:
         self.cycle_wall_seconds = cycle_wall_seconds
         self.cycle_orchestrator_turn_cap = cycle_orchestrator_turn_cap
         self.fork_per_cycle = fork_per_cycle
+        self.max_kaggle_submits_per_run = int(max_kaggle_submits_per_run)
 
         # Last-cycle artifacts (for topk_summary / debugging).
         self._last_cycle_records: list[str] = []
@@ -289,6 +296,10 @@ class NemoMASAlgorithm:
         records_path = self._resolve_records_path(ctx, seed_root)
         memory = RecipeMemory(records_path)
         memory.set_cycle_id(cycle_id)
+        # Expose to subprocess-free backend handlers (e.g. kaggle_submit)
+        # that need to count prior records without receiving the memory
+        # object. Restored in the outer run_cycle finally block.
+        os.environ["NEMO_MAS_MEMORY_PATH"] = str(records_path)
 
         spawner = SpawnHandler(
             workspace_root=cycle_root,
@@ -756,12 +767,26 @@ class NemoMASAlgorithm:
             return "\n".join(lines)
 
         sections: list[str] = []
+        # Kaggle budget accounting: count how many kaggle_submit calls
+        # have already been made this run. Used to gate cp_submission_ready
+        # so auto mode doesn't burn the daily quota.
+        all_records = memory.all_records()
+        n_submits_done = sum(
+            1 for r in all_records if r.kind == "kaggle_submission_result"
+        )
+        submits_left = max(0, self.max_kaggle_submits_per_run - n_submits_done)
+
         sections.append(textwrap.dedent(f"""
             Cycle {cycle:04d}.
 
             Budget: {budget_str}.
 
             Checkpoint mode: {mode}.
+
+            Kaggle submission budget: {submits_left}/{self.max_kaggle_submits_per_run}
+              left this run ({n_submits_done} already sent).
+              The reviewer is NOT allowed to call ``kaggle_submit`` once
+              this reaches 0 — post verdict=ready_to_sign and stop.
 
             State of memory at the start of this cycle:
 {_format(recent_break, "recent breakthroughs")}

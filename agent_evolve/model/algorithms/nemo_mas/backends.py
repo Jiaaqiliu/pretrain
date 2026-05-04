@@ -48,6 +48,7 @@ import difflib
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import statistics
@@ -443,6 +444,219 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
             ids=training_run_ids,
         )
 
+    # ── Submission packaging (trainer) ──────────────────────────
+    #
+    # The Kaggle host loads our adapter onto the frozen Nemotron-3-Nano-30B
+    # base and scores it in vLLM. Our job: package the LoRA adapter dir
+    # into ``submission.zip`` with ``adapter_config.json`` at the archive
+    # root, sanity-check rank <= 32, and report what shipped. The reviewer
+    # later cites the resulting record when posting a cp_submission_ready
+    # verdict.
+
+    def pack_submission(*, ckpt_path: str, out_zip: str) -> str:
+        import zipfile
+        src = _safe_path(ws, ckpt_path) or Path(ckpt_path)
+        if not src.is_dir():
+            return _err(f"ckpt_path is not a directory: {src}")
+        adapter_cfg = src / "adapter_config.json"
+        if not adapter_cfg.is_file():
+            return _err(
+                f"no adapter_config.json under {src} — is this a LoRA adapter "
+                "dir? (Full-weight checkpoints are not a valid Kaggle submission.)"
+            )
+        try:
+            cfg = json.loads(adapter_cfg.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            return _err(f"adapter_config.json unreadable: {e}")
+        rank = cfg.get("r") or cfg.get("rank")
+        if rank is not None and int(rank) > 32:
+            return _err(
+                f"adapter rank={rank} > 32; Kaggle rejects rank > 32. "
+                "Re-train with lora_rank <= 32."
+            )
+
+        # Resolve output zip path. Must live under workspace root (or an
+        # absolute path on FSx) so the file is reachable from the driver
+        # after the cycle closes.
+        out = Path(out_zip)
+        if not out.is_absolute():
+            out = ws / out
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write a flat zip with the adapter files at the archive root —
+        # the host unzips straight into a LoRA dir.
+        try:
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+                for p in sorted(src.rglob("*")):
+                    if p.is_file():
+                        zf.write(p, p.relative_to(src))
+        except OSError as e:
+            return _err(f"zip write failed: {e}")
+
+        size = out.stat().st_size
+        return _ok(
+            zip_path=str(out),
+            size_bytes=size,
+            adapter_rank=rank,
+            target_modules=cfg.get("target_modules"),
+            base_model_name_or_path=cfg.get("base_model_name_or_path"),
+            peft_type=cfg.get("peft_type"),
+            message=(
+                f"packaged {src} → {out} ({size:,} bytes). Trainer should "
+                "write a `submission_artifact` record with this zip_path + "
+                "refs to the training_run that produced the checkpoint."
+            ),
+        )
+
+    # ── Kaggle API (reviewer) ───────────────────────────────────
+    #
+    # Uses the `kaggle` CLI (credentials expected at ~/.kaggle/kaggle.json).
+    # We keep these out of the k8s pods — they're cheap HTTPS calls and
+    # the driver host already has AWS + Kaggle creds. Submission is
+    # gated by the Quality Plan (reviewer only calls this after verdict
+    # ready_to_sign on cp_submission_ready) and by the per-run budget
+    # enforced in the reviewer's task brief.
+
+    _KAGGLE_COMPETITION = "nvidia-nemotron-model-reasoning-challenge"
+    # Hard budget: Kaggle gives us 5 submits/day and we pick 2 finals; a
+    # single marathon run shouldn't burn more than 1. If the
+    # NemoMASAlgorithm sets a higher per-run limit, this handler-level
+    # fallback still refuses once the shared records.jsonl has already
+    # captured that many kaggle_submission_result records.
+    _KAGGLE_MAX_PER_RUN = int(os.environ.get("NEMO_MAS_KAGGLE_MAX_PER_RUN", "1"))
+
+    def _count_prior_submits() -> int:
+        # Memory lives at <work_dir>/memory/records.jsonl (the shared
+        # cross-cycle store the driver seeds). We don't have a direct
+        # handle, but the driver threads it via env var NEMO_MAS_MEMORY_PATH.
+        mem_path = os.environ.get("NEMO_MAS_MEMORY_PATH")
+        if not mem_path or not Path(mem_path).is_file():
+            return 0
+        n = 0
+        try:
+            with Path(mem_path).open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        if json.loads(line).get("kind") == "kaggle_submission_result":
+                            n += 1
+                    except json.JSONDecodeError:
+                        pass
+        except OSError:
+            pass
+        return n
+
+    def kaggle_submit(*, zip_path: str, message: str) -> str:
+        import shutil
+        import subprocess
+        if not shutil.which("kaggle"):
+            return _err("`kaggle` CLI not on PATH; `pip install kaggle`")
+        prior = _count_prior_submits()
+        if prior >= _KAGGLE_MAX_PER_RUN:
+            return _err(
+                f"kaggle_submit refused: {prior} submit(s) already made this "
+                f"run, budget is {_KAGGLE_MAX_PER_RUN}. Post verdict="
+                "ready_to_sign without submitting; the human can push via "
+                "the CLI manually."
+            )
+        zp = Path(zip_path)
+        if not zp.is_absolute():
+            zp = ws / zp
+        if not zp.is_file():
+            return _err(f"zip not found: {zp}")
+        cmd = [
+            "kaggle", "competitions", "submit",
+            "-c", _KAGGLE_COMPETITION,
+            "-f", str(zp),
+            "-m", message or "auto submit from nemo_mas",
+        ]
+        try:
+            out = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=600,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            return _err(f"kaggle submit failed: {e}")
+        if out.returncode != 0:
+            return _err(
+                f"kaggle submit returncode={out.returncode}; "
+                f"stderr={out.stderr.strip()}"
+            )
+        # The CLI prints "Successfully submitted to ..." but doesn't
+        # expose the submission id. We pull it via a follow-up list call
+        # so the reviewer can track score status later.
+        list_out = subprocess.run(
+            ["kaggle", "competitions", "submissions",
+             "-c", _KAGGLE_COMPETITION, "-v"],
+            capture_output=True, text=True, timeout=120,
+        )
+        submission_id = ""
+        latest_status = ""
+        if list_out.returncode == 0:
+            # CSV: fileName,date,description,status,publicScore,privateScore
+            lines = list_out.stdout.strip().splitlines()
+            for row in lines[1:2]:   # most recent is first
+                parts = row.split(",")
+                if len(parts) >= 4:
+                    submission_id = parts[1].strip()   # date acts as handle
+                    latest_status = parts[3].strip()
+                break
+        return _ok(
+            submission_id=submission_id,
+            status=latest_status or "pending",
+            competition=_KAGGLE_COMPETITION,
+            stdout=out.stdout.strip()[-500:],
+            message=(
+                "Submission pushed to Kaggle. Public-LB score arrives after "
+                "host-side inference (~30-60 min). Call `kaggle_fetch_score` "
+                "later to update the kaggle_submission_result record."
+            ),
+        )
+
+    def kaggle_fetch_score(*, submission_id: str = "") -> str:
+        import shutil
+        import subprocess
+        if not shutil.which("kaggle"):
+            return _err("`kaggle` CLI not on PATH")
+        cmd = ["kaggle", "competitions", "submissions",
+               "-c", _KAGGLE_COMPETITION, "-v"]
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            return _err(f"kaggle list failed: {e}")
+        if out.returncode != 0:
+            return _err(
+                f"kaggle list returncode={out.returncode}; "
+                f"stderr={out.stderr.strip()}"
+            )
+        lines = out.stdout.strip().splitlines()
+        rows = []
+        for row in lines[1:]:
+            parts = [p.strip() for p in row.split(",")]
+            if len(parts) < 6:
+                continue
+            rows.append({
+                "fileName":    parts[0],
+                "date":        parts[1],
+                "description": parts[2],
+                "status":      parts[3],
+                "publicScore": parts[4],
+                "privateScore": parts[5],
+            })
+        if not rows:
+            return _err("no submissions found for this competition")
+        # If submission_id (really the date stamp from kaggle_submit) is
+        # given, return that row; otherwise the most recent.
+        target = next((r for r in rows if r["date"] == submission_id), rows[0])
+        return _ok(
+            submission_id=target["date"],
+            status=target["status"],
+            public_score=target["publicScore"],
+            private_score=target["privateScore"],
+            all_submissions=rows[:5],
+        )
+
     return {
         "sample_jsonl":              sample_jsonl,
         "count_by_field":            count_by_field,
@@ -460,6 +674,9 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
         "read_training_log":         read_training_log,
         "read_checkpoint_metric":    read_checkpoint_metric,
         "compute_stability":         compute_stability,
+        "pack_submission":           pack_submission,
+        "kaggle_submit":             kaggle_submit,
+        "kaggle_fetch_score":        kaggle_fetch_score,
     }
 
 
@@ -730,6 +947,21 @@ def demo_compute_handlers() -> dict[str, Callable[..., str]]:
                    verdict="usable",
                    note="DEMO MODE — synthetic loss curve.")
 
+    def pack_submission(*, ckpt_path: str, out_zip: str) -> str:
+        return _ok(zip_path=out_zip, size_bytes=123456, adapter_rank=32,
+                   target_modules=["q_proj", "k_proj"], peft_type="LORA",
+                   note="DEMO MODE — no real zip written.")
+
+    def kaggle_submit(*, zip_path: str, message: str) -> str:
+        return _ok(submission_id="2026-05-04 00:00:00",
+                   status="pending", competition="demo",
+                   note="DEMO MODE — nothing sent to Kaggle.")
+
+    def kaggle_fetch_score(*, submission_id: str = "") -> str:
+        return _ok(submission_id=submission_id or "demo",
+                   status="complete", public_score="0.500",
+                   private_score="", note="DEMO MODE.")
+
     return {
         "run_eval":                    run_eval,
         "run_short_training":          run_short_training,
@@ -738,6 +970,9 @@ def demo_compute_handlers() -> dict[str, Callable[..., str]]:
         "load_checkpoint_for_inference": load_checkpoint_for_inference,
         "batch_generate":              batch_generate,
         "call_teacher_model":          call_teacher_model,
+        "pack_submission":             pack_submission,
+        "kaggle_submit":               kaggle_submit,
+        "kaggle_fetch_score":          kaggle_fetch_score,
     }
 
 
