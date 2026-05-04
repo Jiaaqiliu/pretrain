@@ -42,11 +42,11 @@ patterns and decide which axis to attack first".
       model and we should accept the ceiling.
 
    e. **`answer_extraction_fail`** — usually an eval-side bug.
-      Investigate via `probe_benchmark_format` (AppliedScientist), not via
+      Investigate via `probe_benchmark_format` (Reviewer), not via
       training change.
 
    f. **`eval_runtime_error`** — surface as `failed_attempt` and
-      escalate to MachineLearningEngineer. Not a ResearchScientist concern.
+      escalate to Trainer. Not a Planner concern.
 
 4. Pick ONE family to attack this cycle. The heuristic order is
    not absolute — if (b) has 5x more rows than (a), prioritize
@@ -56,7 +56,7 @@ patterns and decide which axis to attack first".
 ## Output
 
 This is an analysis skill — your output is the pick of which
-family to attack, which then feeds into one of the other ResearchScientist
+family to attack, which then feeds into one of the other Planner
 skills (most often `propose_recipe_from_gap` or
 `lr_warmup_for_long_cot`).
 
@@ -73,7 +73,7 @@ body: |
   Pattern: cross-category, not isolated to one bucket.
   Most likely cause: <e.g. "the LoRA rank reduction underfit">
   Smallest experiment to test:
-    spawn machine_learning_engineer to rerun the prior recipe (rec_X) with LoRA
+    spawn trainer to rerun the prior recipe (rec_X) with LoRA
     rank reverted to 32 — if score recovers, hypothesis confirmed.
 tags: ["regression", "cross-category"]
 refs: [<eval_report_id>, <recipe_proposal_id>, <prior_eval_report_id>]

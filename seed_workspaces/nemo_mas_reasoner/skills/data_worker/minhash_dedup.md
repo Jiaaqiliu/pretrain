@@ -32,7 +32,7 @@ prior batches.
      duplicated existing data
 4. If `overlap_with_existing > 0.5`, the new batch is mostly
    redundant. Keep the deduped version but flag this in the
-   `dataset_snapshot` body — ResearchScientist may want to know the next
+   `dataset_snapshot` body — Planner may want to know the next
    distill should pull from a different prompt source.
 
 ## Output

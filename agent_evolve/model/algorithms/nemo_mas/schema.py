@@ -20,40 +20,66 @@ from typing import Callable, Iterable
 # ── Per-role write whitelist ─────────────────────────────────────────
 
 # "any" pseudo-role — kinds any worker can write (with constraints).
-_CROSS_CUTTING = frozenset({"breakthrough", "failed_attempt"})
+# checkpoint_event is here so every role may attach evidence or reopen a slot;
+# signoff by an agent is additionally gated by the checkpoint_sign tool.
+_CROSS_CUTTING = frozenset({"breakthrough", "failed_attempt", "checkpoint_event"})
+
+# Orchestrator may write directive_response and checkpoint_event (the latter
+# only through its `checkpoint_sign` tool in auto mode, which enforces the
+# evidence precondition). It cannot write any worker-kind record.
+_ORCHESTRATOR_AUTO_KINDS = frozenset({"directive_response", "checkpoint_event"})
 
 KIND_WHITELIST: dict[str, frozenset[str]] = {
-    "applied_scientist": frozenset({
+    "reviewer": frozenset({
         "data_audit_finding",
         "benchmark_rule",
         "profile_run",
         "eval_report",
         "error_pattern",
         "data_gap",
+        "directive_response",
+        # QA officer duty: verdicts on Quality Plan checkpoint evidence.
+        # Exactly one kind per role owns this; the reviewer is it.
+        "checkpoint_review",
     }) | _CROSS_CUTTING,
-    "data_scientist": frozenset({
+    "data_worker": frozenset({
         "distill_batch",
         "dataset_snapshot",
+        "directive_response",
     }) | _CROSS_CUTTING,
-    "research_scientist": frozenset({
+    "planner": frozenset({
         "hypothesis",
         "recipe_proposal",
+        "directive_response",
     }) | _CROSS_CUTTING,
-    "machine_learning_engineer": frozenset({
+    "trainer": frozenset({
         "training_run",
         "cv_result",
+        "directive_response",
     }) | _CROSS_CUTTING,
+    # Pseudo-role used when the orchestrator's checkpoint_sign /
+    # directive_respond tools write records on its behalf. Not a spawnable
+    # worker role.
+    "orchestrator_auto": _ORCHESTRATOR_AUTO_KINDS,
 }
 
 # All known kinds (for validation of refs targets, mem_search filters,
-# and friendly error messages). Internal kinds prefixed with `_` are
+# and friendly error messages). ``human_directive`` is not in any role's
+# whitelist because only the viewer writes it; it is still a valid ref
+# target, so it belongs here. Internal kinds prefixed with `_` are
 # system records (e.g. links) and never returned by normal queries.
 ALL_KINDS: frozenset[str] = (
-    KIND_WHITELIST["applied_scientist"]
-    | KIND_WHITELIST["data_scientist"]
-    | KIND_WHITELIST["research_scientist"]
-    | KIND_WHITELIST["machine_learning_engineer"]
+    KIND_WHITELIST["reviewer"]
+    | KIND_WHITELIST["data_worker"]
+    | KIND_WHITELIST["planner"]
+    | KIND_WHITELIST["trainer"]
+    | KIND_WHITELIST["orchestrator_auto"]
+    | frozenset({"human_directive"})
 )
+
+# Kinds writable only by the frontend (not through any agent role).
+# ``validate_record`` honors these when ``author`` starts with ``human:``.
+HUMAN_KINDS: frozenset[str] = frozenset({"human_directive"})
 
 INTERNAL_KINDS: frozenset[str] = frozenset({"_link"})
 
@@ -118,11 +144,21 @@ def _chain(*rules: RefRule) -> RefRule:
 
 
 REF_RULES: dict[str, RefRule] = {
-    "breakthrough":     _require_min_refs(1),
-    "recipe_proposal":  _require_ref_kind("eval_report", "data_gap"),
-    "training_run":     _require_refs_with_kinds("recipe_proposal", "dataset_snapshot"),
-    "cv_result":        _require_ref_kind("training_run"),
-    "eval_report":      _require_ref_kind("training_run"),
+    "breakthrough":        _require_min_refs(1),
+    "recipe_proposal":     _require_ref_kind("eval_report", "data_gap"),
+    "training_run":        _require_refs_with_kinds("recipe_proposal", "dataset_snapshot"),
+    "cv_result":           _require_ref_kind("training_run"),
+    "eval_report":         _require_ref_kind("training_run"),
+    # A signoff/reopen/evidence event must point at something — usually the
+    # evidence records that justify it. Minimum one ref; the slot-specific
+    # "covers all requires_evidence kinds" check is done by the signing tool,
+    # not here (this is schema, not workflow).
+    "checkpoint_event":    _require_min_refs(1),
+    # QA verdict from the reviewer role. MUST cite the evidence records it
+    # is judging — no refs means "no evidence reviewed", which is useless.
+    "checkpoint_review":   _require_min_refs(1),
+    # Every orchestrator reply must point at the human_directive it answers.
+    "directive_response":  _require_ref_kind("human_directive"),
     # All other kinds: no ref requirements (refs are optional but recommended).
 }
 
@@ -205,6 +241,22 @@ def validate_record(
 
     if record.kind in INTERNAL_KINDS:
         return  # internal records bypass role whitelist + ref rules
+
+    # Frontend-authored records: viewer's /directive endpoint writes these
+    # with ``author="human:<name>"``. Skip role-whitelist (there is no role),
+    # still enforce kind membership and per-kind ref rules below.
+    if record.author.startswith("human:"):
+        if record.kind not in HUMAN_KINDS:
+            raise RecordValidationError(
+                f"author={record.author!r} may only write "
+                f"{sorted(HUMAN_KINDS)}; got kind={record.kind!r}"
+            )
+        rule = REF_RULES.get(record.kind)
+        if rule is not None:
+            err = rule(record, ref_lookup)
+            if err:
+                raise RecordValidationError(err)
+        return
 
     role_kinds = KIND_WHITELIST.get(role)
     if role_kinds is None:

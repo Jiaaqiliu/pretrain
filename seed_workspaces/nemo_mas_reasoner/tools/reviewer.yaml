@@ -1,4 +1,4 @@
-# Tools available to AppliedScientist workers.
+# Tools available to Reviewer workers.
 #
 # Platform tools (mem_*, skill_*, read_file, list_dir) are inherited by
 # name from seed_workspaces/_common_model/tools/. Only override their
@@ -14,8 +14,10 @@ mem_write_kinds:
   - eval_report
   - error_pattern
   - data_gap
-  - breakthrough        # requires len(refs) >= 1
+  - breakthrough         # requires len(refs) >= 1
   - failed_attempt
+  - checkpoint_review    # QA-officer duty: verdict on slot evidence
+  - checkpoint_event     # allowed indirectly via checkpoint_sign (auto mode)
 
 tools:
   # ── Platform tools (schemas from _common_model) ──
@@ -29,7 +31,62 @@ tools:
   read_file:   {}
   list_dir:    {}
 
-  # ── Backend tools (AppliedScientist-specific; schemas authoritative here) ──
+  # ── QA-officer tools (reviewer handles Quality Plan verdicts) ──
+  checkpoint_review_suggest:
+    description: >
+      Post a QA verdict on a Quality Plan checkpoint. Exists only for
+      the reviewer role. Appends a ``checkpoint_review`` record with
+      tags ``checkpoint:<slot_id>`` and ``verdict:<verdict>`` — the
+      next fold lifts the slot's state based on this verdict. ``refs``
+      MUST cite the evidence records being judged (≥1).
+    schema:
+      properties:
+        slot_id:
+          type: string
+          description: Quality Plan slot id (e.g. cp_02_model_ready).
+        verdict:
+          type: string
+          enum: [evidence_attached, ready_to_sign, insufficient, reject]
+          description: >
+            ``evidence_attached`` — some evidence present, not yet
+            complete. ``ready_to_sign`` — evidence complete and healthy;
+            in manual mode the slot goes to pending_human; in auto mode
+            you may follow up with ``checkpoint_sign``. ``insufficient``
+            — evidence present but inadequate (leave state as-is).
+            ``reject`` — evidence looks wrong / training was unhealthy;
+            reopens the slot.
+        reason:
+          type: string
+          description: One-line summary of the verdict, ≤240 chars.
+        refs:
+          type: array
+          items: {type: string}
+          description: Evidence record ids this review cites (≥1).
+        tags:
+          type: array
+          items: {type: string}
+          description: Optional extra tags.
+      required: [slot_id, verdict, reason, refs]
+
+  checkpoint_sign:
+    description: >
+      Sign off a Quality Plan slot. Refused in manual mode (a human
+      must click Sign in the viewer). In auto mode the reviewer may
+      call this after writing a ``checkpoint_review`` with verdict
+      ``ready_to_sign``; the handler re-checks evidence + deps and
+      appends a ``checkpoint_event`` with ``event:signoff``.
+    schema:
+      properties:
+        slot_id: {type: string}
+        refs:
+          type: array
+          items: {type: string}
+          description: Evidence record ids covering this slot's
+                       requires_evidence kinds.
+        note: {type: string}
+      required: [slot_id, refs]
+
+  # ── Backend tools (Reviewer-specific; schemas authoritative here) ──
   sample_jsonl:
     description: >
       Sample N rows from a JSONL file. Returns rows + per-field summary

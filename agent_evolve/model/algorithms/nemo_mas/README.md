@@ -16,7 +16,7 @@ share a typed-record **memory** (BM25, JSONL, append-only, ref-validated).
   Orchestrator (no writes, no exec)
       │  spawn_and_run_subagent(role, task)
       ▼
-  [AppliedScientist] [DataScientist] [ResearchScientist] [MLEngineer]
+  [Reviewer] [DataWorker] [Planner] [Trainer]
       │            │            │          │
       └────────────┴──► RecipeMemory (BM25, typed records, refs DAG)
                               │
@@ -44,19 +44,22 @@ All workers share: `mem_write/search/recent/get/link`, `skill_index`,
 - **Extra tools:** `spawn_and_run_subagent`, `call_existing_agent`, `mem_search`, `mem_recent`, `mem_get`, `read_file`, `list_dir`
 - **Writes:** none · **Skills:** none
 
-### Applied Scientist — `prompts/applied_scientist.md`, `skills/applied_scientist/`
+### Reviewer — `prompts/reviewer.md`, `skills/reviewer/`
 
-- **Backend tools:** `sample_jsonl`, `count_by_field`, `length_distribution`, `run_eval`, `run_short_training`, `plot_loss_curve`, `compute_data_gap_table`
-- **Writes:** `data_audit_finding`, `benchmark_rule`, `profile_run`, `eval_report`, `error_pattern`, `data_gap` (+ `breakthrough`, `failed_attempt`)
-- **Skills:** `audit_jsonl_quality`, `categorize_eval_errors`, `compute_data_gap`, `probe_benchmark_format`, `profile_lr_sweep`
+The QA officer and the analyst, one role. Audits data/eval AND posts
+verdicts on Quality Plan checkpoint slots.
 
-### Data Scientist — `prompts/data_scientist.md`, `skills/data_scientist/`
+- **Backend tools:** `sample_jsonl`, `count_by_field`, `length_distribution`, `run_eval`, `run_short_training`, `plot_loss_curve`, `compute_data_gap_table`, `checkpoint_sign` (auto mode), `checkpoint_review_suggest`
+- **Writes:** `data_audit_finding`, `benchmark_rule`, `profile_run`, `eval_report`, `error_pattern`, `data_gap`, `checkpoint_review` (+ `breakthrough`, `failed_attempt`, `checkpoint_event` via `checkpoint_sign`)
+- **Skills:** `audit_jsonl_quality`, `categorize_eval_errors`, `compute_data_gap`, `probe_benchmark_format`, `profile_lr_sweep`, `qa_checkpoint_review`
+
+### Data Worker — `prompts/data_worker.md`, `skills/data_worker/`
 
 - **Backend tools:** `call_teacher_model`, `load_checkpoint_for_inference`, `batch_generate`, `filter_by_gold`, `minhash_dedup`, `apply_format_filter`, `format_validate`, `mix_sources`, `write_jsonl`
 - **Writes:** `distill_batch`, `dataset_snapshot` (+ cross-cutting)
 - **Skills:** `format_validate`, `minhash_dedup`, `mix_by_curriculum`, `solver_self_distill_with_rejection`, `teacher_distill_long_cot`
 
-### Research Scientist — `prompts/research_scientist.md`, `skills/research_scientist/`
+### Planner — `prompts/planner.md`, `skills/planner/`
 
 Reasoning + records only, no side effects.
 
@@ -64,10 +67,10 @@ Reasoning + records only, no side effects.
 - **Writes:** `hypothesis`, `recipe_proposal` (+ cross-cutting)
 - **Skills:** `failure_pattern_recognition`, `lr_warmup_for_long_cot`, `propose_recipe_from_gap`, `when_to_skip_sft`
 
-### Machine Learning Engineer — `prompts/machine_learning_engineer.md`, `skills/machine_learning_engineer/`
+### Trainer — `prompts/trainer.md`, `skills/trainer/`
 
 Training always routes through the platform `StageRegistry`
-(`agent_evolve/model/runners/stages/*.py`). MLE **never** scaffolds
+(`agent_evolve/model/runners/stages/*.py`). Trainer **never** scaffolds
 runner scripts.
 
 - **Backend tools:** `launch_training`, `read_training_log`, `read_checkpoint_metric`, `rerun_recipe_with_seeds`, `compute_stability`
@@ -80,18 +83,49 @@ Enforced on every `mem_write`; violations return a structured error.
 
 | kind | author | refs required |
 |---|---|---|
-| `data_audit_finding`, `benchmark_rule`, `profile_run`, `error_pattern`, `data_gap` | applied_scientist | — |
-| `eval_report` | applied_scientist | ≥1 `training_run` |
-| `distill_batch`, `dataset_snapshot` | data_scientist | — |
-| `hypothesis` | research_scientist | — |
-| `recipe_proposal` | research_scientist | ≥1 `eval_report` or `data_gap` |
-| `training_run` | machine_learning_engineer | ≥1 `recipe_proposal` **and** ≥1 `dataset_snapshot` |
-| `cv_result` | machine_learning_engineer | ≥1 `training_run` |
+| `data_audit_finding`, `benchmark_rule`, `profile_run`, `error_pattern`, `data_gap` | reviewer | — |
+| `eval_report` | reviewer | ≥1 `training_run` |
+| `checkpoint_review` | reviewer | ≥1 (evidence being judged) |
+| `distill_batch`, `dataset_snapshot` | data_worker | — |
+| `hypothesis` | planner | — |
+| `recipe_proposal` | planner | ≥1 `eval_report` or `data_gap` |
+| `training_run` | trainer | ≥1 `recipe_proposal` **and** ≥1 `dataset_snapshot` |
+| `cv_result` | trainer | ≥1 `training_run` |
+| `checkpoint_event` | any role (via `checkpoint_sign`) or human | ≥1 |
 | `breakthrough` | any | ≥1 (any kind) |
 | `failed_attempt` | any | — |
 
 The refs DAG is the audit trail behind every promotion:
 `cv_result → training_run → {recipe_proposal, dataset_snapshot} → {eval_report|data_gap, distill_batch*}`.
+
+## Quality Plan checkpoints
+
+Gates in the training lifecycle (Plan → Data → Model → … → Submit). The
+slot declarations live in the workspace at
+`seed_workspaces/<workspace>/checkpoints.yaml` — swap the file for a
+different benchmark; missing file ⇒ no gates (pure search mode).
+
+State machine per slot:
+`pending → pending_evidence → pending_human → signed` (+ `reopened`).
+Transitions come from two kinds of record:
+
+- `checkpoint_review` — verdict from the **reviewer** role. Carries one
+  of `{evidence_attached, ready_to_sign, insufficient, reject}`. The
+  fold promotes slot state based on the latest verdict.
+- `checkpoint_event` — the actual signoff. Emitted by the reviewer /
+  orchestrator via `checkpoint_sign` (auto mode only) or by the viewer
+  when a human clicks Sign (manual mode).
+
+**Protocol per cycle:**
+
+1. Worker produces evidence, tagging each record with
+   `checkpoint:<slot_id>`.
+2. Orchestrator spawns the reviewer with
+   `suggested_skills=["qa_checkpoint_review"]`. Reviewer reads the
+   evidence and calls `checkpoint_review_suggest(slot_id, verdict,
+   reason, refs)`.
+3. Next cycle's fold reflects the new state. `ready_to_sign` in manual
+   mode halts the cycle until a human signs.
 
 ## Files
 
@@ -161,7 +195,7 @@ algo = NemoMASAlgorithm(backend_registry={
 | | `mcgs` | `nemo_mas` |
 |---|---|---|
 | Search | UCT graph + branches + top-k | LLM orchestrator + 4 workers |
-| Mutation source | `BaselineMutationProposer` | Research Scientist's `recipe_proposal` records |
+| Mutation source | `BaselineMutationProposer` | Planner's `recipe_proposal` records |
 | Promotion | `PromotionPolicy` | `cv_result` tagged "stable" |
 | Memory | `NodeMemoryStore` (per-node) | `RecipeMemory` (typed, ref DAG) |
 | Comms | Implicit (graph + patches) | Explicit (`mem_write` + refs, auditable) |

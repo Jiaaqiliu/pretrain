@@ -17,3 +17,12 @@ tools:
   # ── Read-only filesystem ──
   read_file:  {}
   list_dir:   {}
+
+  # ── Quality Plan gate + human chat replies ──
+  # checkpoint_sign: auto mode only (NEMO_MAS_CHECKPOINT_MODE=auto);
+  # in manual mode the tool refuses and the human signs via the viewer.
+  # directive_respond: always enabled — the orchestrator must ack every
+  # human_directive it consumes, whether from the cycle brief or a
+  # mid-cycle injection.
+  checkpoint_sign:   {}
+  directive_respond: {}

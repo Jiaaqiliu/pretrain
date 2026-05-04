@@ -2,7 +2,7 @@
 
 When to use: a fresh `data_gap` record exists and the Orchestrator
 has spawned you to turn it into an actionable `recipe_proposal`.
-This is the most common ResearchScientist task.
+This is the most common Planner task.
 
 ## Inputs
 
@@ -59,10 +59,10 @@ body: |
     Reasoning:  <one paragraph tying the gap to the change>
 
   Smallest test:
-    1. DataScientist commissions <batch spec from gap_id>.
-    2. MachineLearningEngineer runs SFT on the new dataset_snapshot.
-    3. AppliedScientist evaluates on <split>.
-    4. If score Δ > <threshold>, MachineLearningEngineer runs cv_result with 2
+    1. DataWorker commissions <batch spec from gap_id>.
+    2. Trainer runs SFT on the new dataset_snapshot.
+    3. Reviewer evaluates on <split>.
+    4. If score Δ > <threshold>, Trainer runs cv_result with 2
        seeds.
 
   Risks:
@@ -84,7 +84,7 @@ refs: [<gap_id>, <latest_eval_report_id>]
   (`mem_get`, not just snippet).
 - Do NOT predict effect with no reasoning — if you can't articulate
   why the change should help, it shouldn't be proposed.
-- Do NOT skip the rollback criterion. ResearchScientist's job is to plan for
+- Do NOT skip the rollback criterion. Planner's job is to plan for
   failure too.
 - Do NOT propose recipe-side changes when the evidence points at
   data. Data first; recipe second; if both look right, the issue

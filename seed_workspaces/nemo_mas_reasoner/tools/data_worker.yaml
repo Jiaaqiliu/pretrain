@@ -1,4 +1,4 @@
-# Tools available to DataScientist workers.
+# Tools available to DataWorker workers.
 #
 # Platform tools (mem_*, skill_*, read_file, list_dir) are inherited by
 # name from seed_workspaces/_common_model/tools/.

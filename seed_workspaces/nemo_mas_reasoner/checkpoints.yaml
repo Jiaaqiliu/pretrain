@@ -1,0 +1,121 @@
+# Quality Plan checkpoints for this workspace.
+#
+# Each slot is a gate in the training lifecycle. The dependency-ordered
+# list is declarative: the algorithm does not reshape it at runtime, but
+# the state of each slot (pending / pending_evidence / pending_human /
+# signed / reopened) is a fold over memory/records.jsonl (checkpoint_review
+# + checkpoint_event records). The reviewer role writes checkpoint_review
+# records; orchestrator/human write checkpoint_event records to sign off.
+#
+# Schema (per entry):
+#   id                 — unique slot id, referenced by tag ``checkpoint:<id>``
+#                        on evidence records and on ``checkpoint_event`` records.
+#   short              — ≤5-char label shown in the compact cockpit ledger.
+#   title              — human sentence shown in the ledger row.
+#   type               — card template key; one of
+#                        {plan, data, model, strategy, training_health,
+#                         eval, next_round, final_submit}.
+#   requires_evidence  — list of record kinds a reviewer should cite in
+#                        its checkpoint_review (fold only counts records
+#                        tagged ``checkpoint:<this slot id>``).
+#   depends_on         — list of slot ids that must be ``signed`` or
+#                        ``reopened`` before this one becomes eligible.
+#   required           — if false, does not block the pipeline; never
+#                        surfaces in ``first_required_blocker``.
+#   signers            — UI label; advisory, not enforced here.
+#
+# Swap the file for a different benchmark (ARC, SWE-bench, …) by dropping
+# a different ``checkpoints.yaml`` into that workspace. Missing file →
+# the algorithm treats the run as having no checkpoint gates at all
+# (pure search mode).
+
+checkpoints:
+  - id: cp_00_plan
+    short: Plan
+    title: Quality Plan co-authored and signed
+    type: plan
+    requires_evidence: [breakthrough]
+    depends_on: []
+    required: true
+    signers: owner
+
+  - id: cp_01_data_contract
+    short: Data
+    title: Data contract and Never-Discard archive
+    type: data
+    requires_evidence: [dataset_snapshot]
+    depends_on: [cp_00_plan]
+    required: true
+    signers: owner
+
+  - id: cp_02_model_ready
+    short: Model
+    title: Forward shape, init loss, overfit batch
+    type: model
+    requires_evidence: [profile_run]
+    depends_on: [cp_01_data_contract]
+    required: true
+    signers: owner
+
+  - id: cp_03_lora_config
+    short: LoRA
+    title: Commit to LoRA rank <= 32
+    type: strategy
+    requires_evidence: [recipe_proposal]
+    depends_on: [cp_02_model_ready]
+    required: true
+    signers: owner
+
+  - id: cp_04_sft_round1
+    short: SFT
+    title: SFT round 1 healthy after loss-spike review
+    type: training_health
+    requires_evidence: [training_run]
+    depends_on: [cp_03_lora_config]
+    required: true
+    signers: owner
+
+  - id: cp_05_grpo_round1
+    short: GRPO
+    title: Reward-hack halt and data-contract reopen
+    type: training_health
+    requires_evidence: [training_run]
+    depends_on: [cp_04_sft_round1]
+    required: false
+    signers: owner
+
+  - id: cp_06_eval_round1
+    short: Eval
+    title: "Eval after round 1: robustness decision"
+    type: eval
+    requires_evidence: [eval_report]
+    depends_on: [cp_04_sft_round1]
+    required: true
+    signers: 2-of-2
+
+  - id: cp_07_eval_round2
+    short: R2
+    title: Round 2 eval and ablation evidence
+    type: eval
+    requires_evidence: [eval_report]
+    depends_on: [cp_06_eval_round1]
+    required: false
+    signers: 2-of-2
+
+  - id: cp_09_next_round_or_submit
+    short: Next
+    title: Next-round or submit strategy
+    type: next_round
+    requires_evidence: [breakthrough]
+    depends_on: [cp_06_eval_round1]
+    required: true
+    signers: owner
+
+  - id: cp_final_submit
+    short: Final
+    title: Model Card and final submit
+    type: final_submit
+    requires_evidence: [breakthrough]
+    depends_on: [cp_09_next_round_or_submit]
+    required: true
+    signers: 2-of-2

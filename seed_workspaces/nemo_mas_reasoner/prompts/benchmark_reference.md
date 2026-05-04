@@ -57,7 +57,7 @@ a LoRA adapter for the Nemotron-3-Nano-30B base model.
 A response that exceeds 7680 generated tokens is truncated and almost
 always misses the box → silent failure.
 
-**Consequence for self-distill (DataScientist / SolverDistiller):**
+**Consequence for self-distill (DataWorker / SolverDistiller):**
 because eval is deterministic, the same checkpoint + same prompt
 produces the same output every time. Self-distill via rejection
 sampling at temp=0.0 yields one trace per prompt — to amplify
@@ -93,7 +93,7 @@ official; the private test may include unseen rule families):
 - text_encryption
 - equation_transformation
 
-**Implication for ResearchScientist + DataScientist**: do not over-fit to these
+**Implication for Planner + DataWorker**: do not over-fit to these
 seven. A recipe that wins on these may regress on a new category in
 the private test set. When proposing per-category upsampling, also
 keep at least one "generic" data source untargeted to preserve
@@ -110,8 +110,8 @@ distribution diversity.
 | `overlong_reasoning` | Output hit the 7680-token cap with no box |
 | `eval_runtime_error` | Infrastructure failure during eval |
 
-AppliedScientist's `eval_report` records SHOULD break down errors by bucket
-and by category — this is what ResearchScientist reads to decide what to
+Reviewer's `eval_report` records SHOULD break down errors by bucket
+and by category — this is what Planner reads to decide what to
 change.
 
 ## Known sensitivities (update as we learn)
@@ -131,7 +131,7 @@ change.
 - **Deterministic eval blurs CV semantics**: rerunning the SAME
   checkpoint on the SAME split gives the SAME score. CV across seeds
   must vary the **training** seed (data shuffle order, LoRA init),
-  not the eval seed. See `skills/machine_learning_engineer/cross_validate_recipe`.
+  not the eval seed. See `skills/trainer/cross_validate_recipe`.
 
 ## Timeline + prizes (for context)
 

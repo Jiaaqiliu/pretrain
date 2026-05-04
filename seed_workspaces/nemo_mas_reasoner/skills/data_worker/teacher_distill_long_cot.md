@@ -1,6 +1,6 @@
 # Skill: teacher_distill_long_cot
 
-When to use: a `data_gap` (or a `recipe_proposal` from ResearchScientist)
+When to use: a `data_gap` (or a `recipe_proposal` from Planner)
 asks for additional long-CoT reasoning traces in a specific category.
 The standard short-completion teacher distill is a different skill
 (not yet written — see `data/recipes/default.yaml` for the
@@ -12,7 +12,7 @@ The standard short-completion teacher distill is a different skill
 - Specifically: `category`, `target_count`, `max_tokens` (per-trace
   upper bound), expected_yield, prompt_source.
 
-## Hard rules (re-stated from data_scientist.md)
+## Hard rules (re-stated from data_worker.md)
 
 - DO NOT pick prompts on your own. The `data_gap` body specifies
   `prompt_source`. If it doesn't, refuse and write a `failed_attempt`.
@@ -94,14 +94,14 @@ body: |
     - ...
 
   Caveats / next steps:
-    - <e.g. "yield was 22%, below the 30% target — AppliedScientist should
+    - <e.g. "yield was 22%, below the 30% target — Reviewer should
        audit before this is mixed">
 tags: [<category>, "teacher_distill", <model>]
 refs: [<data_gap_id_or_recipe_proposal_id>]
 ```
 
 After writing, the Orchestrator (per the standard cycle) will spawn
-an AppliedScientist to audit your batch.
+an Reviewer to audit your batch.
 
 ## Anti-patterns
 

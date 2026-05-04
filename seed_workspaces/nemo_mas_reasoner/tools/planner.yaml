@@ -1,5 +1,5 @@
-# Tools available to ResearchScientist workers.
-# ResearchScientist has NO execution tools — only reads and writes records.
+# Tools available to Planner workers.
+# Planner has NO execution tools — only reads and writes records.
 
 mem_write_kinds:
   - hypothesis

@@ -82,6 +82,11 @@ commit `d727199` for the design.
 - **Heartbeat.** One line every 30 s:
   `[heartbeat] cycle=N elapsed=MM:SS records=K last_record=rec_xxxx`
   (reads `<workspace>/memory/records.jsonl` each tick).
+- **Trace viewer.** `trace_viewer.py` is a stdlib-only web UI for a trace
+  directory plus its sibling `memory/records.jsonl`. Example:
+  `python examples/nemo_mas_reasoning_example/trace_viewer.py --trace-dir /fsx/zzsamshi/a-evolve/runs/nemo-mas-marathon/trace --port 7889 --host 127.0.0.1`.
+  Run-local copies under `runs/` should stay as thin wrappers because
+  `/runs/` is git-ignored.
 
 ## Typical invocations
 

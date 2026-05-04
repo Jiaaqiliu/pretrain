@@ -15,7 +15,7 @@ ALL of the following must be true:
 2. The current `dataset_snapshot` is ≥ 90% the same prompts as
    the snapshot the prior SFT used (per `dataset_snapshot.body
    diff` — measure overlap from the diff section).
-3. ResearchScientist's proposed change is RL-only (e.g. updating
+3. Planner's proposed change is RL-only (e.g. updating
    `rl/reward.py`, `rl/advantage.py`, or `rl/rollout.yaml`).
    Pure SFT-side changes (mix weights, curriculum, distill mix)
    benefit from SFT.
@@ -59,7 +59,7 @@ hyperparameters.
    diff:
      train/pipeline.yaml:
        stages:
-         # - sft           # SKIPPED — see ResearchScientist note
+         # - sft           # SKIPPED — see Planner note
          - rl
        initial_ckpt: <ckpt path from cited training_run>
    ```

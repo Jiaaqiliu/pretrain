@@ -41,6 +41,14 @@ from ...types import (
     WorkspaceMutation,
     WorkspacePatch,
 )
+from .checkpoints import (
+    CHECKPOINT_MODE_AUTO,
+    CHECKPOINT_MODE_MANUAL,
+    FoldedSlot,
+    fold_checkpoints,
+    first_required_blocker,
+    load_slot_decls,
+)
 from .memory import RecipeMemory
 from .spawner import SpawnHandler
 from .tools import BackendToolRegistry, build_role_tools
@@ -88,6 +96,97 @@ def _count_kinds(records: list) -> dict[str, int]:
     for r in records:
         out[r.kind] = out.get(r.kind, 0) + 1
     return out
+
+
+def _current_checkpoint_mode() -> str:
+    mode = os.environ.get("NEMO_MAS_CHECKPOINT_MODE", CHECKPOINT_MODE_MANUAL)
+    return mode if mode in (CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL) else CHECKPOINT_MODE_MANUAL
+
+
+def _unresponded_directives(memory: RecipeMemory) -> list:
+    """Return directives without a matching ``directive_response`` referencing them.
+
+    Responses tag themselves ``reply_to:<directive_id>`` — cheap linear scan
+    over the in-memory store is fine for the expected volume (<100 per cycle).
+    """
+    directives = [r for r in memory.all_records() if r.kind == "human_directive"]
+    replied: set[str] = set()
+    for rec in memory.all_records():
+        if rec.kind != "directive_response":
+            continue
+        for tag in rec.tags:
+            if tag.startswith("reply_to:"):
+                replied.add(tag[len("reply_to:"):])
+        for rid in rec.refs:
+            replied.add(rid)
+    return [d for d in directives if d.id not in replied]
+
+
+def _format_blocker_block(blocker: FoldedSlot, mode: str) -> str:
+    """Render a blocker as a textual section appended to the cycle brief.
+
+    Includes the QA-review protocol so the orchestrator knows it must
+    spawn the reviewer for a verdict after evidence lands — advancing
+    a slot is not "evidence on disk", it's "reviewer said ready_to_sign".
+    """
+    if mode == CHECKPOINT_MODE_MANUAL:
+        sign_hint = (
+            "Manual mode: neither you nor the reviewer can sign. Once the "
+            "reviewer posts verdict=ready_to_sign the slot goes to "
+            "pending_human and the NEXT cycle will halt until a human "
+            "clicks Sign in the trace viewer."
+        )
+    else:
+        sign_hint = (
+            "Auto mode: after the reviewer posts verdict=ready_to_sign, "
+            "spawn the reviewer again (or call the signer yourself) to "
+            "invoke checkpoint_sign(slot_id=..., refs=[...]) and close "
+            "the slot."
+        )
+    ev = ", ".join(blocker.requires_evidence) or "(none)"
+    deps = ", ".join(blocker.depends_on) or "(none)"
+    last_rev = (
+        f"  last_review: verdict={blocker.last_review_verdict} "
+        f"· cycle {blocker.last_review_cycle} "
+        f"· {blocker.last_review_reason}"
+        if blocker.last_review_verdict else "  last_review: (none)"
+    )
+    return textwrap.dedent(f"""
+        BLOCKED on checkpoint {blocker.id} ({blocker.title}).
+          state: {blocker.state}
+          requires_evidence kinds: {ev}
+          depends_on: {deps}
+        {last_rev}
+
+        QA-review protocol for this cycle:
+          1. Produce evidence. Tag each evidence record with
+             `checkpoint:{blocker.id}` so the reviewer fold counts it.
+             Spawn the appropriate worker (data_worker, trainer,
+             planner, or reviewer in its analyst hat).
+          2. After evidence is on disk, spawn the reviewer with
+             suggested_skills=["qa_checkpoint_review"] and a task
+             naming this slot + the evidence record ids. The reviewer
+             writes a `checkpoint_review` via `checkpoint_review_suggest`
+             and the fold advances the slot state next cycle.
+          3. {sign_hint}
+    """).strip()
+
+
+def _format_directives_block(directives: list) -> str:
+    lines = ["Human directives awaiting your attention "
+             "(ack each with `directive_respond`; spawn a worker if "
+             "investigation is warranted):"]
+    for d in directives:
+        urgency = ""
+        for t in d.tags:
+            if t.startswith("urgency:"):
+                urgency = t[len("urgency:"):]
+                break
+        text = d.body.strip().replace("\n", " ")
+        if len(text) > 240:
+            text = text[:237] + "..."
+        lines.append(f"  - [{d.id}] urgency={urgency or 'unspecified'}: {text}")
+    return "\n".join(lines)
 
 
 class NemoMASAlgorithm:
@@ -208,9 +307,84 @@ class NemoMASAlgorithm:
             workspace_root=cycle_root, memory=memory,
         )
 
-        cycle_brief = self._compose_cycle_brief(ctx, memory)
-
+        mode = _current_checkpoint_mode()
         before_ids = {r.id for r in memory.all_records()}
+
+        # ── Gate check: halt the cycle if a required checkpoint is awaiting
+        # human signoff (manual mode). In auto mode we never halt here —
+        # the reviewer / orchestrator sign via `checkpoint_sign` once
+        # evidence is attached. Slots come from the workspace's
+        # checkpoints.yaml; missing file ⇒ empty list ⇒ fold returns [].
+        slots = load_slot_decls(cycle_root)
+        folded = fold_checkpoints(memory.all_records(), mode, slots=slots)
+        blocker = first_required_blocker(folded)
+        blocker_text: str | None = None
+
+        if blocker is not None:
+            blocker_text = _format_blocker_block(blocker, mode)
+
+        if (mode == CHECKPOINT_MODE_MANUAL
+                and blocker is not None
+                and blocker.state == "pending_human"):
+            # Evidence is already on disk; the human must sign. Record a
+            # data_gap so the blocker is visible in the trace viewer, then
+            # return partial without burning Bedrock budget on a cycle that
+            # has nothing new to do.
+            gap_body = (
+                f"Cycle halted: checkpoint {blocker.id} has complete evidence "
+                f"({', '.join(blocker.requires_evidence)}) but requires a "
+                f"human signoff. In the trace viewer, click 'Sign' on the "
+                f"'{blocker.title}' card. The next cycle will proceed "
+                f"automatically once the signoff event lands."
+            )
+            try:
+                memory.write(
+                    role="reviewer",
+                    kind="data_gap",
+                    title=f"Blocked on {blocker.id}",
+                    body=gap_body,
+                    tags=(f"blocked_on:{blocker.id}", "channel:checkpoint_gate"),
+                )
+            except Exception:                    # noqa: BLE001
+                logger.exception("[nemo_mas] failed to write halt data_gap")
+            all_records = memory.all_records()
+            new_records = [r for r in all_records if r.id not in before_ids]
+            new_ids = [r.id for r in new_records]
+            self._last_cycle_records = new_ids
+            self._last_orchestrator_response = (
+                f"Cycle halted pending human signoff of {blocker.id}."
+            )
+            self._last_cycle_outcome = "partial"
+            wall = time.time() - t0
+            kind_counts = _count_kinds(new_records)
+            logger.info(
+                "[nemo_mas] cycle=%s HALTED on pending_human signoff of %s "
+                "(wall=%.1fs)", cycle_id, blocker.id, wall,
+            )
+            return MCGSCycleReport(
+                cycle=int(ctx.cycle),
+                selected_parent_id=None,
+                trial_node_ids=new_ids,
+                incumbent_node_id=None,
+                incumbent_changed=False,
+                best_metric=None,
+                graph_path=str(records_path),
+                report_path="",
+                cycle_outcome="partial",         # type: ignore[arg-type]
+                wall_seconds=wall,
+                orchestrator_turns=0,
+                record_counts=kind_counts,
+            )
+
+        pending_directives = _unresponded_directives(memory)
+        seen_directive_ids: set[str] = {d.id for d in pending_directives}
+
+        cycle_brief = self._compose_cycle_brief(
+            ctx, memory,
+            blocker_text=blocker_text,
+            pending_directives=pending_directives,
+            mode=mode,
+        )
 
         # Run the orchestrator under wall / turn caps. The caps are soft:
         # BedrockAgent doesn't expose a hook to abort mid-turn, so we
@@ -226,6 +400,8 @@ class NemoMASAlgorithm:
                 wall_seconds=self.cycle_wall_seconds,
                 turn_cap=self.cycle_orchestrator_turn_cap,
                 t0=t0,
+                memory=memory,
+                seen_directive_ids=seen_directive_ids,
             )
         )
 
@@ -350,6 +526,8 @@ class NemoMASAlgorithm:
         wall_seconds: float | None,
         turn_cap: int | None,
         t0: float,
+        memory: RecipeMemory | None = None,
+        seen_directive_ids: set[str] | None = None,
     ) -> tuple[str, int, bool]:
         """Drive the Bedrock orchestrator with soft wall/turn caps.
 
@@ -363,6 +541,10 @@ class NemoMASAlgorithm:
         is returned as-is; ``budget_exhausted=True`` tells the caller
         that the cycle should be classified as ``budget_exhausted``
         regardless of records written.
+
+        If ``memory`` is supplied, between turns we poll for new
+        ``human_directive`` records and inject them as a synthetic user
+        message so the orchestrator sees them on the very next turn.
         """
         try:
             from agent_evolve.harness.agents.arc.bedrock_agent import BedrockAgent
@@ -393,8 +575,49 @@ class NemoMASAlgorithm:
             return (f"(orchestrator failed: {e})", 0, False)
 
         real_converse = getattr(agent, "_converse_with_retry", None)
-        if real_converse is not None and (wall_seconds or turn_cap):
+        if real_converse is not None and (wall_seconds or turn_cap or memory is not None):
+            seen = set(seen_directive_ids) if seen_directive_ids else set()
+
+            def _poll_inbox() -> None:
+                """Append a synthetic user message for any new directives."""
+                if memory is None:
+                    return
+                new: list = []
+                for rec in memory.all_records():
+                    if rec.kind == "human_directive" and rec.id not in seen:
+                        new.append(rec)
+                        seen.add(rec.id)
+                if not new:
+                    return
+                injected = [
+                    "Human directive(s) received mid-cycle — ack each with "
+                    "`directive_respond` (spawn a worker if warranted):"
+                ]
+                for d in new:
+                    urgency = ""
+                    for t in d.tags:
+                        if t.startswith("urgency:"):
+                            urgency = t[len("urgency:"):]
+                            break
+                    snippet = d.body.strip().replace("\n", " ")
+                    if len(snippet) > 240:
+                        snippet = snippet[:237] + "..."
+                    injected.append(
+                        f"  - [{d.id}] urgency={urgency or 'unspecified'}: "
+                        f"{snippet}"
+                    )
+                try:
+                    agent.messages.append({
+                        "role": "user",
+                        "content": [{"text": "\n".join(injected)}],
+                    })
+                except Exception:                    # noqa: BLE001
+                    logger.exception("[nemo_mas] failed to inject directive")
+
             def guarded(tool_config):
+                # Pre-turn inbox check so new directives are seen on this turn.
+                _poll_inbox()
+
                 # Pre-turn budget check. Return a synthetic "stop" result
                 # that BedrockAgent will treat as an end_turn when it
                 # sees ``stopReason=end_turn``.
@@ -507,7 +730,15 @@ class NemoMASAlgorithm:
             )
         return "\n\n---\n\n".join(parts)
 
-    def _compose_cycle_brief(self, ctx: Any, memory: RecipeMemory) -> str:
+    def _compose_cycle_brief(
+        self,
+        ctx: Any,
+        memory: RecipeMemory,
+        *,
+        blocker_text: str | None = None,
+        pending_directives: list | None = None,
+        mode: str = CHECKPOINT_MODE_MANUAL,
+    ) -> str:
         cycle = int(ctx.cycle)
         budget = getattr(ctx, "budget", None)
         budget_str = repr(budget) if budget is not None else "(no budget object provided)"
@@ -524,25 +755,36 @@ class NemoMASAlgorithm:
                 lines.append(f"    - {r.id} ({r.cycle_id}): {r.title}")
             return "\n".join(lines)
 
-        brief = textwrap.dedent(f"""
+        sections: list[str] = []
+        sections.append(textwrap.dedent(f"""
             Cycle {cycle:04d}.
 
             Budget: {budget_str}.
+
+            Checkpoint mode: {mode}.
 
             State of memory at the start of this cycle:
 {_format(recent_break, "recent breakthroughs")}
 {_format(recent_cv, "recent cv_results")}
 {_format(recent_eval, "recent eval_reports")}
 {_format(recent_gap, "recent data_gaps")}
+        """).strip())
 
+        if blocker_text:
+            sections.append(blocker_text)
+
+        if pending_directives:
+            sections.append(_format_directives_block(pending_directives))
+
+        sections.append(textwrap.dedent("""
             Run this cycle per the structure in your system prompt. Spawn
             workers as needed. Stop when the termination criteria you were
             given are met. Your final text response should:
               (a) name the recipe id you'd promote (if any),
               (b) cite supporting record ids,
               (c) list what's blocked / would benefit from a future cycle.
-        """).strip()
-        return brief
+        """).strip())
+        return "\n\n".join(sections)
 
     def _decide_promotion(
         self,

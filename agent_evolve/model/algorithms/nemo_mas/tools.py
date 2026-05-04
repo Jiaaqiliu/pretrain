@@ -7,7 +7,7 @@ peer to the workspace:
 
     seed_workspaces/
       _common_model/tools/{memory,skills,filesystem,orchestrator}.yaml
-      <workspace>/tools/{applied_scientist,data_scientist,research_scientist,machine_learning_engineer,orchestrator}.yaml
+      <workspace>/tools/{reviewer,data_worker,planner,trainer,orchestrator}.yaml
 
 Resolution per tool name inside a role YAML:
   1. If the role YAML provides ``schema:`` inline, use it (override).
@@ -37,6 +37,13 @@ from typing import Any, Callable, Iterable, Mapping
 
 import yaml
 
+from .checkpoints import (
+    CHECKPOINT_MODE_AUTO,
+    CHECKPOINT_MODE_MANUAL,
+    VALID_VERDICTS,
+    fold_checkpoints,
+    load_slot_decls,
+)
 from .memory import RecipeMemory
 from .schema import (
     INTERNAL_KINDS,
@@ -56,10 +63,18 @@ _SKILL_TOOL_NAMES = frozenset({"skill_index", "skill_load"})
 _FILE_TOOL_NAMES = frozenset({"read_file", "list_dir"})
 _ORCHESTRATOR_TOOL_NAMES = frozenset({
     "spawn_and_run_subagent", "call_existing_agent",
+    "directive_respond",
+})
+# Checkpoint tools — shared. ``checkpoint_sign`` is available to both the
+# orchestrator (auto mode, historical owner) and the reviewer worker (new
+# QA-officer responsibility). ``checkpoint_review_suggest`` is reviewer-only;
+# it's the verdict-posting wrapper that drives slot state transitions.
+_CHECKPOINT_TOOL_NAMES = frozenset({
+    "checkpoint_sign", "checkpoint_review_suggest",
 })
 _PLATFORM_TOOL_NAMES = (
     _MEM_TOOL_NAMES | _SKILL_TOOL_NAMES | _FILE_TOOL_NAMES
-    | _ORCHESTRATOR_TOOL_NAMES
+    | _ORCHESTRATOR_TOOL_NAMES | _CHECKPOINT_TOOL_NAMES
 )
 
 # Block reads under these subdirs (safety) — checkpoints can be huge,
@@ -388,6 +403,232 @@ def _build_file_handlers(workspace_root: Path) -> dict[str, Callable[..., str]]:
     return {"read_file": read_file, "list_dir": list_dir}
 
 
+# ── Orchestrator quality-plan / chat handlers ─────────────────────────
+
+
+def _build_checkpoint_sign_handler(
+    memory: RecipeMemory,
+    slots_by_id: dict[str, dict[str, Any]],
+    *,
+    signer_role: str,
+    actor_label: str,
+) -> Callable[..., str]:
+    """Build a ``checkpoint_sign`` handler bound to a specific signer.
+
+    Used both for the orchestrator (``signer_role="orchestrator_auto"``,
+    actor tag ``actor:orchestrator``) and for the reviewer worker
+    (``signer_role="reviewer"``, actor tag ``actor:reviewer``) so a
+    reviewer can close a slot it just approved in auto mode without
+    round-tripping through the orchestrator.
+    """
+    import os
+
+    def _current_mode() -> str:
+        mode = os.environ.get("NEMO_MAS_CHECKPOINT_MODE", CHECKPOINT_MODE_MANUAL)
+        return mode if mode in (CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL) else CHECKPOINT_MODE_MANUAL
+
+    def checkpoint_sign(*, slot_id: str, refs: list[str],
+                        note: str = "") -> str:
+        mode = _current_mode()
+        if mode != CHECKPOINT_MODE_AUTO:
+            return json.dumps({
+                "ok": False,
+                "error": (
+                    f"checkpoint_sign refused: mode={mode!r}. "
+                    "In manual mode a human must click the Sign button in "
+                    "the trace viewer. Return cycle outcome 'partial' and "
+                    "wait for the next cycle."
+                ),
+            })
+        slot = slots_by_id.get(slot_id)
+        if slot is None:
+            return json.dumps({
+                "ok": False,
+                "error": f"unknown slot_id {slot_id!r}; "
+                         f"expected one of {sorted(slots_by_id)}",
+            })
+        if not refs:
+            return json.dumps({
+                "ok": False,
+                "error": f"checkpoint_sign requires evidence refs "
+                         f"covering {slot['requires_evidence']}",
+            })
+
+        # Evidence check: every kind in requires_evidence must be
+        # represented in the refs. Resolve each ref to its kind via
+        # the memory store.
+        ref_kinds: list[str] = []
+        for rid in refs:
+            rec = memory.get(rid)
+            if rec is None:
+                return json.dumps({
+                    "ok": False,
+                    "error": f"ref {rid!r} does not resolve",
+                })
+            ref_kinds.append(rec.kind)
+        missing = [k for k in slot["requires_evidence"] if k not in ref_kinds]
+        if missing:
+            return json.dumps({
+                "ok": False,
+                "error": (
+                    f"slot {slot_id!r} requires evidence of kinds "
+                    f"{slot['requires_evidence']}; refs cover {ref_kinds}; "
+                    f"missing {missing}"
+                ),
+            })
+
+        # Dependency check: every depends_on slot must already be in a
+        # terminal state (signed or reopened) per the current fold.
+        folded = {s.id: s for s in fold_checkpoints(
+            memory.all_records(), mode, slots=list(slots_by_id.values()))}
+        unmet = [d for d in slot["depends_on"]
+                 if folded.get(d) is None or folded[d].state not in {"signed", "reopened"}]
+        if unmet:
+            return json.dumps({
+                "ok": False,
+                "error": (
+                    f"slot {slot_id!r} depends on {unmet} which are not yet "
+                    "signed; produce evidence + sign those first."
+                ),
+            })
+
+        body = json.dumps({
+            "checkpoint_id": slot_id,
+            "event": "signoff",
+            "actor": actor_label,
+            "note": note,
+        })
+        try:
+            rec = memory.write(
+                role=signer_role,
+                kind="checkpoint_event",
+                title=f"signoff {slot_id}",
+                body=body,
+                tags=(f"checkpoint:{slot_id}", "event:signoff",
+                      f"actor:{actor_label}"),
+                refs=tuple(refs),
+            )
+        except RecordValidationError as e:
+            return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({"ok": True, "id": rec.id, "slot_id": slot_id})
+
+    return checkpoint_sign
+
+
+def _build_checkpoint_review_handler(
+    memory: RecipeMemory,
+    slots_by_id: dict[str, dict[str, Any]],
+) -> Callable[..., str]:
+    """QA verdict handler bound to the reviewer role.
+
+    Wraps ``mem_write(kind='checkpoint_review')`` with structural checks so
+    the LLM can't easily produce unreadable reviews: ``slot_id`` must
+    exist, ``verdict`` must be one of the four known strings, and ``refs``
+    must cite at least one record (the evidence being judged).
+    """
+    def checkpoint_review_suggest(*, slot_id: str, verdict: str,
+                                   reason: str, refs: list[str],
+                                   tags: list[str] | None = None) -> str:
+        if slot_id not in slots_by_id:
+            return json.dumps({
+                "ok": False,
+                "error": f"unknown slot_id {slot_id!r}; "
+                         f"expected one of {sorted(slots_by_id)}",
+            })
+        if verdict not in VALID_VERDICTS:
+            return json.dumps({
+                "ok": False,
+                "error": f"verdict must be one of {sorted(VALID_VERDICTS)}; "
+                         f"got {verdict!r}",
+            })
+        if not refs:
+            return json.dumps({
+                "ok": False,
+                "error": "checkpoint_review requires ≥1 ref to an "
+                         "evidence record being judged.",
+            })
+        if not reason.strip():
+            return json.dumps({
+                "ok": False,
+                "error": "reason must be a non-empty one-line summary.",
+            })
+        combined_tags = [
+            f"checkpoint:{slot_id}",
+            f"verdict:{verdict}",
+            "channel:qa_review",
+        ]
+        if tags:
+            combined_tags.extend(t for t in tags if t not in combined_tags)
+        try:
+            rec = memory.write(
+                role="reviewer",
+                kind="checkpoint_review",
+                title=f"{verdict} · {slot_id}",
+                body=reason,
+                tags=tuple(combined_tags),
+                refs=tuple(refs),
+            )
+        except RecordValidationError as e:
+            return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({
+            "ok": True, "id": rec.id,
+            "slot_id": slot_id, "verdict": verdict,
+        })
+
+    return checkpoint_review_suggest
+
+
+def _build_orchestrator_quality_handlers(
+    memory: RecipeMemory,
+    slots: list[dict[str, Any]],
+) -> dict[str, Callable[..., str]]:
+    """Handlers for ``checkpoint_sign`` and ``directive_respond``.
+
+    Both write records as the pseudo-role ``orchestrator_auto`` (see
+    ``schema.KIND_WHITELIST``), bypassing the orchestrator's read-only
+    posture without extending its general write capabilities.
+    """
+    slots_by_id = {s["id"]: s for s in slots}
+    checkpoint_sign = _build_checkpoint_sign_handler(
+        memory, slots_by_id,
+        signer_role="orchestrator_auto", actor_label="orchestrator",
+    )
+
+    def directive_respond(*, directive_id: str, action: str,
+                          summary: str,
+                          spawned_role: str | None = None) -> str:
+        rec_in = memory.get(directive_id)
+        if rec_in is None or rec_in.kind != "human_directive":
+            return json.dumps({
+                "ok": False,
+                "error": f"directive_id {directive_id!r} does not resolve "
+                         f"to a human_directive",
+            })
+        body = json.dumps({
+            "action": action,
+            "summary": summary,
+            "spawned_role": spawned_role,
+        })
+        try:
+            rec = memory.write(
+                role="orchestrator_auto",
+                kind="directive_response",
+                title=f"reply to {directive_id}",
+                body=body,
+                tags=(f"reply_to:{directive_id}", f"action:{action}"),
+                refs=(directive_id,),
+            )
+        except RecordValidationError as e:
+            return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({"ok": True, "id": rec.id,
+                           "directive_id": directive_id})
+
+    return {
+        "checkpoint_sign": checkpoint_sign,
+        "directive_respond": directive_respond,
+    }
+
+
 # ── BackendToolRegistry ──────────────────────────────────────────────
 
 
@@ -399,7 +640,10 @@ the tool's input as kwargs and must return a string (typically JSON)."""
 # ── Public entry point ──────────────────────────────────────────────
 
 
-_VALID_ROLES = frozenset(KIND_WHITELIST) | {"orchestrator"}
+# Pseudo-roles (for authorship bookkeeping) are in KIND_WHITELIST but are
+# not spawnable workers, so they can't be passed to build_role_tools.
+_PSEUDO_ROLES = frozenset({"orchestrator_auto"})
+_VALID_ROLES = (frozenset(KIND_WHITELIST) - _PSEUDO_ROLES) | {"orchestrator"}
 
 
 def build_role_tools(
@@ -430,6 +674,29 @@ def build_role_tools(
     mem_handlers = _build_mem_handlers(memory, role, allowed_kinds)
     skill_handlers = _build_skill_handlers(skills_root)
     file_handlers = _build_file_handlers(workspace_root)
+
+    # Checkpoint handlers: built once per (memory, workspace) pair, gated
+    # by role downstream. Orchestrator gets ``checkpoint_sign`` +
+    # ``directive_respond``; reviewer gets ``checkpoint_sign`` +
+    # ``checkpoint_review_suggest``. Slot declarations come from
+    # ``<workspace>/checkpoints.yaml``; if the file is missing the list
+    # is empty and the sign/review handlers will reject any call.
+    slots = load_slot_decls(workspace_root)
+    slots_by_id = {s["id"]: s for s in slots}
+    checkpoint_handlers: dict[str, Callable[..., str]] = {}
+    if role == "orchestrator":
+        checkpoint_handlers.update(
+            _build_orchestrator_quality_handlers(memory, slots)
+        )
+    elif role == "reviewer":
+        checkpoint_handlers["checkpoint_sign"] = _build_checkpoint_sign_handler(
+            memory, slots_by_id,
+            signer_role="reviewer", actor_label="reviewer",
+        )
+        checkpoint_handlers["checkpoint_review_suggest"] = (
+            _build_checkpoint_review_handler(memory, slots_by_id)
+        )
+
     registry = dict(backend_registry or {})
 
     specs: list[dict] = []
@@ -442,6 +709,12 @@ def build_role_tools(
                 f"role {role!r} declares orchestrator-only tool {name!r} — "
                 f"move to orchestrator.yaml or remove"
             )
+        # checkpoint_review_suggest is reviewer-only.
+        if (name == "checkpoint_review_suggest" and role != "reviewer"):
+            raise ValueError(
+                f"role {role!r} declares reviewer-only tool {name!r} — "
+                f"move to reviewer.yaml or remove"
+            )
         common_entry = common_tools.get(name)
         spec = _resolve_tool_spec(name, role_entry, common_entry)
         specs.append(spec)
@@ -452,13 +725,20 @@ def build_role_tools(
             handlers[name] = skill_handlers[name]
         elif name in _FILE_TOOL_NAMES:
             handlers[name] = file_handlers[name]
+        elif name in _CHECKPOINT_TOOL_NAMES:
+            handlers[name] = (
+                checkpoint_handlers.get(name)
+                or registry.get(name)
+                or _stub_handler(name)
+            )
         elif name in _ORCHESTRATOR_TOOL_NAMES:
-            # Orchestrator tools are wired by the orchestrator path
-            # (see orchestrator.py::_build_orchestrator_tools — it passes
-            # its SpawnHandler's spawn_* handlers in via backend_registry,
-            # so they land here via the registry fall-through). If we get
-            # here without a registry entry, surface it as a stub.
-            handlers[name] = registry.get(name) or _stub_handler(name)
+            # Spawn tools come in via the SpawnHandler's registry; the
+            # ``directive_respond`` tool is wired via checkpoint_handlers
+            # above when role == orchestrator. Stub otherwise.
+            if name in checkpoint_handlers:
+                handlers[name] = checkpoint_handlers[name]
+            else:
+                handlers[name] = registry.get(name) or _stub_handler(name)
         else:
             handlers[name] = registry.get(name) or _stub_handler(name)
 
