@@ -53,6 +53,9 @@ from agent_evolve.model.algorithms.nemo_mas.checkpoints import (  # noqa: E402
     fold_checkpoints,
     load_slot_decls,
 )
+from agent_evolve.model.algorithms.nemo_mas.orchestrator import (  # noqa: E402
+    cycle_workspace_path,
+)
 
 # Multi-run discovery:
 #   ``RUNS_ROOT`` is the parent directory that holds one subdirectory per
@@ -72,7 +75,9 @@ _ACTIVE_RUN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "nemo_mas_active_run", default=None,
 )
 
-CHECKPOINT_MODE: str = CHECKPOINT_MODE_MANUAL  # set in main() from env var
+CHECKPOINT_MODE: str = CHECKPOINT_MODE_MANUAL  # set in main() from env var; fallback
+                                                # only — real mode now comes from per-run
+                                                # meta.json (see _mode_for_active_run).
 ABOUT_URL = "https://github.com/A-EVO-Lab/a-evolve"
 
 # Safety rail on POST body sizes. Directives and signoff notes are short;
@@ -141,6 +146,7 @@ def active_run() -> str | None:
 _REWRITE_PREFIXES = (
     "/cycle/", "/raw/", "/train", "/leaderboard",
     "/directive", "/checkpoint/", "/live-status.json", "/run/",
+    "/record/",
 )
 
 
@@ -204,6 +210,26 @@ def driver_log_path_for(run: str | None = None) -> Path:
     if name is None:
         return Path()
     return RUNS_ROOT / name / "driver.log"
+
+
+def _mode_for_active_run() -> str:
+    """Checkpoint mode for the scoped run, read from ``<run>/meta.json``.
+
+    Falls back to the process-level ``CHECKPOINT_MODE`` (set from env at
+    startup) if the file is missing or the value is unrecognized — so
+    legacy runs launched before this file existed still render sensibly.
+    """
+    name = active_run()
+    if name:
+        meta_path = RUNS_ROOT / name / "meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            candidate = meta.get("checkpoint_mode")
+            if candidate in (CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL):
+                return candidate
+        except (OSError, json.JSONDecodeError):
+            pass
+    return CHECKPOINT_MODE
 
 STYLE = """
 :root {
@@ -1517,7 +1543,10 @@ details > summary .preview {
   grid-template-columns: 28px minmax(0, 1fr) auto;
   min-height: 44px;
   padding: 8px 4px;
+  text-decoration: none;
+  cursor: pointer;
 }
+.qp-plan-row:hover { background: #15202f; }
 .qp-plan-row.active {
   background: #1b2635;
   border-left: 3px solid var(--aws-orange);
@@ -1828,6 +1857,82 @@ details > summary .preview {
 }
 .qp-pill.ok { background: #0c2816; color: #3fb950; }
 .qp-pill.warn { background: #33250d; color: #ffb84d; }
+
+.qp-evidence-group {
+  border: 1px solid #232c38;
+  border-radius: 6px;
+  margin: 8px 0;
+  padding: 8px 10px;
+}
+.qp-evidence-kind {
+  color: #c7d0dd;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.qp-evidence-item {
+  align-items: center;
+  background: #0f1824;
+  border: 1px solid #1d2735;
+  border-radius: 5px;
+  color: #c7d0dd;
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  margin: 4px 0;
+  padding: 6px 8px;
+  text-decoration: none;
+}
+.qp-evidence-item:hover {
+  background: #15202f;
+  border-color: #2e3a4d;
+}
+.qp-evidence-title { color: #e6edf3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-evidence-meta { color: #768193; font-size: 11px; }
+.qp-evidence-id { color: #768193; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.qp-evidence-empty { color: #768193; font-size: 12px; padding: 4px 0; }
+.qp-evidence-extra { color: #768193; font-size: 11px; padding: 4px 0; }
+
+.record-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+  padding: 18px;
+}
+.record-pane {
+  background: #0f1824;
+  border: 1px solid #1d2735;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.record-pane.full { grid-column: 1 / -1; }
+.record-pane h3 {
+  color: #e6edf3;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+}
+.record-links { list-style: none; margin: 0; padding: 0; }
+.record-links li { margin: 3px 0; }
+.record-body {
+  background: #080c12;
+  border: 1px solid #1d2735;
+  border-radius: 4px;
+  color: #c7d0dd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin: 0;
+  max-height: 560px;
+  overflow: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .run-rail {
   background: #0e131a;
   border-left: 1px solid #28313d;
@@ -2483,7 +2588,7 @@ button.primary,
 }
 .launch-nav,
 .launch-scene,
-.launch-checkpoints {
+.launch-activity {
   position: relative;
   z-index: 1;
 }
@@ -2583,108 +2688,100 @@ button.primary,
   background: #f8fbff;
   color: #03060a;
 }
-.launch-checkpoints {
+.launch-activity {
   display: grid;
   gap: 0;
-  grid-template-columns: repeat(10, minmax(98px, 1fr));
+  grid-template-columns: repeat(7, minmax(118px, 1fr));
   margin: 0 auto;
   max-width: 1480px;
   overflow-x: auto;
-  padding: 0 8px 0;
+  padding: 0 8px 8px;
   position: relative;
 }
-.launch-checkpoints::before {
+.launch-activity[hidden] {
+  display: none;
+}
+.launch-activity::before {
   background:
-    radial-gradient(ellipse 78% 154px at 50% 178px,
-      transparent 97.4%,
-      rgba(248, 251, 255, 0.58) 97.8%,
-      rgba(248, 251, 255, 0.58) 98.4%,
-      transparent 98.8%);
+    radial-gradient(ellipse 84% 144px at 50% 92px,
+      transparent 97.1%,
+      rgba(248, 251, 255, 0.68) 97.5%,
+      rgba(248, 251, 255, 0.68) 98.2%,
+      transparent 98.6%);
   content: "";
-  height: 118px;
-  left: 2.4%;
+  height: 82px;
+  left: 2.5%;
   pointer-events: none;
   position: absolute;
-  right: 2.4%;
+  right: 2.5%;
   top: 0;
 }
-.launch-checkpoint {
-  color: rgba(248, 251, 255, 0.58);
-  min-height: 132px;
-  min-width: 98px;
+.launch-activity-item {
+  color: rgba(248, 251, 255, 0.68);
+  min-height: 126px;
+  min-width: 118px;
   position: relative;
   text-align: center;
   text-decoration: none;
   z-index: 1;
 }
-.launch-checkpoint::before {
-  display: none;
+.launch-activity-item:hover {
+  color: #fff;
+  text-decoration: none;
 }
-.launch-node {
+.launch-activity-item.active {
+  color: #fff;
+}
+.launch-activity-item.active .launch-activity-node {
+  border-color: #ff8b22;
+  box-shadow: 0 0 0 3px rgba(255, 139, 34, 0.18), 0 0 24px rgba(255, 139, 34, 0.72);
+  color: #ff8b22;
+}
+.launch-activity-item.done .launch-activity-node {
+  border-color: rgba(248, 251, 255, 0.82);
+  color: #fff;
+}
+.launch-activity-node {
   align-items: center;
   background: rgba(1, 3, 7, 0.82);
-  border: 2px solid rgba(248, 251, 255, 0.42);
+  border: 2px solid rgba(248, 251, 255, 0.45);
   border-radius: 999px;
   color: rgba(248, 251, 255, 0.76);
   display: inline-flex;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  font-weight: 900;
-  height: 44px;
+  height: 22px;
   justify-content: center;
   margin-bottom: 9px;
-  position: relative;
-  width: 44px;
-  z-index: 1;
+  width: 22px;
 }
-.launch-checkpoint.done .launch-node,
-.launch-checkpoint.reopened .launch-node {
-  border-color: #fff;
-  color: #fff;
+.launch-activity-node::after {
+  background: currentColor;
+  border-radius: 999px;
+  content: "";
+  height: 4px;
+  width: 4px;
 }
-.launch-checkpoint.active {
-  color: #fff;
-}
-.launch-checkpoint.active .launch-node {
-  border-color: #ff8b22;
-  box-shadow: 0 0 0 3px rgba(255, 139, 34, 0.18), 0 0 24px rgba(255, 139, 34, 0.76);
-  color: #ff8b22;
-}
-.launch-checkpoint.active::before {
-  border-top-color: rgba(255, 139, 34, 0.66);
-}
-.launch-checkpoint-title {
-  color: inherit;
-  font-size: 9px;
+.launch-activity-label {
+  color: #f8fbff;
+  display: block;
+  font-size: 10px;
   font-weight: 850;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   line-height: 1.2;
   margin: 0 auto;
-  max-width: 108px;
-  min-height: 34px;
+  max-width: 126px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.launch-checkpoint-state {
-  color: rgba(248, 251, 255, 0.56);
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.12em;
-  margin-top: 6px;
-  text-transform: uppercase;
-}
-.launch-checkpoint.active .launch-checkpoint-state {
-  color: #ff8b22;
-}
-.launch-checkpoint:nth-child(1),
-.launch-checkpoint:nth-child(10) { transform: translateY(50px); }
-.launch-checkpoint:nth-child(2),
-.launch-checkpoint:nth-child(9) { transform: translateY(34px); }
-.launch-checkpoint:nth-child(3),
-.launch-checkpoint:nth-child(8) { transform: translateY(20px); }
-.launch-checkpoint:nth-child(4),
-.launch-checkpoint:nth-child(7) { transform: translateY(9px); }
-.launch-checkpoint:nth-child(5),
-.launch-checkpoint:nth-child(6) { transform: translateY(2px); }
+.launch-activity-item.active .launch-activity-label { color: #ffb84d; }
+.launch-activity-item:nth-child(1),
+.launch-activity-item:nth-child(7) { transform: translateY(46px); }
+.launch-activity-item:nth-child(2),
+.launch-activity-item:nth-child(6) { transform: translateY(30px); }
+.launch-activity-item:nth-child(3),
+.launch-activity-item:nth-child(5) { transform: translateY(16px); }
+.launch-activity-item:nth-child(4) { transform: translateY(8px); }
 @media (max-width: 1240px) {
   .main-grid { grid-template-columns: 1fr; }
   .right-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2748,7 +2845,7 @@ button.primary,
   .launch-stream { width: 64vw; }
   .launch-title h1 { letter-spacing: 0.18em; }
   .launch-title p { letter-spacing: 0.22em; }
-  .launch-checkpoints { grid-template-columns: repeat(10, minmax(132px, 1fr)); }
+  .launch-activity { grid-template-columns: repeat(7, minmax(132px, 1fr)); }
 }
 @media (max-width: 560px) {
   body { font-size: 13px; }
@@ -3487,68 +3584,99 @@ def _parse_ts_to_epoch(ts: str) -> float:
 
 
 def _derive_eval_runs(records: list[dict]) -> list[dict]:
-    """Turn every ``cv_result`` record into a leaderboard row.
+    """Turn evaluated runs into leaderboard rows.
 
-    Shape matches the existing templates — ``render_leaderboard`` and
-    ``render_run_detail`` consume the same keys they always did. Missing
-    fields (e.g. no linked recipe_proposal) become empty strings so the
-    UI degrades gracefully instead of crashing.
+    Sources, strongest first:
+      1. ``cv_result`` records (N seeds × M splits, the gold promotion gate),
+      2. ``eval_report`` records whose refs point at a ``training_run``
+         (one-seed eval — sufficient for a reasonable validation signal).
+
+    Each eval'd training_run contributes at most one row. The row shape
+    matches what ``render_leaderboard`` / ``render_run_detail`` already
+    consume; ``status`` is ``best`` (top kaggle metric), ``promoted``
+    (cv_result-backed), ``eval`` (eval_report only), or ``blocked``
+    (cv_result refs a failed_attempt).
     """
-    cv_results = sorted(
-        _records_by_kind(records, "cv_result"),
-        key=lambda r: r.get("ts", ""),
-    )
-    if not cv_results:
+    cv_results = _records_by_kind(records, "cv_result")
+    eval_reports = _records_by_kind(records, "eval_report")
+    if not cv_results and not eval_reports:
         return []
 
-    # Distinct cycles with cv_results determine the "Round N" label.
+    # Build (training_run_id → best-signal record) so one run doesn't show
+    # up twice. A cv_result always wins over an eval_report for the same
+    # training_run.
+    anchor_for_run: dict[str, dict] = {}
+    for er in eval_reports:
+        for rid in er.get("refs") or []:
+            target = _record_by_id(records, rid)
+            if target and target.get("kind") == "training_run":
+                anchor_for_run[rid] = {"kind": "eval_report", "record": er}
+                break
+    for cv in cv_results:
+        for rid in cv.get("refs") or []:
+            target = _record_by_id(records, rid)
+            if target and target.get("kind") == "training_run":
+                anchor_for_run[rid] = {"kind": "cv_result", "record": cv}
+                break
+
+    if not anchor_for_run:
+        return []
+
+    # Row timeline: sort by anchor record ts, newest first for display;
+    # asc order for stage indexing.
+    anchors_asc = sorted(
+        anchor_for_run.items(),
+        key=lambda kv: kv[1]["record"].get("ts", ""),
+    )
     cycle_order: list[str] = []
     seen_cycles: set[str] = set()
-    for cv in cv_results:
-        cid = cv.get("cycle_id", "")
+    for _, anchor in anchors_asc:
+        cid = anchor["record"].get("cycle_id", "")
         if cid not in seen_cycles:
             seen_cycles.add(cid)
             cycle_order.append(cid)
 
-    # Incumbent = highest stable mean across all cv_results (ts asc order
-    # already pins ties to the earlier run, so "newer beats equal" would
-    # require reversing; we keep the classic "latest highest wins").
+    # Best = highest kaggle metric, preferring stable cv_result.
     best_id: str | None = None
     best_metric: float = float("-inf")
-    for cv in cv_results:
-        body = cv.get("body") or ""
+    best_prefers_cv = False
+    for _, anchor in anchors_asc:
+        rec = anchor["record"]
+        body = rec.get("body") or ""
         metrics = (_parse_fenced_json(body, "metrics") or {}).get("metrics") or {}
         kaggle = metrics.get("kaggle")
-        stable = (_parse_fenced_json(body, "stable") or {}).get("stable")
-        if not stable:
+        if not isinstance(kaggle, (int, float)):
             continue
-        if isinstance(kaggle, (int, float)) and kaggle >= best_metric:
+        is_cv = anchor["kind"] == "cv_result"
+        stable = (_parse_fenced_json(body, "stable") or {}).get("stable")
+        # CV with stable=True beats a raw eval_report at the same score;
+        # otherwise pure numeric max wins.
+        if is_cv and not stable:
+            continue
+        if (float(kaggle) > best_metric) or (
+            float(kaggle) == best_metric and is_cv and not best_prefers_cv
+        ):
             best_metric = float(kaggle)
-            best_id = cv.get("id")
+            best_id = rec.get("id")
+            best_prefers_cv = is_cv
 
     rows: list[dict] = []
-    for cv in sorted(cv_results, key=lambda r: r.get("ts", ""), reverse=True):
-        cv_body = cv.get("body") or ""
-        metrics_block = _parse_fenced_json(cv_body, "metrics") or {}
-        metrics = metrics_block.get("metrics") or {}
+    for run_id, anchor in sorted(anchor_for_run.items(),
+                                  key=lambda kv: kv[1]["record"].get("ts", ""),
+                                  reverse=True):
+        rec = anchor["record"]
+        is_cv = anchor["kind"] == "cv_result"
+        body = rec.get("body") or ""
+        metrics = (_parse_fenced_json(body, "metrics") or {}).get("metrics") or {}
 
-        # Climb refs to reach a training_run, then a recipe_proposal, then
-        # an eval_report for the findings list.
-        training_run = None
-        for rid in cv.get("refs") or []:
-            rec = _record_by_id(records, rid)
-            if rec and rec.get("kind") == "training_run":
-                training_run = rec
-                break
+        training_run = _record_by_id(records, run_id)
         recipe_proposal = (
-            _resolve_ref_chain(records, training_run["id"], "recipe_proposal")
+            _resolve_ref_chain(records, run_id, "recipe_proposal")
             if training_run else None
         )
-        # eval_report points back at the training_run (not the other way),
-        # so forward-walking refs won't find it. Use a reverse index.
         eval_report = (
-            _reverse_find_by_ref(records, training_run["id"], "eval_report")
-            if training_run else None
+            rec if not is_cv else
+            _reverse_find_by_ref(records, run_id, "eval_report")
         )
 
         recipe_json: dict = {}
@@ -3566,41 +3694,41 @@ def _derive_eval_runs(records: list[dict]) -> list[dict]:
             findings = _parse_findings(eval_report.get("body") or "")
 
         artifacts: list[str] = []
-        for rec in filter(None, [cv, training_run, recipe_proposal, eval_report]):
-            artifacts.extend(_parse_artifacts(rec.get("body") or ""))
-        # De-duplicate while preserving order.
+        for src in filter(None, [rec, training_run, recipe_proposal, eval_report]):
+            artifacts.extend(_parse_artifacts(src.get("body") or ""))
         seen_art: set[str] = set()
         artifacts = [a for a in artifacts if not (a in seen_art or seen_art.add(a))]
 
-        cycle_id = cv.get("cycle_id", "")
-        stage_idx = cycle_order.index(cycle_id) + 1 if cycle_id in seen_cycles else len(cycle_order)
+        cycle_id = rec.get("cycle_id", "")
+        stage_idx = (cycle_order.index(cycle_id) + 1
+                     if cycle_id in seen_cycles else len(cycle_order))
 
         has_failed = any(
-            _record_by_id(records, rid) is not None
-            and _record_by_id(records, rid).get("kind") == "failed_attempt"
-            for rid in cv.get("refs") or []
+            (_record_by_id(records, rid) or {}).get("kind") == "failed_attempt"
+            for rid in rec.get("refs") or []
         )
 
-        status = "archived"
-        if cv.get("id") == best_id:
+        if rec.get("id") == best_id:
             status = "best"
         elif has_failed:
             status = "blocked"
+        elif is_cv:
+            status = "promoted"   # cv_result: cross-validated
         else:
-            status = "review"
+            status = "eval"       # eval_report only
 
         rows.append({
-            "id": cv.get("id", ""),
-            "name": cv.get("title", "") or f"cv_result {cv.get('id', '')}",
+            "id": rec.get("id", ""),
+            "name": rec.get("title", "") or f"{anchor['kind']} {rec.get('id', '')}",
             "cycle": cycle_id,
-            "stage": f"Round {stage_idx} eval",
+            "stage": (f"Round {stage_idx} {'cv' if is_cv else 'eval'}"),
             "status": status,
             "decision": status,
             "kaggle": _safe_float(metrics.get("kaggle")),
             "local": _safe_float(metrics.get("local")),
             "hard": _safe_float(metrics.get("hard")),
             "delta": metrics.get("delta") or "—",
-            "score_note": score_note or cv.get("title", ""),
+            "score_note": score_note or rec.get("title", ""),
             "recipe": recipe_proposal.get("title", "") if recipe_proposal else "—",
             "base_model": recipe_json.get("base_model", "") or "—",
             "data_mix": recipe_json.get("data_mix", "") or "—",
@@ -3609,6 +3737,7 @@ def _derive_eval_runs(records: list[dict]) -> list[dict]:
             "findings": findings,
             "breakdown": dict(metrics.get("breakdown") or {}),
             "artifacts": artifacts,
+            "source_kind": anchor["kind"],
         })
     return rows
 
@@ -3623,21 +3752,24 @@ def _safe_float(x) -> float:
 def _slots_for_active_run() -> list[dict]:
     """Load the active run's ``checkpoints.yaml``.
 
-    The canonical location is ``<run>/cycles/<latest>/workspace/checkpoints.yaml``
-    (the forked workspace for the most recent cycle — stable convention
-    established by ``NemoMASAlgorithm._resolve_cycle_root``). Missing file
-    (pre-launch or a benchmark that opted out of gates) ⇒ empty list,
-    which makes the fold return an empty list and the ledger UI degrades
-    to "no Quality Plan".
+    Uses ``cycle_workspace_path`` from the algorithm module as the single
+    source of truth for the fork layout — keeps producer (driver) and
+    consumer (viewer) in sync. Missing file (pre-launch or a benchmark
+    that opted out of gates) ⇒ empty list.
     """
-    cycles = _cycle_dirs()
-    if cycles:
-        latest = cycles[-1]
-        candidate = latest / ".fork_target" / "nodes" / "workspace" / "workspace"
-        if candidate.is_dir():
-            return load_slot_decls(candidate)
-        if (latest / "workspace").is_dir():
-            return load_slot_decls(latest / "workspace")
+    run = active_run()
+    if run is None:
+        return []
+    cycles_root = RUNS_ROOT / run / "cycles"
+    if not cycles_root.is_dir():
+        return []
+    cycle_dirs = sorted(p for p in cycles_root.iterdir() if p.is_dir())
+    if not cycle_dirs:
+        return []
+    latest_id = cycle_dirs[-1].name
+    workspace = cycle_workspace_path(RUNS_ROOT / run, latest_id)
+    if (workspace / "checkpoints.yaml").is_file():
+        return load_slot_decls(workspace)
     return []
 
 
@@ -3649,7 +3781,7 @@ def _derive_checkpoints(records: list[dict], mode: str | None = None) -> list[di
     ``last_event_ts``, ``last_review_verdict``, ``last_review_reason``)
     that the new Sign button + reviewer badge logic consume.
     """
-    mode = mode or CHECKPOINT_MODE
+    mode = mode or _mode_for_active_run()
     slots = _slots_for_active_run()
     folded = fold_checkpoints(records, mode, slots=slots)
     return [
@@ -3892,6 +4024,8 @@ def _eval_run(run_id: str) -> dict | None:
 def _leaderboard_status(run: dict) -> tuple[str, str]:
     return {
         "best": ("best", "Best candidate"),
+        "promoted": ("review", "CV promoted"),
+        "eval": ("review", "Eval only"),
         "review": ("review", "Review"),
         "blocked": ("blocked", "Blocked"),
         "archived": ("archived", "Archived"),
@@ -4040,6 +4174,103 @@ def _event_live_summary(ev: dict) -> dict:
     return base
 
 
+def _launch_role_label(role: str) -> str:
+    label = _role_display(role)
+    if label == "MAS Orchestrator":
+        return "Orchestrator"
+    if label == "Unclassified":
+        return "Agent"
+    return label
+
+
+def _launch_action_label(live: dict) -> str:
+    tool = live.get("tool") or ""
+    if tool:
+        return {
+            "launch_training": "Launch training",
+            "read_training_log": "Read training log",
+            "read_checkpoint_metric": "Check metric",
+            "read_file": "Read config",
+            "list_dir": "Inspect files",
+            "mem_search": "Search memory",
+            "mem_recent": "Read memory",
+            "mem_get": "Read memory",
+            "mem_write": "Write memory",
+            "skill_load": "Load skill",
+            "skill_index": "Find skill",
+            "spawn_and_run_subagent": "Delegate",
+            "call_existing_agent": "Resume agent",
+            "run_eval": "Run eval",
+            "checkpoint_review_suggest": "Review gate",
+            "call_teacher_model": "Call teacher",
+            "mix_sources": "Mix data",
+            "diff_yaml": "Diff recipe",
+            "render_recipe_diff": "Render recipe",
+        }.get(tool, tool.replace("_", " ").title())
+    state = live.get("state") or ""
+    title = live.get("title") or "Working"
+    if state == "done":
+        return "Completed"
+    return {
+        "Agent started": "Started",
+        "Agent completed": "Completed",
+        "Received task": "Received task",
+        "Writing response": "Responding",
+    }.get(title, title)
+
+
+def _recent_agent_activity(limit: int = 7) -> list[dict]:
+    run = active_run()
+    run_pref = f"/runs/{run}" if run else ""
+    items: list[dict] = []
+    for cycle_dir in reversed(_cycle_dirs()):
+        cycle = _cycle_id(cycle_dir)
+        cycle_items: list[dict] = []
+        for p in _agent_files(cycle_dir):
+            m = re.match(r"agent_(\d+)\.jsonl", p.name)
+            if not m:
+                continue
+            aid = int(m.group(1))
+            rows = _load_jsonl(p)
+            if not rows:
+                continue
+            summary = _agent_summary_from_rows(p, rows)
+            last_ts = max((r.get("ts", 0) for r in rows), default=0)
+            for ev in rows:
+                if ev.get("event") not in {"start", "turn", "done"}:
+                    continue
+                ts = ev.get("ts") or summary["mtime"]
+                live = _event_live_summary(ev)
+                is_current = bool(ts == last_ts and not summary["finished"])
+                if ev.get("event") == "done":
+                    state = "done"
+                elif is_current:
+                    state = "active"
+                else:
+                    state = "idle"
+                cycle_items.append({
+                    "cycle": cycle,
+                    "agent_id": aid,
+                    "agent_label": f"ag_{aid:02d}",
+                    "agent_kind": "agent" if aid == 0 else "subagent",
+                    "role": _launch_role_label(summary["role"]),
+                    "action": _launch_action_label(live),
+                    "title": live["title"],
+                    "body": live["body"],
+                    "tool": live["tool"],
+                    "turn": live["turn"] if live["turn"] is not None else "",
+                    "updated": _fmt_relative_time(ts),
+                    "ts": ts,
+                    "state": state,
+                    "href": f"{run_pref}/cycle/{cycle}/{aid}",
+                })
+        items.extend(cycle_items)
+        if len(items) >= limit:
+            break
+    items.sort(key=lambda item: (item["ts"], item["cycle"], item["agent_id"]), reverse=True)
+    return items[:limit]
+
+
 def _live_snapshot() -> dict:
     run = active_run()
     run_pref = f"/runs/{run}" if run else ""
@@ -4064,6 +4295,7 @@ def _live_snapshot() -> dict:
             "agent_url": "#",
             "calls_url": "#",
             "feed": [],
+            "launch_activity": [],
         }
 
     cycle_dir = trace_dir_for() / f"cycle_{latest}"
@@ -4088,6 +4320,7 @@ def _live_snapshot() -> dict:
             "agent_url": f"{run_pref}/cycle/{latest}",
             "calls_url": f"{run_pref}/cycle/{latest}/calls",
             "feed": [],
+            "launch_activity": _recent_agent_activity(limit=7),
         }
 
     enriched = []
@@ -4141,6 +4374,7 @@ def _live_snapshot() -> dict:
         "agent_url": f"{run_pref}/cycle/{latest}/{active['aid']}",
         "calls_url": f"{run_pref}/cycle/{latest}/calls",
         "feed": feed,
+        "launch_activity": _recent_agent_activity(limit=7),
     }
 
 
@@ -4316,6 +4550,17 @@ def _live_script() -> str:
           `<div class="live-feed-body">${esc(item.title)}: ${esc(item.body).slice(0, 120)}</div></a>`
         )).join("");
       }
+      const launchActivity = $("launch-activity");
+      if (launchActivity) {
+        const items = live.launch_activity || [];
+        launchActivity.hidden = items.length === 0;
+        launchActivity.innerHTML = items.map((item) => (
+          `<a class="launch-activity-item ${esc(item.state || "idle")}" href="${esc(item.href || "#")}">` +
+          `<span class="launch-activity-node"></span>` +
+          `<span class="launch-activity-label">${esc(item.role || "Agent")}: ${esc(item.action || item.title || "Working")}</span>` +
+          `</a>`
+        )).join("");
+      }
     } catch (_) {}
   }
   setInterval(refreshLive, 6000);
@@ -4325,7 +4570,8 @@ def _live_script() -> str:
 """)
 
 
-def _render_run_rail(live: dict, totals: dict, progress: int, signed_count: int) -> str:
+def _render_run_rail(live: dict, totals: dict, progress: int, signed_count: int,
+                     reopened_count: int, human_gate_count: int) -> str:
     return (
         "<aside class=run-rail>"
         + "<div class=run-rail-head>"
@@ -4385,7 +4631,7 @@ def _render_run_rail(live: dict, totals: dict, progress: int, signed_count: int)
         + "</div>"
         + "<div class=run-panel>"
         + "<div class=run-panel-title>Quality gate</div>"
-        + f"<div class=run-readable-body>{signed_count} signed · 1 reopened · 1 human gate<br>"
+        + f"<div class=run-readable-body>{signed_count} signed · {reopened_count} reopened · {human_gate_count} human gate<br>"
         + f"Plan ledger progress: <b style='color:#ffb84d;'>{progress}%</b></div>"
         + "</div>"
         + "<div class='run-panel shortcuts'>"
@@ -4480,55 +4726,24 @@ def _page_shell(title: str, main: str, *, active: str = "runs") -> str:
     )
 
 
-def _launch_state_label(cp: dict, *, active: bool) -> str:
-    state = cp["state"]
-    if state == "signed":
-        return "Completed"
-    if state == "reopened":
-        return "Reopened"
-    if active:
-        return "In progress"
-    return {
-        "pending_human": "Awaiting signoff",
-        "pending_evidence": "Pending evidence",
-        "pending_pre_review": "Pre-review",
-        "draft": "Pending",
-        "final": "Final",
-        "rejected": "Rejected",
-    }.get(state, _state_label(state))
-
-
-def _launch_checkpoint_class(cp: dict, active_id: str | None) -> str:
-    classes = ["launch-checkpoint"]
-    if cp["id"] == active_id:
-        classes.append("active")
-    elif cp["state"] == "signed":
-        classes.append("done")
-    elif cp["state"] == "reopened":
-        classes.append("reopened")
-    else:
-        classes.append("pending")
-    return " ".join(classes)
-
-
-def _launch_side_label(text: str) -> str:
-    return _h(text.replace("_", " ").upper())
-
-
-def _render_launch_checkpoints(slots: list[dict], active_id: str | None) -> str:
-    if not slots:
-        return "<div class='launch-checkpoint active'><span class=launch-node>--</span><div class=launch-checkpoint-title>No checkpoints</div><div class=launch-checkpoint-state>Pending</div></div>"
-    items = []
-    for idx, cp in enumerate(slots):
-        active = cp["id"] == active_id
-        items.append(
-            f"<a class='{_launch_checkpoint_class(cp, active_id)}' href='/train#checkpoint-table'>"
-            f"<span class=launch-node>{idx:02d}</span>"
-            f"<div class=launch-checkpoint-title>{_h(cp['title'])}</div>"
-            f"<div class=launch-checkpoint-state>{_h(_launch_state_label(cp, active=active))}</div>"
+def _render_launch_activity(items: list[dict]) -> str:
+    if not items:
+        return "<section class=launch-activity id=launch-activity aria-live=polite hidden></section>"
+    cards = []
+    for item in items:
+        state = item.get("state") if item.get("state") in {"active", "done", "idle"} else "idle"
+        cards.append(
+            f"<a class='launch-activity-item {state}' href='{_h(item.get('href', '#'))}'>"
+            "<span class=launch-activity-node></span>"
+            f"<span class=launch-activity-label>{_h(item.get('role', 'Agent'))}: "
+            f"{_h(item.get('action') or item.get('title', 'Working'))}</span>"
             "</a>"
         )
-    return "".join(items)
+    return (
+        "<section class=launch-activity id=launch-activity aria-live=polite>"
+        + "".join(cards)
+        + "</section>"
+    )
 
 
 def render_pre_launch() -> str:
@@ -4613,29 +4828,11 @@ def render_entry() -> str:
     # bounce to the clean "waiting" card (same as /train pre-launch).
     if not _cycle_dirs() and not _load_records():
         return render_pre_launch()
-    records = _load_records()
-    slots = _derive_checkpoints(records)
-    active_slot = next(
-        (cp for cp in slots if cp["state"] not in {"signed", "reopened"}),
-        slots[-1] if slots else None,
-    )
-    active_id = active_slot["id"] if active_slot else None
-    signed_count = sum(1 for cp in slots if cp["state"] == "signed")
-    progress = _checkpoint_progress()
-    has_hold = any(cp["state"] in {"rejected", "blocked"} for cp in slots)
-    status_label = "Checkpoint hold" if has_hold else "System nominal"
-    left_labels = "".join(
-        f"<span>{_launch_side_label(cp['type'])}</span>"
-        for cp in slots[:4]
-    ) or "<span>PLAN</span><span>DATA</span><span>MODEL</span><span>TRAINING</span>"
-    right_labels = "".join(
-        f"<span>{_launch_side_label(cp['type'])}</span>"
-        for cp in slots[-4:]
-    ) or "<span>EVAL</span><span>ABLATION</span><span>SUBMIT</span><span>RELEASE</span>"
-    active_text = (
-        f"{active_slot['id']} · {active_slot['title']}"
-        if active_slot else "No active checkpoint"
-    )
+    live = _live_snapshot()
+    activity = live.get("launch_activity", [])
+    status_label = "Agent activity live" if activity and live["status"] == "running" else "System nominal"
+    enter_run = _pick_default_run() or active_run()
+    enter_href = f"/runs/{enter_run}/train" if enter_run else "/train"
     return (
         HEADER
         + "<title>A-Evolve Model Forge</title></head><body>"
@@ -4647,22 +4844,22 @@ def render_entry() -> str:
         + "</nav>"
         + "<section class=launch-scene>"
         + "<div class=launch-title>"
-        + "<h1>MODEL FORGE</h1>"
-        + f"<p>{signed_count}/{len(slots)} signed · {progress}% checkpoint sequence</p>"
         + "<div class=launch-actions>"
-        + "<a class='launch-link primary' href='/train'>ENTER</a>"
+        + f"<a class='launch-link primary' href='{_h(enter_href)}'>ENTER</a>"
         + "<a class=launch-link href='/runs'>Past runs</a>"
         + "</div>"
         + "</div>"
         + "</section>"
-        + f"<section class=launch-checkpoints>{_render_launch_checkpoints(slots, active_id)}</section>"
-        + "</main></body></html>"
+        + _render_launch_activity(activity)
+        + "</main>"
+        + _live_script()
+        + "</body></html>"
     )
 
 
 # ── rendering ────────────────────────────────────────────────────────
 
-def render_index() -> str:
+def render_index(selected_slot_id: str | None = None) -> str:
     totals = _trace_totals()
     cycles = _cycle_summaries(include_roles=True)
     records_preview = _load_records()
@@ -4675,7 +4872,8 @@ def render_index() -> str:
     latest = cycles[-1] if cycles else None
     latest_id = latest["id"] if latest else "0000"
     records = records_preview
-    slots = _derive_checkpoints(records, CHECKPOINT_MODE)
+    run_mode = _mode_for_active_run()
+    slots = _derive_checkpoints(records, run_mode)
     eval_runs = _derive_eval_runs(records)
     thread = _derive_chat_thread(records, limit=5)
     progress = _checkpoint_progress()
@@ -4683,10 +4881,16 @@ def render_index() -> str:
     last_cycle_href = f"/cycle/{latest_id}" if latest else "#"
     signed_count = sum(1 for cp in slots if cp["state"] == "signed")
     reopened_count = sum(1 for cp in slots if cp["state"] == "reopened")
+    human_gate_count = sum(1 for cp in slots if cp["state"] == "pending_human")
     sequence_href = f"{last_cycle_href}/sequence" if latest else "#"
 
-    # Active slot = first pending required one; falls back to last in list.
-    active_slot = next(
+    # Active slot = URL-pinned one (if it exists), else first pending required,
+    # else last. Row click carries ?slot=<id> so the card inspects any slot.
+    pinned_slot = next(
+        (cp for cp in slots if cp["id"] == selected_slot_id),
+        None,
+    ) if selected_slot_id else None
+    active_slot = pinned_slot or next(
         (cp for cp in slots if cp["state"] not in {"signed", "reopened"}),
         slots[-1] if slots else None,
     )
@@ -4705,6 +4909,8 @@ def render_index() -> str:
         }.get(cp["state"], "pending")
         sign_btn = ""
         if cp["can_sign"]:
+            # Sibling of the row anchor (not nested — <form> inside <a> is
+            # illegal HTML and browsers reparent it, breaking the submit).
             sign_btn = (
                 f"<form class=qp-sign-form method=post action='/checkpoint/{_h(cp['id'])}/sign'>"
                 f"<input type=hidden name=actor value='human:owner'>"
@@ -4712,12 +4918,15 @@ def render_index() -> str:
                 f"<button class='qp-btn primary' type=submit>Sign</button>"
                 f"</form>"
             )
+        row_href = f"/train?slot={_h(cp['id'])}"
         ledger_rows.append(
-            f"<div class='qp-plan-row{active_cls}{signed_cls}'>"
+            f"<div class=qp-plan-entry>"
+            f"<a class='qp-plan-row{active_cls}{signed_cls}' href='{row_href}'>"
             f"<span class=qp-num>{i:02d}</span>"
             f"<span class=qp-row-title>{_h(cp['title'])}</span>"
             f"<span class=qp-type>{_h(cp['type'])}</span>"
             f"<span class='qp-state {state_class}'>{_h(_state_label(cp['state']))}</span>"
+            f"</a>"
             f"{sign_btn}"
             f"</div>"
         )
@@ -4734,7 +4943,7 @@ def render_index() -> str:
 
     mode_chip = (
         "<span class=focus-chip>Auto-sign mode</span>"
-        if CHECKPOINT_MODE == CHECKPOINT_MODE_AUTO
+        if run_mode == CHECKPOINT_MODE_AUTO
         else "<span class=focus-chip>Manual sign mode</span>"
     )
 
@@ -4764,7 +4973,7 @@ def render_index() -> str:
         + chat_html
         + "<div class=qp-ledger-head>"
         + "<div><div class=qp-ledger-title>Quality Plan Ledger</div>"
-        + f"<div class=qp-ledger-project>mode: {_h(CHECKPOINT_MODE)} · {len(records)} records</div></div>"
+        + f"<div class=qp-ledger-project>mode: {_h(run_mode)} · {len(records)} records</div></div>"
         + f"<span class='qp-state pending'>{progress}%</span>"
         + "</div>"
         + "".join(ledger_rows)
@@ -4780,10 +4989,11 @@ def render_index() -> str:
         + "<div class=qp-bottom-stats>"
         + f"<div class=panel><div class=panel-title>Trace cycles</div><strong>{totals['cycles']}</strong><div class=meta>{totals['agents']} agent traces</div></div>"
         + f"<div class=panel><div class=panel-title>Memory records</div><strong>{len(records)}</strong><div class=meta>across {len({r.get('cycle_id','') for r in records if r.get('cycle_id')})} cycles</div></div>"
-        + f"<div class=panel><div class=panel-title>Checkpoint mode</div><strong>{_h(CHECKPOINT_MODE)}</strong><div class=meta>NEMO_MAS_CHECKPOINT_MODE</div></div>"
+        + f"<div class=panel><div class=panel-title>Checkpoint mode</div><strong>{_h(run_mode)}</strong><div class=meta>from meta.json</div></div>"
         + "</div>"
         + "</main>"
-        + _render_run_rail(live, totals, progress, signed_count)
+        + _render_run_rail(live, totals, progress, signed_count,
+                           reopened_count, human_gate_count)
         + "</section></div>"
         + _live_script()
         + "</body></html>"
@@ -4837,6 +5047,67 @@ def _render_chat_widget(thread: list[dict]) -> str:
     )
 
 
+def _render_slot_evidence_list(slot: dict, records: list[dict]) -> str:
+    """Group slot-tagged records by required kind, render one row per record
+    with a link to /record/<id>. Falls back to a plain count pill for any
+    kind that has zero matching records.
+    """
+    requires = list(slot.get("requires_evidence") or ())
+    sid = slot["id"]
+    # bucket records by kind, slot-tagged only
+    buckets: dict[str, list[dict]] = {k: [] for k in requires}
+    for rec in records:
+        kind = rec.get("kind")
+        if kind not in buckets:
+            continue
+        tags = rec.get("tags") or []
+        if f"checkpoint:{sid}" not in tags:
+            continue
+        buckets[kind].append(rec)
+    for k in buckets:
+        buckets[k].sort(key=lambda r: r.get("ts", ""), reverse=True)
+
+    if not requires:
+        return "<div class=qp-evidence-empty>no required evidence kinds declared</div>"
+
+    blocks = []
+    for kind in requires:
+        rows = buckets[kind]
+        if not rows:
+            blocks.append(
+                f"<div class=qp-evidence-group>"
+                f"<div class=qp-evidence-kind><code>{_h(kind)}</code>"
+                f" <span class='qp-pill warn'>0</span></div>"
+                f"<div class=qp-evidence-empty>no records with tag "
+                f"<code>checkpoint:{_h(sid)}</code> yet</div>"
+                f"</div>"
+            )
+            continue
+        items = []
+        for r in rows[:8]:
+            rid = r.get("id", "")
+            title = r.get("title") or rid
+            cycle = r.get("cycle_id") or ""
+            author = r.get("author") or ""
+            items.append(
+                f"<a class=qp-evidence-item href='/record/{_h(rid)}'>"
+                f"<span class=qp-evidence-title>{_h(title)}</span>"
+                f"<span class=qp-evidence-meta>{_h(cycle)} · {_h(author)}</span>"
+                f"<code class=qp-evidence-id>{_h(rid)}</code>"
+                f"</a>"
+            )
+        extra = (f"<div class=qp-evidence-extra>+{len(rows) - 8} more</div>"
+                 if len(rows) > 8 else "")
+        blocks.append(
+            f"<div class=qp-evidence-group>"
+            f"<div class=qp-evidence-kind><code>{_h(kind)}</code>"
+            f" <span class='qp-pill ok'>{len(rows)}</span></div>"
+            + "".join(items) + extra +
+            f"</div>"
+        )
+    return "".join(blocks)
+
+
 def _render_current_card(slot: dict | None, run: dict | None,
                          records: list[dict]) -> str:
     """Render the 'Current Quality Plan Card' for the active slot.
@@ -4858,11 +5129,7 @@ def _render_current_card(slot: dict | None, run: dict | None,
         )
 
     state_cls = "pending" if slot["state"].startswith("pending") else slot["state"]
-    pills = []
-    for kind, count in slot["evidence_counts"].items():
-        cls = "ok" if count > 0 else "warn"
-        pills.append(f"<span class='qp-pill {cls}'>{_h(kind)} · {count}</span>")
-    evidence_html = "".join(pills) or "<span class='qp-pill warn'>no required evidence kinds declared</span>"
+    evidence_html = _render_slot_evidence_list(slot, records)
 
     if run:
         metrics_html = (
@@ -4924,6 +5191,109 @@ def _render_current_card(slot: dict | None, run: dict | None,
         "</div>"
         f"{sign_form}"
         "</div>"
+    )
+
+
+def _pretty_body(body: str) -> str:
+    """Render a record body: treat as JSON if it parses, else as plain text.
+    Keeps a fenced-JSON tail intact — they're short, so dump the whole thing.
+    """
+    if not body:
+        return "<em>(empty body)</em>"
+    stripped = body.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+            return f"<pre class=record-body>{_h(json.dumps(parsed, indent=2, ensure_ascii=False))}</pre>"
+        except json.JSONDecodeError:
+            pass
+    return f"<pre class=record-body>{_h(body)}</pre>"
+
+
+def render_record(rec_id: str) -> str:
+    """Human view of a single memory record. Refs + tags become links back
+    into the viewer: refs → /record/<id>, checkpoint tag → /train?slot=<id>.
+    """
+    records = _load_records()
+    rec = _record_by_id(records, rec_id)
+    if rec is None:
+        return (
+            HEADER + "<title>Record not found</title></head><body>"
+            "<div class=focus-page><main class=lb-shell>"
+            f"<h1>Unknown record: <code>{_h(rec_id)}</code></h1>"
+            "<p>This id is not present in the current run's records.jsonl.</p>"
+            "<a class=trace-link href='/train'>Back to Quality Plan</a>"
+            "</main></div></body></html>"
+        )
+
+    refs_html = ""
+    for ref in rec.get("refs") or []:
+        target = _record_by_id(records, ref)
+        label = (target.get("title") or target.get("kind") or ref) if target else ref
+        refs_html += (
+            f"<li><a class=trace-link href='/record/{_h(ref)}'>"
+            f"<code>{_h(ref)}</code> · {_h(label)}</a></li>"
+        )
+    refs_html = refs_html or "<li><em>(no refs)</em></li>"
+
+    tag_html = ""
+    for tag in rec.get("tags") or []:
+        if tag.startswith("checkpoint:"):
+            sid = tag.split(":", 1)[1]
+            tag_html += (
+                f"<a class='qp-pill ok' href='/train?slot={_h(sid)}'>"
+                f"{_h(tag)}</a> "
+            )
+        else:
+            tag_html += f"<span class='qp-pill'>{_h(tag)}</span> "
+    tag_html = tag_html or "<em>(no tags)</em>"
+
+    # Which records cite this one?
+    referenced_by = [
+        r for r in records if rec_id in (r.get("refs") or [])
+    ]
+    ref_by_html = ""
+    for r in referenced_by[:20]:
+        rid = r.get("id", "")
+        ref_by_html += (
+            f"<li><a class=trace-link href='/record/{_h(rid)}'>"
+            f"<code>{_h(rid)}</code> · {_h(r.get('kind') or '')} · "
+            f"{_h(r.get('title') or '')}</a></li>"
+        )
+    ref_by_html = ref_by_html or "<li><em>(not referenced by any record yet)</em></li>"
+
+    cycle = rec.get("cycle_id", "")
+    cycle_link = (f"<a class=trace-link href='/cycle/{_h(cycle)}'>cycle {_h(cycle)}</a>"
+                  if cycle else "—")
+
+    return (
+        HEADER + "<title>Record · " + _h(rec_id) + "</title></head><body>"
+        "<div class=focus-page>"
+        + "<nav class=focus-nav><div class=focus-logo>A-EVOLVE<span>·</span>MAS<span>·</span>TRAIN</div>"
+        + "<div class=focus-links>"
+        + "<a href='/train'>TRAIN</a><a href='/leaderboard'>LEADERBOARD</a>"
+        + f"<a href='/cycle/{_h(_latest_cycle_id() or '0001')}'>TRACE</a>"
+        + f"<a href='{ABOUT_URL}'>ABOUT</a></div></nav>"
+        + "<main class=lb-shell>"
+        + f"<section class=lb-header><div class=lb-title>"
+        + f"<h1>{_h(rec.get('title') or rec_id)}</h1>"
+        + f"<p><code>{_h(rec_id)}</code> · <b>{_h(rec.get('kind') or '')}</b>"
+        + f" · author <code>{_h(rec.get('author') or '')}</code>"
+        + f" · {cycle_link} · {_h(rec.get('ts') or '')}</p>"
+        + "</div></section>"
+        + "<section class=lb-card>"
+        + "<div class=record-grid>"
+        + "<div class=record-pane><h3>Tags</h3>"
+        + f"<div>{tag_html}</div></div>"
+        + "<div class=record-pane><h3>Refs (upstream)</h3>"
+        + f"<ul class=record-links>{refs_html}</ul></div>"
+        + "<div class=record-pane><h3>Referenced by (downstream)</h3>"
+        + f"<ul class=record-links>{ref_by_html}</ul></div>"
+        + "<div class='record-pane full'><h3>Body</h3>"
+        + _pretty_body(rec.get("body") or "")
+        + "</div></div>"
+        + "<a class=trace-link href='/train'>Back to Quality Plan</a>"
+        + "</section></main></div></body></html>"
     )
 
 
@@ -5686,15 +6056,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _dispatch_get(self, path: str) -> bool:
+    def _dispatch_get(self, path: str, query: dict | None = None) -> bool:
         """Route a path (already stripped of any ``/runs/<name>`` prefix and
-        with the active-run ContextVar set). Returns True if handled."""
+        with the active-run ContextVar set). ``query`` is the parsed query
+        string (flat dict, first value wins). Returns True if handled."""
+        query = query or {}
         if path == "/":
-            # Per-run landing page: the Model Forge hero + checkpoint
-            # overview. Cockpit details live under /train.
+            # Per-run landing page: the Model Forge hero + live agent
+            # activity. Cockpit details live under /train.
             self._send_html(render_entry()); return True
         if path == "/train":
-            self._send_html(render_index()); return True
+            self._send_html(render_index(
+                selected_slot_id=query.get("slot") or None
+            )); return True
         if path == "/live-status.json":
             self._send_json(_live_snapshot()); return True
         if path == "/leaderboard":
@@ -5702,6 +6076,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/run/([A-Za-z0-9_-]+)$", path)
         if m:
             self._send_html(render_run_detail(m.group(1))); return True
+        m = re.match(r"^/record/([A-Za-z0-9_.:-]+)$", path)
+        if m:
+            self._send_html(render_record(m.group(1))); return True
         m = re.match(r"^/cycle/(\d+)$", path)
         if m:
             self._send_html(render_cycle(m.group(1))); return True
@@ -5723,6 +6100,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+        qs = {k: (v[0] if v else "") for k, v in parse_qs(parsed.query).items()}
         try:
             # Root ``/`` lands on the *default* run's MODEL FORGE entry —
             # whichever is live, or the most recently-active one otherwise.
@@ -5754,7 +6132,7 @@ class Handler(BaseHTTPRequestHandler):
                 sub = m.group(2) or "/"
                 token = _ACTIVE_RUN.set(run_name)
                 try:
-                    if self._dispatch_get(sub):
+                    if self._dispatch_get(sub, qs):
                         return
                 finally:
                     _ACTIVE_RUN.reset(token)
@@ -5764,7 +6142,7 @@ class Handler(BaseHTTPRequestHandler):
             # Legacy path without a /runs/ prefix — scope to DEFAULT_RUN.
             token = _ACTIVE_RUN.set(DEFAULT_RUN) if DEFAULT_RUN else None
             try:
-                if self._dispatch_get(path):
+                if self._dispatch_get(path, qs):
                     return
             finally:
                 if token is not None:
@@ -5866,8 +6244,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _sign_checkpoint(*, slot_id: str, actor: str, note: str) -> dict:
-    if CHECKPOINT_MODE != CHECKPOINT_MODE_MANUAL:
-        return {"ok": False, "error": f"sign refused: mode={CHECKPOINT_MODE}"}
+    run_mode = _mode_for_active_run()
+    if run_mode != CHECKPOINT_MODE_MANUAL:
+        return {"ok": False, "error": f"sign refused: mode={run_mode}"}
     slots = _slots_for_active_run()
     slot_decl = next((s for s in slots if s["id"] == slot_id), None)
     if slot_decl is None:
@@ -5876,7 +6255,7 @@ def _sign_checkpoint(*, slot_id: str, actor: str, note: str) -> dict:
         actor = f"human:{actor or 'owner'}"
 
     records = _load_records()
-    folded = {s.id: s for s in fold_checkpoints(records, CHECKPOINT_MODE, slots=slots)}
+    folded = {s.id: s for s in fold_checkpoints(records, run_mode, slots=slots)}
     slot = folded.get(slot_id)
     if slot is None:
         return {"ok": False, "error": f"no fold state for {slot_id!r}"}

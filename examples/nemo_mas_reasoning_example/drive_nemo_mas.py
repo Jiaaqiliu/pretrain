@@ -39,6 +39,7 @@ import sys
 import threading
 import time
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Make the repo importable when run as a script.
@@ -536,6 +537,23 @@ def main() -> int:
     print(f"[driver] mode={args.mode} backend={args.backend} "
           f"cycles={args.cycles} workspace={workspace}")
     print(f"[driver] backend tools wired: {len(algo.backend_registry or {})}")
+
+    # Drop a run-level meta file so the viewer (and any other inspector)
+    # can read per-run state without consulting its own process env. The
+    # viewer's CHECKPOINT_MODE was previously a viewer-global that drifted
+    # from the driver's mode — this file fixes that.
+    work_dir.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "checkpoint_mode": os.environ.get("NEMO_MAS_CHECKPOINT_MODE", "manual"),
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "cycles_requested": args.cycles,
+        "mode": args.mode,
+        "backend": args.backend,
+        "workspace": str(workspace),
+    }
+    (work_dir / "meta.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+    )
 
     summary = run_via_evolver(
         workspace=workspace, work_dir=work_dir, cycles=args.cycles,

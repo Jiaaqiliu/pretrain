@@ -98,6 +98,21 @@ def _count_kinds(records: list) -> dict[str, int]:
     return out
 
 
+def cycle_workspace_path(work_dir: Path | str, cycle_id: str) -> Path:
+    """Forked workspace path for ``cycle_id`` under a run's ``work_dir``.
+
+    Producer (``_resolve_cycle_root``) and read-only consumers (trace viewer)
+    share this helper so the path convention lives in one place. Returns
+    ``<work_dir>/cycles/<cycle_id>/.fork_target/nodes/workspace/workspace``.
+    The path may not exist yet (pre-fork) — the caller decides how to
+    handle that.
+    """
+    return (
+        Path(work_dir) / "cycles" / cycle_id
+        / ".fork_target" / "nodes" / "workspace" / "workspace"
+    )
+
+
 def _current_checkpoint_mode() -> str:
     mode = os.environ.get("NEMO_MAS_CHECKPOINT_MODE", CHECKPOINT_MODE_MANUAL)
     return mode if mode in (CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL) else CHECKPOINT_MODE_MANUAL
@@ -492,11 +507,11 @@ class NemoMASAlgorithm:
         if not can_fork:
             return seed_root, seed_root
 
-        cycle_root_parent = Path(work_dir) / "cycles" / cycle_id
         # `fork()` places the copy under `<work_dir>/nodes/<node_id>/workspace`.
-        # Pass a virtual work_dir whose `nodes/` dir points at our cycle
-        # slot so the resulting path is `<work_dir>/cycles/<id>/workspace`.
-        virtual_work_dir = cycle_root_parent / ".fork_target"
+        # Pass a virtual work_dir one level above ``.fork_target`` so the
+        # resulting path matches ``cycle_workspace_path(work_dir, cycle_id)``
+        # — the single path convention shared with read-only consumers.
+        virtual_work_dir = cycle_workspace_path(work_dir, cycle_id).parents[2]
         empty_mutation = WorkspaceMutation(
             mutation_id=f"nemo_mas:cycle-{cycle_id}",
             parent_node_id="seed",
