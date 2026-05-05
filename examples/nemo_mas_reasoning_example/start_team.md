@@ -89,6 +89,40 @@ fresh `cycles/0002/...` dir, and swings the server's active workspace
 pointer. The cross-cycle ledger at `<work_dir>/memory/records.jsonl`
 persists, so breakthroughs and prior records remain visible.
 
+## Browsing the run in a web viewer
+
+The trace viewer at `examples/nemo_mas_reasoning_example/trace_viewer.py`
+works against an Agent Teams run with one caveat — the per-agent
+conversation view is empty (those JSONL files only exist under the
+Bedrock headless runtime). Everything derived from the shared ledger
+works unchanged:
+
+- Quality Plan cockpit + Sign buttons (reads `records.jsonl`)
+- Leaderboard (derived from `cv_result` / `eval_report`)
+- Record detail pages
+- Chat / directive thread
+- Run listing + live-status
+
+In a separate terminal while the team is running:
+
+```bash
+export RUNS_ROOT=$(dirname $NEMO_MAS_WORK_DIR)   # or pass --runs-root
+/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python \
+    examples/nemo_mas_reasoning_example/trace_viewer.py \
+    --port 7890 --runs-root "$RUNS_ROOT"
+```
+
+Open http://localhost:7890, pick your run, and the cockpit shows slot
+states in real time. Clicking **Sign** on a `pending_human` slot
+triggers the same `POST /checkpoint/<id>/sign` endpoint the viewer
+always used — it appends a `checkpoint_event` to `records.jsonl` and
+the fold transitions the slot to `signed` on the next refresh.
+
+If you'd rather sign from the Claude Code session, tell the lead
+`sign cp_<id> with refs=[...]` and it will call
+`mcp__nemo_mas__checkpoint_sign` with `role="human"` — functionally
+identical to clicking the button.
+
 ## Stopping cleanly
 
 Ask the lead:

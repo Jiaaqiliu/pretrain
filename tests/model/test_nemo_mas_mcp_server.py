@@ -89,6 +89,15 @@ def test_start_iteration_forks_workspace(teams_env):
     # Memory lives OUTSIDE the fork so state accumulates across cycles.
     assert not os.environ["NEMO_MAS_MEMORY_PATH"].startswith(str(fork_path))
 
+    # Trace-viewer compatibility: work_dir must look like a valid run to
+    # the viewer's ``_is_run_dir`` check, and meta.json must carry
+    # checkpoint_mode so ``_mode_for_active_run`` renders the right UI.
+    assert (wd / "trace" / "cycle_0001").is_dir()
+    meta = json.loads((wd / "meta.json").read_text())
+    assert meta["checkpoint_mode"] == "manual"
+    assert meta["runtime"] == "agent_teams"
+    assert meta["current_cycle"] == "0001"
+
 
 def test_start_iteration_twice_rebinds(teams_env):
     """Two successive iterations create distinct fork dirs."""
@@ -140,3 +149,31 @@ def test_mem_write_lands_in_fork_ledger(teams_env):
     assert row["kind"] == "dataset_snapshot"
     assert row["cycle_id"] == "0001"
     assert row["author"] == "data_worker"
+
+
+def test_trace_viewer_recognizes_run_dir(teams_env):
+    """trace_viewer's ``_is_run_dir`` accepts an Agent-Teams work_dir.
+
+    Viewer treats any dir with a ``trace/`` subdir as a run — without
+    it the run never appears in the runs index. ``start_iteration``
+    must scaffold that subdir even though Agent Teams produces no
+    per-agent trace files.
+    """
+    mcp = teams_env["mcp_server"]
+    wd = teams_env["work_dir"]
+
+    _call(mcp.start_iteration)
+
+    # Import the actual predicate the viewer uses so we test the
+    # contract, not our understanding of it.
+    import importlib.util
+    viewer_path = (Path(__file__).resolve().parents[2]
+                   / "examples" / "nemo_mas_reasoning_example"
+                   / "trace_viewer.py")
+    spec = importlib.util.spec_from_file_location("trace_viewer", viewer_path)
+    viewer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(viewer)
+
+    assert viewer._is_run_dir(wd), (
+        f"trace_viewer rejected work_dir={wd}; trace/ subdir missing?"
+    )

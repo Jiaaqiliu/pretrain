@@ -486,7 +486,34 @@ def start_iteration() -> str:
     meta["current_cycle"] = cycle_id
     meta["cycles_completed"] = next_cycle
     meta.setdefault("seed_workspace", str(seed))
+    # Stamp the checkpoint mode so the trace viewer picks it up per-run
+    # instead of falling back to the viewer-process default (viewer reads
+    # <run>/meta.json::checkpoint_mode in ``_mode_for_active_run``).
+    meta["checkpoint_mode"] = current_checkpoint_mode()
+    meta.setdefault("runtime", "agent_teams")
     mpath.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+    # Create the empty ``trace/cycle_<NNNN>/`` directory so the trace
+    # viewer classifies this work_dir as a valid run (``_is_run_dir``
+    # checks for ``trace/``). The Agent Teams runtime doesn't emit
+    # per-agent JSONL traces — those came from the monkey-patched
+    # BedrockAgent wrapper in the headless driver, which has no analog
+    # here because LLM turns happen inside Claude Code. Leave a README
+    # in the cycle dir so a curious human isn't confused by the empty
+    # folder.
+    trace_cycle_dir = wd / "trace" / f"cycle_{cycle_id}"
+    trace_cycle_dir.mkdir(parents=True, exist_ok=True)
+    readme = trace_cycle_dir / "README.md"
+    if not readme.is_file():
+        readme.write_text(
+            "This run uses the Agent Teams runtime; per-agent JSONL "
+            "traces are not produced. The trace viewer's Quality Plan "
+            "cockpit, leaderboard, chat thread, and record detail pages "
+            "still work — they all derive from "
+            "``<work_dir>/memory/records.jsonl``. Only the per-cycle "
+            "agent conversation view is empty.\n",
+            encoding="utf-8",
+        )
 
     # Fork via TrainingWorkspace. Matches the path convention used by
     # the headless runtime (orchestrator.cycle_workspace_path).
