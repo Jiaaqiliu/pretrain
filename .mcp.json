@@ -3,7 +3,7 @@
     "nemo_mas": {
       "type": "stdio",
       "command": "/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python",
-      "args": ["-m", "agent_evolve.model.algorithms.nemo_mas.mcp_server"]
+      "args": ["-m", "agent_evolve.model.algorithms.nemo_mas.agent_teams.server"]
     }
   }
 }

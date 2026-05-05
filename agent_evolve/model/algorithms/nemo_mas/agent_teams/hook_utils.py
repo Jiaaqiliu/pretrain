@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .checkpoints import (
+from ..checkpoints import (
     CHECKPOINT_MODE_AUTO,
     CHECKPOINT_MODE_MANUAL,
     FoldedSlot,

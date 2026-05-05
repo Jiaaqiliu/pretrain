@@ -35,7 +35,7 @@ _DEFAULT_MAX = 1
 
 def main() -> int:
     try:
-        from agent_evolve.model.algorithms.nemo_mas.hook_utils import (
+        from agent_evolve.model.algorithms.nemo_mas.agent_teams import (
             count_records_of_kind,
             read_meta,
         )

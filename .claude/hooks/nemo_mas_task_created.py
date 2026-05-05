@@ -36,7 +36,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 def main() -> int:
     try:
-        from agent_evolve.model.algorithms.nemo_mas.hook_utils import (
+        from agent_evolve.model.algorithms.nemo_mas.agent_teams import (
             current_checkpoint_mode,
             first_blocker_or_none,
             format_blocker_message,

@@ -57,7 +57,7 @@ def teams_env(tmp_path, monkeypatch):
 
     # Import AFTER env is set so module-level lambdas pick up the right
     # paths. Clear any cached state from prior tests.
-    from agent_evolve.model.algorithms.nemo_mas import mcp_server
+    from agent_evolve.model.algorithms.nemo_mas.agent_teams import server as mcp_server
     mcp_server._State.invalidate()
 
     return {

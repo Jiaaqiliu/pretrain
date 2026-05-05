@@ -36,29 +36,29 @@ from typing import Any, Callable
 
 from mcp.server.fastmcp import FastMCP
 
-from .backends import local_handlers
-from .checkpoints import (
+from ..backends import local_handlers
+from ..checkpoints import (
     FoldedSlot,
     fold_checkpoints,
     load_slot_decls,
 )
+from ..memory import RecipeMemory
+from ..schema import RecordValidationError
 from .hook_utils import (
     current_checkpoint_mode,
     current_memory_path,
     current_work_dir,
     current_workspace_root,
 )
-from .mcp_role_guard import (
+from .role_guard import (
     ROLE_HUMAN,
     ROLE_ORCHESTRATOR_AUTO,
     RoleGuardError,
     check_worker_role,
     resolve_signer_role,
 )
-from .memory import RecipeMemory
-from .schema import RecordValidationError
 
-logger = logging.getLogger("nemo_mas.mcp_server")
+logger = logging.getLogger("nemo_mas.agent_teams.server")
 
 
 # ── Per-process state ───────────────────────────────────────────────
@@ -279,7 +279,7 @@ def checkpoint_review_suggest(
     ``verdict`` ∈ ``{evidence_attached, ready_to_sign, insufficient, reject}``.
     ``refs`` must cite at least one evidence record being judged.
     """
-    from .checkpoints import VALID_VERDICTS
+    from ..checkpoints import VALID_VERDICTS
     _, _, slots = _fold_now()
     slot_ids = {s["id"] for s in slots}
     if slot_id not in slot_ids:
@@ -350,7 +350,7 @@ def checkpoint_sign(
 
     # Manual mode: only ``human`` can sign. Auto mode: human, reviewer,
     # and orchestrator_auto can all sign.
-    from .checkpoints import CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL
+    from ..checkpoints import CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL
     if mode == CHECKPOINT_MODE_MANUAL and role != ROLE_HUMAN:
         return _err(
             f"mode={mode!r}: only role='human' may sign in manual mode; "

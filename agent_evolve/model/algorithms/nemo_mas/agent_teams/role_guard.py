@@ -25,7 +25,7 @@ metadata once Claude Code surfaces it.
 
 from __future__ import annotations
 
-from .schema import KIND_WHITELIST
+from ..schema import KIND_WHITELIST
 
 
 # Roles a teammate is allowed to declare on MCP calls. Orchestrator is

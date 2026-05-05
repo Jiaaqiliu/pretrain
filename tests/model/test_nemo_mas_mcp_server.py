@@ -45,7 +45,7 @@ def teams_env(tmp_path, monkeypatch):
     monkeypatch.delenv("NEMO_MAS_WORKSPACE_ROOT", raising=False)
     monkeypatch.delenv("NEMO_MAS_MEMORY_PATH", raising=False)
 
-    from agent_evolve.model.algorithms.nemo_mas import mcp_server
+    from agent_evolve.model.algorithms.nemo_mas.agent_teams import server as mcp_server
     mcp_server._State.invalidate()
     return {"seed": seed, "work_dir": work_dir, "mcp_server": mcp_server}
 
