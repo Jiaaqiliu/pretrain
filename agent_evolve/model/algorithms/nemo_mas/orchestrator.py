@@ -262,6 +262,12 @@ class NemoMASAlgorithm:
         self._last_orchestrator_response: str = ""
         self._last_cycle_outcome: str = "null"
 
+        # Active cycle's forked workspace root. Set inside ``run_cycle``
+        # and read by backend tool registries (``local_handlers``,
+        # ``BackendBridge``) so their file writes land under the fork
+        # instead of the seed. ``None`` when no cycle is in flight.
+        self.current_workspace_root: Path | None = None
+
     # ── Loop entry point ───────────────────────────────────────
 
     def run_cycle(self, ctx: Any) -> MCGSCycleReport:
@@ -283,12 +289,17 @@ class NemoMASAlgorithm:
         os.environ["NEMO_MAS_COMMON_MODEL"] = str(
             seed_root.parent / "_common_model" / "tools"
         )
+        # Publish the cycle root so backend tool registries built with a
+        # resolver callable write under the fork instead of the seed.
+        prior_ws_root = self.current_workspace_root
+        self.current_workspace_root = cycle_root
         try:
             return self._run_cycle_body(
                 ctx=ctx, cycle_id=cycle_id, t0=t0,
                 seed_root=seed_root, cycle_root=cycle_root,
             )
         finally:
+            self.current_workspace_root = prior_ws_root
             if prior_common is None:
                 os.environ.pop("NEMO_MAS_COMMON_MODEL", None)
             else:

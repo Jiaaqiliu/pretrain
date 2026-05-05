@@ -298,7 +298,19 @@ def build_algorithm(*, mode: str, workspace_root: Path, backend_kind: str = "loc
         BackendBridge, demo_compute_handlers, local_handlers,
     )
 
-    registry: dict = {**local_handlers(workspace_root)}
+    # Tool registries must follow the cycle's forked workspace, not the
+    # seed — otherwise ``write_jsonl``, ``mix_sources``, ``pack_submission``
+    # etc. mutate ``seed_workspaces/`` in-place. The algo stamps
+    # ``current_workspace_root`` on each cycle; the resolver reads it and
+    # falls back to the seed for any call outside a cycle.
+    algo_ref: dict = {}
+
+    def resolve_ws() -> Path:
+        a = algo_ref.get("algo")
+        root = getattr(a, "current_workspace_root", None) if a else None
+        return root if root is not None else workspace_root
+
+    registry: dict = {**local_handlers(resolve_ws)}
 
     if mode == "dry-run":
         # No real compute; demo handlers + local file ops are enough to
@@ -343,13 +355,15 @@ def build_algorithm(*, mode: str, workspace_root: Path, backend_kind: str = "loc
             )
 
         benchmark = NemoReasonerBenchmark()
-        bridge = BackendBridge(workspace_root=workspace_root,
+        bridge = BackendBridge(workspace_root=resolve_ws,
                                benchmark=benchmark, backend=backend)
         registry.update(bridge.as_registry())
     else:
         raise ValueError(f"unknown mode: {mode}")
 
-    return NemoMASAlgorithm(backend_registry=registry)
+    algo = NemoMASAlgorithm(backend_registry=registry)
+    algo_ref["algo"] = algo
+    return algo
 
 
 def run_via_evolver(*, workspace: Path, work_dir: Path, cycles: int,

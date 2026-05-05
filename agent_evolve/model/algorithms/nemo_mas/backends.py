@@ -123,18 +123,31 @@ def _percentile(data: list[float], q: float) -> float:
 # ── Tier 1: Local handlers ─────────────────────────────────────────
 
 
-def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
+def local_handlers(
+    workspace_root: Path | str | Callable[[], Path | str],
+) -> dict[str, Callable[..., str]]:
     """Build the full local-tool handler dict for a given workspace root.
+
+    ``workspace_root`` may be a fixed path or a zero-arg callable that
+    returns the current cycle's forked workspace path. Callable form lets
+    ``NemoMASAlgorithm`` redirect writes into ``work_dir/cycles/<NNNN>/
+    .fork_target/nodes/workspace/workspace`` each cycle without rebuilding
+    the registry — otherwise the seed workspace gets mutated in-place.
 
     All returned handlers accept keyword args matching the tool spec in
     ``tools.py::_BACKEND_TOOL_CATALOGUE`` and return JSON-serialized
     strings (per the BedrockAgent tool contract).
     """
-    ws = Path(workspace_root)
+    if callable(workspace_root):
+        _resolve_ws = lambda: Path(workspace_root())  # noqa: E731
+    else:
+        _fixed_ws = Path(workspace_root)
+        _resolve_ws = lambda: _fixed_ws  # noqa: E731
 
     # ── Analyst: data inspection ────────────────────────────────
 
     def sample_jsonl(*, path: str, n: int = 50, seed: int = 0) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, path)
         if not full or not full.exists():
             return _err(f"path not found or escaped sandbox: {path}")
@@ -166,6 +179,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
         return _ok(rows=sample, n=len(sample), total=len(rows), summary=summary)
 
     def count_by_field(*, path: str, field: str) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, path)
         if not full or not full.exists():
             return _err(f"path not found: {path}")
@@ -181,6 +195,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
 
     def length_distribution(*, path: str, field: str,
                             tokenizer: str = "approx") -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, path)
         if not full or not full.exists():
             return _err(f"path not found: {path}")
@@ -258,6 +273,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
 
     def minhash_dedup(*, input_path: str, key_field: str,
                       threshold: float = 0.85) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, input_path)
         if not full or not full.exists():
             return _err(f"path not found: {input_path}")
@@ -288,6 +304,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
                         "threshold arg recorded but not used.")
 
     def apply_format_filter(*, input_path: str) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, input_path)
         if not full or not full.exists():
             return _err(f"path not found: {input_path}")
@@ -316,6 +333,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
                    total=len(rows), kept=len(kept), drops=dict(drops))
 
     def format_validate(*, path: str) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, path)
         if not full or not full.exists():
             return _err(f"path not found: {path}")
@@ -345,6 +363,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
 
     def mix_sources(*, sources: list[str], weights: list[float],
                     curriculum_yaml: str | None = None) -> str:
+        ws = _resolve_ws()
         if len(sources) != len(weights):
             return _err("sources and weights length mismatch")
         all_rows: list[dict] = []
@@ -372,6 +391,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
                    curriculum_yaml=curriculum_yaml)
 
     def write_jsonl(*, path: str, rows: list[dict]) -> str:
+        ws = _resolve_ws()
         full = _safe_path(ws, path)
         if not full:
             return _err(f"path escaped sandbox: {path}")
@@ -384,6 +404,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
     # ── Theorist helpers ────────────────────────────────────────
 
     def diff_yaml(*, a: str, b: str) -> str:
+        ws = _resolve_ws()
         # Treat a, b as either inline YAML or paths.
         def _resolve(s: str) -> str:
             p = _safe_path(ws, s)
@@ -413,6 +434,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
     # and metrics produced by those platform runners.
 
     def read_training_log(*, job_id: str) -> str:
+        ws = _resolve_ws()
         log = ws / "logs" / f"{job_id}.log"
         if not log.exists():
             return _err(f"no log at {log}")
@@ -420,6 +442,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
         return _ok(job_id=job_id, log_tail="\n".join(text.splitlines()[-200:]))
 
     def read_checkpoint_metric(*, ckpt_path: str) -> str:
+        ws = _resolve_ws()
         ckpt = _safe_path(ws, ckpt_path) or Path(ckpt_path)
         candidate = ckpt / "metric.json" if ckpt.is_dir() else ckpt.parent / "metric.json"
         if not candidate.exists():
@@ -455,6 +478,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
 
     def pack_submission(*, ckpt_path: str, out_zip: str) -> str:
         import zipfile
+        ws = _resolve_ws()
         src = _safe_path(ws, ckpt_path) or Path(ckpt_path)
         if not src.is_dir():
             return _err(f"ckpt_path is not a directory: {src}")
@@ -561,6 +585,7 @@ def local_handlers(workspace_root: Path | str) -> dict[str, Callable[..., str]]:
                 "ready_to_sign without submitting; the human can push via "
                 "the CLI manually."
             )
+        ws = _resolve_ws()
         zp = Path(zip_path)
         if not zp.is_absolute():
             zp = ws / zp
@@ -699,21 +724,35 @@ class BackendBridge:
     def __init__(
         self,
         *,
-        workspace_root: Path | str,
+        workspace_root: Path | str | Callable[[], Path | str],
         benchmark: Any,
         backend: Any,
     ) -> None:
-        self.workspace_root = Path(workspace_root)
+        # Accept a callable so the bridge follows the current cycle's
+        # forked workspace rather than pinning to the seed. See
+        # ``local_handlers`` for the same shape.
+        if callable(workspace_root):
+            self._resolve_ws_root = lambda: Path(workspace_root())
+        else:
+            fixed = Path(workspace_root)
+            self._resolve_ws_root = lambda: fixed
+        self.benchmark = benchmark
+        self.backend = backend
+        self._infer_handles: dict[str, Any] = {}
+
+    @property
+    def workspace_root(self) -> Path:
+        return self._resolve_ws_root()
+
+    @property
+    def workspace(self):
         # The platform backend expects a ``TrainingWorkspace`` object with a
         # ``.root`` attribute, not a raw ``Path``. Passing a ``Path`` makes
         # ``workspace.root`` resolve to ``"/"`` (the filesystem root), which
         # then fails as "pipeline missing: /train/pipeline.yaml" before any
-        # stage runs. Load the wrapper once and reuse it for every call.
+        # stage runs. Re-wrap each access so per-cycle forks work.
         from agent_evolve.model.workspace import TrainingWorkspace
-        self.workspace = TrainingWorkspace(self.workspace_root)
-        self.benchmark = benchmark
-        self.backend = backend
-        self._infer_handles: dict[str, Any] = {}
+        return TrainingWorkspace(self._resolve_ws_root())
 
     def as_registry(self) -> dict[str, Callable[..., str]]:
         return {
