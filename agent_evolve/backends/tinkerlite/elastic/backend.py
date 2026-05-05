@@ -18,7 +18,6 @@ scheduler's non-blocking API promoted to the backend surface.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -34,6 +33,97 @@ from .targets.k8s import K8sComputeTarget
 from .targets.local import LocalComputeTarget
 
 logger = logging.getLogger(__name__)
+
+
+def _preempt_local_gpus() -> None:
+    """SIGKILL any CURRENT-USER python process currently attached to the
+    host's GPUs. Called before every local eval so lingering vLLM
+    servers / abandoned training clients don't OOM the fresh run.
+
+    Idempotent + safe:
+      - Filters to current uid via ``os.getuid()`` — never touches other
+        users' processes.
+      - Skips this process itself (``os.getpid()``) and its ancestors
+        so the driver doesn't self-kill.
+      - Uses ``nvidia-smi --query-compute-apps`` which reports only
+        processes with GPU context attached (not every python proc).
+      - All steps are best-effort; failure to preempt is logged and the
+        eval continues. It will fail loudly on OOM if a leaker slipped
+        through, which is better than silently blocking on a lock.
+    """
+    import subprocess
+    import signal
+
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,process_name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        logger.info("[preempt] nvidia-smi unavailable (%s); skipping GPU preempt", exc)
+        return
+
+    if result.returncode != 0:
+        logger.info("[preempt] nvidia-smi rc=%d; skipping", result.returncode)
+        return
+
+    my_pid = os.getpid()
+    try:
+        # Full ancestry: we don't want to kill our parent shell / pytest / driver.
+        ancestors = {my_pid}
+        pid = my_pid
+        while pid > 1:
+            try:
+                with open(f"/proc/{pid}/stat") as f:
+                    pid = int(f.read().split()[3])
+                ancestors.add(pid)
+            except (FileNotFoundError, ValueError, IndexError):
+                break
+    except Exception:  # noqa: BLE001
+        ancestors = {my_pid}
+
+    my_uid = os.getuid()
+    killed = []
+    for line in result.stdout.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 1:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        if pid in ancestors:
+            continue
+        # Only this user's processes.
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != my_uid:
+                continue
+        except (FileNotFoundError, PermissionError):
+            continue
+        pname = parts[1] if len(parts) > 1 else "?"
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append((pid, pname))
+        except (ProcessLookupError, PermissionError) as exc:
+            logger.info("[preempt] SIGTERM pid=%d failed: %s", pid, exc)
+
+    if not killed:
+        return
+
+    logger.info("[preempt] SIGTERM'd %d GPU procs: %s", len(killed), killed)
+    # Give them 5s to exit cleanly, then SIGKILL survivors.
+    import time
+    time.sleep(5)
+    for pid, pname in killed:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+            logger.info("[preempt] SIGKILL pid=%d (%s)", pid, pname)
+        except ProcessLookupError:
+            pass
 
 
 class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
@@ -187,86 +277,24 @@ class K8sTinkerLiteBackend(SingleNodeTinkerLiteBackend):
     # ── Eval (cloudified) ───────────────────────────────────────────
 
     def run_eval_plan(self, plan: EvalPlan) -> Path:
-        """Dispatch the eval through the elastic scheduler.
+        """Run the eval LOCALLY on the driver host.
 
-        Writes a cfg JSON to the plan's output dir on FSx, then submits a
-        pod that runs ``agent_evolve.model.runners.eval_worker`` against
-        that cfg. Returns the plan's output_dir so the caller's parse
-        path keeps working unchanged.
+        The k8s path dispatched eval to a pod for historical reasons
+        (the cluster has 8×H200s and we were spreading load), but every
+        GPU-accelerated path on these k8s nodes currently fails: the
+        cluster driver is 570.148.08 while torch 2.10 ships triton 3.6
+        which emits CUDA-13-era PTX. Driver 570 rejects the kernel image
+        for every triton JIT it sees (vLLM, torch.compile, mamba-ssm).
+        The driver host runs driver 580.126 and the same kernels load
+        fine there, so we route eval back to ``super().run_eval_plan``.
 
-        Why a separate file from the DDP cfg: the eval pod's worker
-        takes a different payload shape (``plan`` + ``workspace_root`` +
-        ``benchmark_name`` + ``out_result_path``), and reusing the same
-        key names as the DDP cfg would be a footgun.
+        Before launching, we preempt any process holding the local GPUs
+        (lingering vLLM from the previous cycle, abandoned training
+        clients) so eval doesn't OOM against leaked state. Training
+        still goes through k8s because DDP doesn't trigger triton JIT.
         """
-        if self.mock:
-            # Preserve the local smoke path for tests — no pod needed.
-            return super().run_eval_plan(plan)
-
-        ws_root = Path(
-            getattr(self._current_workspace, "root", None)
-            or Path(plan.output_dir).resolve().parents[3]
-        ).resolve()
-
-        # cfg + sentinel both under the plan's output dir so a failed
-        # pod doesn't pollute unrelated paths.
-        output_dir = Path(plan.output_dir).resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        cfg_path = output_dir / ".eval_config.json"
-        result_path = output_dir / ".eval_result.json"
-
-        benchmark_name = (
-            plan.benchmark_name
-            or getattr(self._current_benchmark, "name", "nemo_reasoner")
-        )
-
-        cfg = {
-            "plan": {
-                "benchmark_name": plan.benchmark_name,
-                "split": plan.split,
-                "checkpoint": {
-                    "name": plan.checkpoint.name,
-                    "path": plan.checkpoint.path,
-                    "kind": plan.checkpoint.kind,
-                    "metadata": plan.checkpoint.metadata,
-                },
-                "config_path": plan.config_path,
-                "output_dir": plan.output_dir,
-                "generation_config": plan.generation_config,
-                "metadata": plan.metadata,
-            },
-            "workspace_root": str(ws_root),
-            "benchmark_name": benchmark_name,
-            "split": plan.split,
-            "out_result_path": str(result_path),
-        }
-        cfg_path.write_text(json.dumps(cfg, indent=2))
-
-        # Eval stage world_size = TP size for the pod's vLLM instance.
-        # Override per-run via AE_K8S_EVAL_GPUS.
-        world_size = int(os.environ.get(
-            "AE_K8S_EVAL_GPUS", str(self.eval_world_size),
-        ))
-        log_dir = Path(ws_root) / "logs" / "k8s_stages"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        stage_label = f"eval-{plan.checkpoint.name}".replace("_", "-")[:40]
-        logger.info(
-            "[elastic] dispatching eval via k8s (ckpt=%s split=%s world=%d)",
-            plan.checkpoint.name, plan.split, world_size,
-        )
-        self.scheduler.run_stage(
-            cfg_path=cfg_path,
-            world_size=world_size,
-            log_dir=log_dir,
-            stage_label=stage_label,
-            mode="eval",
-        )
-
-        # The scheduler read ``out_result_path`` from the cfg and confirmed
-        # the pod exited 0; the pod wrote metrics.json + predictions.jsonl
-        # under output_dir directly. Caller parses from there.
-        return output_dir
+        _preempt_local_gpus()
+        return super().run_eval_plan(plan)
 
     # ── Non-Protocol extras: parallel fan-out ───────────────────────
 

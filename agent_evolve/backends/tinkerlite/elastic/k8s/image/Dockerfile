@@ -39,13 +39,52 @@ RUN pip install --no-cache-dir --upgrade pip \
       "pyyaml>=6.0" \
       "numpy<3.0"
 
-# Nemotron-H's modeling_nemotron_h.py unconditionally imports
-# `from mamba_ssm.ops.triton.layernorm_gated import rmsnorm_fn` and raises
-# ImportError otherwise. The real mamba-ssm wheel needs CUDA-specific
-# build flags. The host venv ships a tiny pure-PyTorch shim that covers
-# the one symbol the model actually uses — we bake the same shim into
-# the image so k8s pods load the model the same way.
-COPY mamba_ssm_shim/ /usr/local/lib/python3.12/dist-packages/mamba_ssm/
+# Nemotron-H's modeling_nemotron_h.py relies on mamba_ssm's triton fast
+# paths (selective_state_update, causal_conv1d_fn) for any reasonable
+# generation speed. Without them, HF transformers silently falls back to
+# a pure-Python state-space loop that runs ~100× slower. vLLM-on-this-
+# cluster is not an option (triton kernel load fails under driver 570),
+# so eval goes through HF and NEEDS these packages to be real.
+#
+# NGC 25.09 ships cuda-toolkit 13.0 but we pip-installed torch==2.10.0
+# built for cu128. mamba-ssm's setup.py refuses to build with mismatched
+# toolkits, so we install cuda-toolkit-12-8 side-by-side and point CUDA_HOME
+# at it for the duration of this RUN. Both packages must build against
+# the torch installed above (2.10.0) — `--no-build-isolation` keeps pip
+# from pulling a fresh torch during compile.
+# Use the AWS region-local Ubuntu mirror so apt transfers don't timeout
+# against the Canonical-global mirror. Region is hardcoded to ap-southeast-3
+# (the cluster's region). APT::Acquire::Retries handles transient flakes.
+RUN printf 'APT::Acquire::Retries "5";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' \
+      > /etc/apt/apt.conf.d/99-retries \
+ && sed -i 's|http://archive.ubuntu.com/ubuntu|http://ap-southeast-3.ec2.archive.ubuntu.com/ubuntu|g; s|http://security.ubuntu.com/ubuntu|http://ap-southeast-3.ec2.archive.ubuntu.com/ubuntu|g' \
+      /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends wget gnupg ca-certificates \
+ && wget -qO /tmp/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+ && dpkg -i /tmp/cuda-keyring.deb \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      cuda-nvcc-12-8 \
+      cuda-cudart-dev-12-8 \
+      cuda-nvrtc-dev-12-8 \
+ && rm -rf /var/lib/apt/lists/* /tmp/cuda-keyring.deb
+
+# Install from git — the PyPI sdist for causal-conv1d <1.6 omits csrc/,
+# which ninja needs to find the .cpp source file. Tagged v1.5.0.post8 has
+# the full tree. Also need git for pip to clone; apt gets it.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV CUDA_HOME_MAMBA=/usr/local/cuda-12.8
+RUN PATH="${CUDA_HOME_MAMBA}/bin:${PATH}" \
+    CUDA_HOME="${CUDA_HOME_MAMBA}" \
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    MAMBA_FORCE_BUILD=TRUE \
+    CAUSAL_CONV1D_FORCE_BUILD=TRUE \
+    pip install --no-cache-dir --no-build-isolation \
+      "causal-conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@v1.5.0.post8" \
+      "mamba-ssm @ git+https://github.com/state-spaces/mamba.git@v2.2.5"
 
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \

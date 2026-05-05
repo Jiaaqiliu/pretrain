@@ -81,6 +81,20 @@ def build_job_manifest(
             "VLLM_USE_FLASHINFER_MOE_FP8": "0",
             "VLLM_USE_FLASHINFER_MOE_FP4": "0",
             "VLLM_ALLREDUCE_USE_FLASHINFER": "0",
+            # On EKS nodes with driver 570 + torch 2.10, Inductor's pre-cached
+            # static CUDA kernels fail to load with "device kernel image is
+            # invalid" during vLLM profile_run. Disable the FX graph + static
+            # launcher caches so triton JITs kernels fresh against THIS
+            # node's driver/device. Cache dir gets a unique per-pod path
+            # (the `$HOSTNAME` is k8s pod name) so we never pick up stale bits.
+            "TORCHINDUCTOR_FX_GRAPH_CACHE": "0",
+            "TORCHINDUCTOR_AUTOGRAD_CACHE": "0",
+            "TORCHINDUCTOR_CACHE_DIR": f"/tmp/torchinductor-{job_name}",
+            "TRITON_CACHE_DIR": f"/tmp/triton-{job_name}",
+            "VLLM_CACHE_ROOT": f"/tmp/vllm-cache-{job_name}",
+            # Also kill the prebuilt static cuda launcher path that hosts
+            # the exact "load_kernel" line crashing today.
+            "TORCHINDUCTOR_USE_STATIC_CUDA_LAUNCHER": "0",
         })
     if extra_env:
         env.update(extra_env)

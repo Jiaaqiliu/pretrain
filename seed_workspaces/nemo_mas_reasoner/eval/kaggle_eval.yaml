@@ -13,15 +13,18 @@ top_p: 1.0
 max_tokens: 7680
 max_model_len: 8192
 max_lora_rank: 32
+# vLLM on the driver host. Driver host runs 580.126 which handles
+# triton 3.6's emitted kernels fine (unlike k8s nodes on driver 570).
+# Training still goes to k8s (DDP doesn't use triton JIT); eval routes
+# back to the local host via K8sTinkerLiteBackend.run_eval_plan.
+engine: vllm
 # TP=8 splits the 30B model across all 8 H200s. Rollout throughput scales
 # near-linearly with TP for decode-bound workloads (our 2560-token gens).
-# Cycle-2 observed rollout at TP=1 took 23 min; TP=8 should land ~4-6 min.
 tensor_parallel_size: 8
 # With TP=8 each GPU holds a ~7.5 GiB model shard, leaving ~130 GiB per GPU
-# for KV cache. 0.85 is still fine — plenty of room.
+# for KV cache. 0.85 is plenty.
 gpu_memory_utilization: 0.85
-# 512 (up from 256) — TP=8 more than doubles effective KV cache, so we can
-# keep more in-flight requests concurrently.
+# Per-TP cap. Total concurrency ~= max_num_seqs.
 max_num_seqs: 512
 seed: 0
 
