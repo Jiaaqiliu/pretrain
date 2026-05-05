@@ -58,9 +58,17 @@ inspect_evals/
 !/tests/gepa/
 !/tests/training/
 !/tests/backends/
+!/tests/model/
+/tests/model/*
+!/tests/model/__init__.py
+!/tests/model/conftest.py
+!/tests/model/test_nemo_mas_cycle_outcome.py
+!/tests/model/test_nemo_mas_signoff_agentteams.py
+!/tests/model/test_nemo_mas_mcp_server.py
 
 # Root-level artifacts
 /*.json
+!/.mcp.json
 /*.diff
 
 *.pyc
@@ -72,7 +80,21 @@ swe_results*/
 /runs/
 /training_evolution_workdir/
 .crowdresearch/
-.claude/
+# .claude/ is largely gitignored, but a few files are load-bearing for
+# the nemo_mas Agent Teams integration and must be checked in.
+/.claude/*
+!/.claude/agents/
+/.claude/agents/*
+!/.claude/agents/nemo_mas_orchestrator.md
+!/.claude/agents/nemo_mas_planner.md
+!/.claude/agents/nemo_mas_data_worker.md
+!/.claude/agents/nemo_mas_trainer.md
+!/.claude/agents/nemo_mas_reviewer.md
+!/.claude/hooks/
+/.claude/hooks/*
+!/.claude/hooks/nemo_mas_task_created.py
+!/.claude/hooks/nemo_mas_kaggle_budget.py
+!/.claude/settings.json
 
 # Local legacy compatibility package
 agent_evolve/algorithms/aevolve/

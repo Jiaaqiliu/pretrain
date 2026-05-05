@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nemo_mas": {
+      "type": "stdio",
+      "command": "/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python",
+      "args": ["-m", "agent_evolve.model.algorithms.nemo_mas.mcp_server"]
+    }
+  }
+}

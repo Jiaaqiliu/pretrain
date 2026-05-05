@@ -1,0 +1,47 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git restore *)",
+      "Bash(git clean *)",
+      "Bash(git checkout *)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -20 {}')",
+      "Bash(git clone *)",
+      "Read(//fsx/zzsamshi/nemotron-auto-research/**)",
+      "Bash(awk '{print $NF}')",
+      "Bash(/fsx/bnghe/miniconda3/bin/python -c \"import agent_evolve, yaml; print\\('ok'\\)\")",
+      "Bash(/fsx/bnghe/miniconda3/bin/pytest tests/agents/trainers tests/benchmarks/test_nemotron_reasoning.py tests/algorithms/training_evolve tests/integration/test_nemotron_smoke.py -x -q)",
+      "Bash(/fsx/bnghe/miniconda3/bin/pytest tests/integration/test_nemotron_smoke.py -x -q)",
+      "Bash(/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_task_created.py)",
+      "Bash(/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_kaggle_budget.py)"
+    ],
+    "additionalDirectories": [
+      "/fsx/zzsamshi/a-evolve/.claude"
+    ]
+  },
+  "hooks": {
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_task_created.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__nemo_mas__kaggle_submit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_kaggle_budget.py"
+          }
+        ]
+      }
+    ]
+  }
+}
