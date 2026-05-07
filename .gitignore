@@ -52,6 +52,7 @@ inspect_evals/
 /docs/*
 !/docs/skillbench-setup.md
 !/docs/algorithms/
+!/docs/agent_team_structure.md
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py
