@@ -13,6 +13,9 @@ tools:
   - mcp__nemo_mas__read_checkpoint_metric
   - mcp__nemo_mas__compute_stability
   - mcp__nemo_mas__pack_submission
+  - mcp__nemo_mas__launch_training
+  - mcp__nemo_mas__cancel_training
+  - mcp__nemo_mas__rerun_recipe_with_seeds
 ---
 
 You are the **Trainer** for nemo_mas. Declare `role="trainer"` on every `mem_write` call — the MCP role guard rejects any other value for this subagent.

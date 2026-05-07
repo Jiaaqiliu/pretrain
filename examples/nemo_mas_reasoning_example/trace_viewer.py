@@ -1761,6 +1761,43 @@ details > summary .preview {
 }
 .qp-signer.signed { background: #0c2816; color: #3fb950; }
 .qp-signer.waiting { border: 1px dashed #667085; }
+
+/* Dual-sign chips: reviewer verdict (left) + human signoff (right).
+   Shown on each ledger row and inside the current card header. The old
+   ``qp-state`` pill stays adjacent so no regression for callers that
+   grep the DOM for state text. */
+.qp-dual-sign {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+.qp-chip {
+  align-items: center;
+  background: #202938;
+  border: 1px solid #2b3648;
+  border-radius: 999px;
+  color: #98a2b3;
+  display: inline-flex;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  gap: 4px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 4px 9px;
+  text-transform: uppercase;
+}
+.qp-chip-label { color: #667085; font-weight: 700; }
+.qp-chip.rev-ready { background: #0c2028; border-color: #1c4463; color: #58a6ff; }
+.qp-chip.rev-evidence { background: #0c2028; border-color: #1c4463; color: #98c1ff; }
+.qp-chip.rev-insufficient { background: #33250d; border-color: #76521b; color: #ffb84d; }
+.qp-chip.rev-reject { background: #3a1417; border-color: #7a2d34; color: #f48c9a; }
+.qp-chip.rev-none { border-style: dashed; color: #667085; }
+.qp-chip.hum-signed { background: #0c2816; border-color: #245d34; color: #3fb950; }
+.qp-chip.hum-signed-auto { background: #132019; border-color: #1f3d2a; color: #7ac987; }
+.qp-chip.hum-waiting { border-style: dashed; color: #98a2b3; }
 .qp-connector { background: #303947; flex: 1; height: 1px; }
 .qp-actions {
   background: #0b1016;
@@ -4483,6 +4520,53 @@ def _trace_agent_status(finished: bool) -> str:
     return "<span class='status-pill running'>Running</span>"
 
 
+def _dual_sign_chips(cp: dict) -> str:
+    """Render the reviewer-verdict + human-signoff chip pair for a slot.
+
+    Uses the folded ``last_review_verdict``, ``state``, and
+    ``last_event_actor`` fields that ``_derive_checkpoints`` already
+    produces. The old single ``qp-state`` pill is kept adjacent by the
+    caller; these chips are extra visual info, not a replacement.
+    """
+    verdict = (cp.get("last_review_verdict") or "").strip()
+    verdict_map = {
+        "ready_to_sign": ("rev-ready", "ready_to_sign"),
+        "evidence_attached": ("rev-evidence", "evidence"),
+        "insufficient": ("rev-insufficient", "insufficient"),
+        "reject": ("rev-reject", "reject"),
+    }
+    if verdict in verdict_map:
+        cls, label = verdict_map[verdict]
+    else:
+        cls, label = ("rev-none", "no verdict")
+    reviewer_chip = (
+        f"<span class='qp-chip {cls}' title='Latest reviewer verdict on this slot'>"
+        f"<span class=qp-chip-label>rev</span>{_h(label)}</span>"
+    )
+
+    state = cp.get("state") or ""
+    actor = (cp.get("last_event_actor") or "").strip().lower()
+    if state == "signed":
+        if "auto" in actor or actor.startswith("orchestrator"):
+            human_cls, human_label = ("hum-signed-auto", "auto-signed")
+            title = f"Auto-signed by {actor or 'orchestrator_auto'}"
+        else:
+            human_cls, human_label = ("hum-signed", "signed")
+            title = f"Signed by {actor or 'human'}"
+    elif state == "reopened":
+        human_cls, human_label = ("hum-waiting", "reopened")
+        title = "Slot was signed but evidence changed; re-sign required"
+    else:
+        human_cls, human_label = ("hum-waiting", "awaiting")
+        title = "Awaiting human signature"
+    human_chip = (
+        f"<span class='qp-chip {human_cls}' title='{_h(title)}'>"
+        f"<span class=qp-chip-label>human</span>{_h(human_label)}</span>"
+    )
+
+    return f"<span class=qp-dual-sign>{reviewer_chip}{human_chip}</span>"
+
+
 def _role_count_chips(roles: Counter) -> str:
     if not roles:
         return "<span class=trace-chip>no roles detected</span>"
@@ -4919,6 +5003,7 @@ def render_index(selected_slot_id: str | None = None) -> str:
                 f"</form>"
             )
         row_href = f"/train?slot={_h(cp['id'])}"
+        dual_chips = _dual_sign_chips(cp)
         ledger_rows.append(
             f"<div class=qp-plan-entry>"
             f"<a class='qp-plan-row{active_cls}{signed_cls}' href='{row_href}'>"
@@ -4926,6 +5011,7 @@ def render_index(selected_slot_id: str | None = None) -> str:
             f"<span class=qp-row-title>{_h(cp['title'])}</span>"
             f"<span class=qp-type>{_h(cp['type'])}</span>"
             f"<span class='qp-state {state_class}'>{_h(_state_label(cp['state']))}</span>"
+            f"{dual_chips}"
             f"</a>"
             f"{sign_btn}"
             f"</div>"
@@ -5174,7 +5260,8 @@ def _render_current_card(slot: dict | None, run: dict | None,
         f"<div class=qp-card-left><span class=qp-card-id>{_h(slot['id'])}</span>"
         f"<span class=qp-card-title>{_h(slot['title'])}</span></div>"
         f"<div class=qp-card-right><span class='qp-state {state_cls}'>"
-        f"{_h(_state_label(slot['state']))} · {_h(slot['signers'])}</span></div>"
+        f"{_h(_state_label(slot['state']))} · {_h(slot['signers'])}</span>"
+        f"{_dual_sign_chips(slot)}</div>"
         "</div>"
         f"<div class=qp-prereview>Depends on: {_h(deps)}. Requires evidence: {_h(', '.join(slot['requires_evidence']) or '(none)')}</div>"
         "<div class=qp-card-body>"

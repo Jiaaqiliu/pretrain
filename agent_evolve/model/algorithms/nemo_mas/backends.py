@@ -49,6 +49,7 @@ import hashlib
 import json
 import math
 import os
+import tempfile
 import re
 import shutil
 import statistics
@@ -433,25 +434,80 @@ def local_handlers(
     # through workspace-scaffolded scripts. The Engineer role reads logs
     # and metrics produced by those platform runners.
 
-    def read_training_log(*, job_id: str) -> str:
+    def read_training_log(*, job_id: str, tail_lines: int = 200) -> str:
+        """Return the tail of a training log. Never streams / polls.
+
+        Search order (first hit wins):
+          1. ``logs/{job_id}.log``                -- local-runner convention
+          2. ``logs/k8s_stages/{job_id}.k8s.log`` -- exact k8s stage name
+          3. ``logs/k8s_stages/*.k8s.log``        -- most recent k8s-stage log
+
+        This is a one-shot file read capped at ``tail_lines``; if the
+        chosen log is being actively written, the caller gets whatever
+        bytes are flushed at call time and should re-invoke later. The
+        tool does NOT follow the stream.
+        """
         ws = _resolve_ws()
-        log = ws / "logs" / f"{job_id}.log"
-        if not log.exists():
-            return _err(f"no log at {log}")
-        text = log.read_text(encoding="utf-8")
-        return _ok(job_id=job_id, log_tail="\n".join(text.splitlines()[-200:]))
+
+        # Candidate order: direct job_id, then k8s_stages by exact match,
+        # then most-recent k8s_stages/*.k8s.log file (k8s dispatch writes
+        # by stage_label, not job_id).
+        candidates: list[Path] = [
+            ws / "logs" / f"{job_id}.log",
+            ws / "logs" / "k8s_stages" / f"{job_id}.k8s.log",
+        ]
+        picked: Path | None = next((c for c in candidates if c.is_file()), None)
+        if picked is None:
+            k8s_dir = ws / "logs" / "k8s_stages"
+            if k8s_dir.is_dir():
+                k8s_logs = sorted(
+                    (p for p in k8s_dir.glob("*.k8s.log") if p.is_file()),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if k8s_logs:
+                    picked = k8s_logs[0]
+        if picked is None:
+            return _err(
+                f"no log found for job_id={job_id!r}; searched "
+                f"{[str(c) for c in candidates]} and k8s_stages/*.k8s.log"
+            )
+
+        try:
+            text = picked.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            return _err(f"read failed for {picked}: {e}")
+        lines = text.splitlines()
+        return _ok(
+            job_id=job_id,
+            log_path=str(picked),
+            total_lines=len(lines),
+            log_tail="\n".join(lines[-int(tail_lines):]),
+        )
 
     def read_checkpoint_metric(*, ckpt_path: str) -> str:
+        """Return the sidecar metric JSON for a checkpoint.
+
+        Looks in order for:
+          1. ``metric.json``        -- standard metric file
+          2. ``.ddp_result.json``   -- DDP runner sentinel (wall_seconds etc.)
+
+        Both are flat dicts; the caller should key by the metric it needs.
+        """
         ws = _resolve_ws()
         ckpt = _safe_path(ws, ckpt_path) or Path(ckpt_path)
-        candidate = ckpt / "metric.json" if ckpt.is_dir() else ckpt.parent / "metric.json"
-        if not candidate.exists():
-            return _err(f"no metric.json at {candidate}")
-        try:
-            data = json.loads(candidate.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            return _err(f"invalid metric.json: {e}")
-        return _ok(path=str(candidate), metric=data)
+        search_dir = ckpt if ckpt.is_dir() else ckpt.parent
+        for name in ("metric.json", ".ddp_result.json"):
+            candidate = search_dir / name
+            if candidate.is_file():
+                try:
+                    data = json.loads(candidate.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as e:
+                    return _err(f"invalid {name}: {e}")
+                return _ok(path=str(candidate), kind=name, metric=data)
+        return _err(
+            f"no metric.json or .ddp_result.json under {search_dir}"
+        )
 
     def compute_stability(*, training_run_ids: list[str]) -> str:
         # Looks for metric.json beside each ckpt — but since we don't have
@@ -591,10 +647,21 @@ def local_handlers(
             zp = ws / zp
         if not zp.is_file():
             return _err(f"zip not found: {zp}")
+        # Kaggle's CreateSubmission endpoint requires the uploaded file to
+        # be literally named ``submission.zip`` — any other basename 400s.
+        # Stage via a symlink (or copy if cross-fs) so the archive on disk
+        # can keep its descriptive name for the audit trail.
+        upload_dir = Path(tempfile.mkdtemp(prefix="nemo_mas_kaggle_"))
+        upload_path = upload_dir / "submission.zip"
+        try:
+            os.symlink(zp, upload_path)
+        except OSError:
+            import shutil as _sh
+            _sh.copyfile(zp, upload_path)
         cmd = [
             "kaggle", "competitions", "submit",
             "-c", _KAGGLE_COMPETITION,
-            "-f", str(zp),
+            "-f", str(upload_path),
             "-m", message or "auto submit from nemo_mas",
         ]
         try:
@@ -754,15 +821,77 @@ class BackendBridge:
         from agent_evolve.model.workspace import TrainingWorkspace
         return TrainingWorkspace(self._resolve_ws_root())
 
+    @classmethod
+    def from_env(
+        cls,
+        workspace_root: Path | str | Callable[[], Path | str],
+    ) -> "BackendBridge | None":
+        """Build a BackendBridge from env vars, mirroring drive_nemo_mas.
+
+        Reads ``NEMO_MAS_COMPUTE_BACKEND`` to pick a backend:
+
+          * ``"k8s"``   — K8sTinkerLiteBackend, concurrent Jobs capped at
+            ``AE_K8S_QUEUE_BUDGET`` (default 2), ``local_enabled=False`` so
+            a missing kubeconfig fails fast.
+          * ``"local"`` — SingleNodeTinkerLiteBackend on the host GPUs.
+          * unset / ``"none"`` — returns ``None``. The Agent Teams server
+            falls back to local_handlers only in that case.
+
+        Raises on import or construction failure so the MCP handshake
+        surfaces the reason (silent None would hide "k8s requested but
+        kubeconfig missing" as "training tools just aren't there").
+        """
+        choice = os.environ.get("NEMO_MAS_COMPUTE_BACKEND", "").strip().lower()
+        if not choice or choice == "none":
+            return None
+
+        from agent_evolve.benchmarks.nemo_reasoner import NemoReasonerBenchmark
+        benchmark = NemoReasonerBenchmark()
+
+        if choice == "k8s":
+            from agent_evolve.backends.tinkerlite.elastic.backend import (
+                K8sTinkerLiteBackend,
+            )
+            backend = K8sTinkerLiteBackend(
+                namespace=os.environ.get("AE_K8S_NAMESPACE", "a-evolve"),
+                image=os.environ.get("AE_K8S_IMAGE", "a-evolve/trainer:latest"),
+                pvc_name=os.environ.get("AE_K8S_PVC", "fsx-zzsamshi"),
+                node_selector=(
+                    {"nvidia.com/gpu.product": "H200"}
+                    if os.environ.get("AE_K8S_NODE_LABEL", "1") == "1"
+                    else None
+                ),
+                local_enabled=False,
+                k8s_queue_budget=int(os.environ.get("AE_K8S_QUEUE_BUDGET", "2")),
+                queue_timeout_secs=float(
+                    os.environ.get("AE_K8S_QUEUE_TIMEOUT", "900")
+                ),
+            )
+        elif choice == "local":
+            from agent_evolve.backends.tinkerlite.single_node.backend import (
+                SingleNodeTinkerLiteBackend,
+            )
+            backend = SingleNodeTinkerLiteBackend(mock=False)
+        else:
+            raise ValueError(
+                f"NEMO_MAS_COMPUTE_BACKEND={choice!r}; expected "
+                "'k8s', 'local', 'none', or unset."
+            )
+
+        return cls(workspace_root=workspace_root,
+                   benchmark=benchmark, backend=backend)
+
     def as_registry(self) -> dict[str, Callable[..., str]]:
         return {
             "run_eval":                    self.run_eval,
             "run_short_training":          self.run_short_training,
             "launch_training":             self.launch_training,
+            "cancel_training":             self.cancel_training,
             "rerun_recipe_with_seeds":     self.rerun_recipe_with_seeds,
             "load_checkpoint_for_inference": self.load_checkpoint_for_inference,
             "batch_generate":              self.batch_generate,
             "call_teacher_model":          self.call_teacher_model,
+            "k8s_status":                  self.k8s_status,
         }
 
     # ── Eval / training delegation ───────────────────────────────
@@ -773,14 +902,40 @@ class BackendBridge:
             from agent_evolve.model.types import CheckpointRef
         except ImportError as e:
             return _err(f"types import failed: {e}")
-        ckpt = CheckpointRef(name=Path(ckpt_path).name, path=ckpt_path,
+        # Resolve relative paths against the workspace root so the vLLM
+        # worker (which runs from an arbitrary CWD) can find the adapter.
+        ckpt_p = Path(ckpt_path)
+        if not ckpt_p.is_absolute():
+            ckpt_p = Path(self.workspace.root) / ckpt_p
+        if not ckpt_p.exists():
+            return _err(f"ckpt_path does not exist: {ckpt_p}")
+        ckpt = CheckpointRef(name=ckpt_p.name, path=str(ckpt_p),
                              kind="adapter")
+
+        # The backend's run_eval_plan reads benchmark+workspace+split from
+        # self._current_* attrs set inside run_trial(). When run_eval is
+        # called standalone (no prior run_trial), those are None, so the
+        # vLLM eval path raises "Non-smoke eval requires `benchmark` and
+        # `workspace` to be passed through." Seed them here, restore after
+        # so we don't clobber an in-flight trial on the same backend.
+        prior = (
+            getattr(self.backend, "_current_benchmark", None),
+            getattr(self.backend, "_current_workspace", None),
+            getattr(self.backend, "_current_split", None),
+        )
         try:
+            self.backend._current_benchmark = self.benchmark
+            self.backend._current_workspace = self.workspace
+            self.backend._current_split = split
             out_path = self.benchmark.evaluate(
                 self.workspace, ckpt, self.backend, split,
             )
         except Exception as e:                # noqa: BLE001
             return _err(f"benchmark.evaluate failed: {e}")
+        finally:
+            self.backend._current_benchmark = prior[0]
+            self.backend._current_workspace = prior[1]
+            self.backend._current_split = prior[2]
         return _ok(eval_output_path=str(out_path), split=split,
                    ckpt_path=ckpt_path, limit=limit,
                    note="Per-row JSONL is at eval_output_path. "
@@ -841,6 +996,324 @@ class BackendBridge:
                  "will be train_failed; write a failed_attempt rather "
                  "than a training_run.",
         )
+
+    def cancel_training(self, *, job_name: str | None = None,
+                        name_contains: str | None = None,
+                        stuck_only: bool = True) -> str:
+        """Delete stuck k8s training Job(s) so the scheduler can submit new ones.
+
+        Exactly one of ``job_name`` or ``name_contains`` must be supplied.
+        ``stuck_only=True`` (the default) restricts deletion to pods in
+        ``ImagePullBackOff`` / ``ErrImagePull`` / ``CrashLoopBackOff`` so a
+        merely-slow-but-running job is never killed.
+        """
+        if bool(job_name) == bool(name_contains):
+            return _err("supply exactly one of job_name or name_contains")
+        try:
+            from kubernetes import client as kclient
+            from kubernetes import config as kconfig
+            try:
+                kconfig.load_incluster_config()
+            except Exception:                                  # noqa: BLE001
+                kconfig.load_kube_config()
+            batch = kclient.BatchV1Api()
+            core = kclient.CoreV1Api()
+        except Exception as e:                                 # noqa: BLE001
+            return _err(f"kubernetes client init failed: {e}")
+
+        ns = os.environ.get("AE_K8S_NAMESPACE", "default")
+        jobs = batch.list_namespaced_job(namespace=ns).items
+        if job_name is not None:
+            targets = [j for j in jobs if j.metadata.name == job_name]
+        else:
+            targets = [j for j in jobs if name_contains in j.metadata.name]
+        if not targets:
+            return _err("no matching jobs", namespace=ns,
+                        job_name=job_name, name_contains=name_contains)
+
+        STUCK_REASONS = {"ImagePullBackOff", "ErrImagePull",
+                         "CrashLoopBackOff", "InvalidImageName"}
+        deleted: list[str] = []
+        skipped: list[dict[str, str]] = []
+        for job in targets:
+            name = job.metadata.name
+            if stuck_only:
+                pods = core.list_namespaced_pod(
+                    namespace=ns,
+                    label_selector=f"job-name={name}",
+                ).items
+                stuck = False
+                for p in pods:
+                    for cs in (p.status.container_statuses or []):
+                        waiting = cs.state.waiting
+                        if waiting and waiting.reason in STUCK_REASONS:
+                            stuck = True
+                            break
+                    if stuck:
+                        break
+                if not stuck:
+                    skipped.append({"job": name,
+                                    "reason": "not stuck (use stuck_only=false to force)"})
+                    continue
+            try:
+                batch.delete_namespaced_job(
+                    name=name, namespace=ns,
+                    body=kclient.V1DeleteOptions(propagation_policy="Background"),
+                )
+                deleted.append(name)
+            except Exception as e:                             # noqa: BLE001
+                skipped.append({"job": name, "reason": f"delete failed: {e}"})
+        return _ok(namespace=ns, deleted=deleted, skipped=skipped)
+
+    def k8s_status(self, *, job_name: str | None = None,
+                   name_contains: str = "aev-") -> str:
+        """Read-only snapshot of the team's k8s cluster + job state.
+
+        Intended for reviewer audit: cross-check whether a claimed
+        ``training_run`` actually produced a real k8s job that did real
+        work. Never mutates the cluster. Surfaces:
+
+        * Cluster GPU inventory (total, in-use, free, per-node).
+        * Jobs matching the prefix filter (default ``"aev-"`` to scope
+          to this team's conventions), with status, timing, pod phase,
+          per-job GPU request.
+        * When a ``.ddp_result.json`` lives under
+          ``<workspace>/checkpoints/adapters/<stage>/``, parses it and
+          adds a ``result_summary`` block plus a ``suspicious`` heuristic
+          flag — catches the "job Complete but did zero work" failure
+          mode (e.g. wall_seconds < 10 or opt_steps == 0).
+
+        Args:
+          job_name:      exact job to fetch details for. If set, overrides
+                         ``name_contains``.
+          name_contains: substring filter for listing (default ``"aev-"``).
+                         Pass ``""`` to list every job in the namespace —
+                         but that leaks other users' pods, so avoid.
+        """
+        try:
+            from kubernetes import client as kclient
+            from kubernetes import config as kconfig
+            try:
+                kconfig.load_incluster_config()
+            except Exception:                                  # noqa: BLE001
+                kconfig.load_kube_config()
+            batch = kclient.BatchV1Api()
+            core = kclient.CoreV1Api()
+        except Exception as e:                                 # noqa: BLE001
+            return _err(f"kubernetes client init failed: {e}")
+
+        ns = os.environ.get("AE_K8S_NAMESPACE", "default")
+
+        # Cluster-level GPU inventory.
+        try:
+            nodes = core.list_node().items
+        except Exception as e:                                 # noqa: BLE001
+            return _err(f"list_node failed: {e}")
+        total_gpus = 0
+        for n in nodes:
+            alloc = (n.status.allocatable or {}) if n.status else {}
+            try:
+                total_gpus += int(alloc.get("nvidia.com/gpu", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+
+        # Pods in Running phase to compute GPU busy by node.
+        try:
+            running_pods = core.list_namespaced_pod(
+                namespace=ns,
+                field_selector="status.phase=Running",
+            ).items
+        except Exception as e:                                 # noqa: BLE001
+            return _err(f"list_namespaced_pod failed: {e}")
+        busy_by_node: dict[str, int] = {}
+        for p in running_pods:
+            node = p.spec.node_name if p.spec else None
+            if not node:
+                continue
+            for c in (p.spec.containers or []):
+                req = ((c.resources.requests or {}) if c.resources else {})
+                try:
+                    g = int(req.get("nvidia.com/gpu", 0) or 0)
+                except (TypeError, ValueError):
+                    g = 0
+                if g > 0:
+                    busy_by_node[node] = busy_by_node.get(node, 0) + g
+        gpus_in_use = sum(busy_by_node.values())
+
+        cluster = {
+            "total_gpus": total_gpus,
+            "gpus_in_use": gpus_in_use,
+            "gpus_free": max(0, total_gpus - gpus_in_use),
+            "gpu_busy_by_node": busy_by_node,
+            "node_count": len(nodes),
+        }
+
+        # Job listing / filtering.
+        try:
+            all_jobs = batch.list_namespaced_job(namespace=ns).items
+        except Exception as e:                                 # noqa: BLE001
+            return _err(f"list_namespaced_job failed: {e}")
+        if job_name:
+            job_list = [j for j in all_jobs if j.metadata.name == job_name]
+        else:
+            nc = name_contains or ""
+            job_list = [j for j in all_jobs if nc in (j.metadata.name or "")]
+
+        # Stage-kind inference from our name convention:
+        #   aev-sft-ddp-*    → sft
+        #   aev-gspo-ddp-*   → gspo (RL)
+        #   aev-eval-*       → eval
+        #   anything else    → unknown
+        def _stage_kind(name: str) -> str:
+            n = name or ""
+            if "sft" in n:
+                return "sft"
+            if "gspo" in n or "rl" in n:
+                return "gspo"
+            if "eval" in n:
+                return "eval"
+            return "unknown"
+
+        # Best-effort result_summary: for completed jobs, look under
+        # <workspace>/checkpoints/adapters/<stage>/.ddp_result.json where
+        # <stage> matches pipeline stage names (sft_warmup, rl_gspo) —
+        # the ddp_worker/gspo_worker writes there. If the workspace is
+        # not reachable we just skip the summary.
+        ws_env = os.environ.get("NEMO_MAS_WORKSPACE_ROOT")
+        ws_root = Path(ws_env) if ws_env else Path(self.workspace_root)
+
+        def _result_summary_for(kind: str) -> dict[str, Any] | None:
+            stage_candidates = {
+                "sft":  ["sft_warmup", "sft"],
+                "gspo": ["rl_gspo", "gspo", "rl"],
+                "eval": ["eval"],
+            }.get(kind, [])
+            for stage in stage_candidates:
+                rp = Path(ws_root) / "checkpoints" / "adapters" / stage / ".ddp_result.json"
+                if rp.is_file():
+                    try:
+                        data = json.loads(rp.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        return None
+                    # "Suspicious" heuristic. For SFT: opt_steps==0 or
+                    # wall_seconds<10 indicates the job exited without
+                    # running training. For GSPO: total_rollouts==0 or
+                    # opt_steps==0 with wall<10s is the same ghost.
+                    suspicious = False
+                    reasons: list[str] = []
+                    opt_steps = data.get("total_steps") or data.get("opt_steps")
+                    rollouts = data.get("total_rollouts")
+                    wall = data.get("wall_seconds", 0.0)
+                    if opt_steps is not None and int(opt_steps) == 0:
+                        suspicious = True
+                        reasons.append("opt_steps=0")
+                    if rollouts is not None and int(rollouts) == 0:
+                        suspicious = True
+                        reasons.append("total_rollouts=0")
+                    try:
+                        if float(wall) < 10.0:
+                            suspicious = True
+                            reasons.append(f"wall_seconds={wall}")
+                    except (TypeError, ValueError):
+                        pass
+                    data_summary = dict(data)
+                    data_summary["result_file"] = str(rp)
+                    data_summary["suspicious"] = suspicious
+                    if reasons:
+                        data_summary["suspicious_reason"] = ", ".join(reasons)
+                    return data_summary
+            return None
+
+        # Pod details per job (single-pod jobs in this deployment).
+        def _pods_for(job) -> list[dict[str, Any]]:
+            try:
+                pods = core.list_namespaced_pod(
+                    namespace=ns,
+                    label_selector=f"job-name={job.metadata.name}",
+                ).items
+            except Exception:                                  # noqa: BLE001
+                return []
+            out: list[dict[str, Any]] = []
+            for p in pods:
+                gpu_req = 0
+                for c in (p.spec.containers or []) if p.spec else []:
+                    req = ((c.resources.requests or {}) if c.resources else {})
+                    try:
+                        gpu_req += int(req.get("nvidia.com/gpu", 0) or 0)
+                    except (TypeError, ValueError):
+                        pass
+                waiting_reasons: list[str] = []
+                for c in (p.status.container_statuses or []) if p.status else []:
+                    w = c.state.waiting if (c.state and c.state.waiting) else None
+                    if w and w.reason:
+                        waiting_reasons.append(w.reason)
+                out.append({
+                    "name": p.metadata.name if p.metadata else "",
+                    "phase": p.status.phase if p.status else "",
+                    "node": p.spec.node_name if p.spec else "",
+                    "gpu_req": gpu_req,
+                    "waiting_reasons": waiting_reasons,
+                })
+            return out
+
+        jobs_out: list[dict[str, Any]] = []
+        for j in job_list:
+            meta = j.metadata
+            spec = j.spec
+            st = j.status
+            stage_kind = _stage_kind(meta.name or "")
+            created = meta.creation_timestamp.isoformat() + "Z" \
+                if meta and meta.creation_timestamp else ""
+            completed_at = st.completion_time.isoformat() + "Z" \
+                if st and st.completion_time else ""
+            started = st.start_time if st else None
+            duration_s: int | None = None
+            if started and st and st.completion_time:
+                duration_s = int((st.completion_time - started).total_seconds())
+
+            status = "Unknown"
+            if st:
+                if (st.succeeded or 0) >= 1:
+                    status = "Complete"
+                elif (st.failed or 0) >= 1:
+                    status = "Failed"
+                elif (st.active or 0) >= 1:
+                    status = "Running"
+
+            # Per-job GPU request from pod template (may be 0 for non-GPU jobs).
+            gpu_req = 0
+            if spec and spec.template and spec.template.spec:
+                for c in spec.template.spec.containers or []:
+                    req = ((c.resources.requests or {}) if c.resources else {})
+                    try:
+                        gpu_req += int(req.get("nvidia.com/gpu", 0) or 0)
+                    except (TypeError, ValueError):
+                        pass
+
+            job_entry: dict[str, Any] = {
+                "name": meta.name if meta else "",
+                "namespace": ns,
+                "status": status,
+                "stage_kind": stage_kind,
+                "created": created,
+                "completed": completed_at,
+                "duration_s": duration_s,
+                "succeeded": int(st.succeeded or 0) if st else 0,
+                "failed": int(st.failed or 0) if st else 0,
+                "active": int(st.active or 0) if st else 0,
+                "gpu_req": gpu_req,
+                "pods": _pods_for(j),
+            }
+            if status == "Complete":
+                summary = _result_summary_for(stage_kind)
+                if summary is not None:
+                    job_entry["result_summary"] = summary
+            jobs_out.append(job_entry)
+
+        # Sort jobs newest-first by creation timestamp.
+        jobs_out.sort(key=lambda x: x.get("created") or "", reverse=True)
+        return _ok(cluster=cluster, jobs=jobs_out,
+                   namespace=ns, filter_applied=(job_name or name_contains))
 
     def rerun_recipe_with_seeds(self, *, recipe_path: str, data_path: str,
                                 seeds: list[int],
@@ -1001,10 +1474,17 @@ def demo_compute_handlers() -> dict[str, Callable[..., str]]:
                    status="complete", public_score="0.500",
                    private_score="", note="DEMO MODE.")
 
+    def cancel_training(*, job_name: str | None = None,
+                        name_contains: str | None = None,
+                        stuck_only: bool = True) -> str:
+        return _ok(namespace="demo", deleted=[], skipped=[],
+                   note="DEMO MODE — no cluster to cancel against.")
+
     return {
         "run_eval":                    run_eval,
         "run_short_training":          run_short_training,
         "launch_training":             launch_training,
+        "cancel_training":             cancel_training,
         "rerun_recipe_with_seeds":     rerun_recipe_with_seeds,
         "load_checkpoint_for_inference": load_checkpoint_for_inference,
         "batch_generate":              batch_generate,

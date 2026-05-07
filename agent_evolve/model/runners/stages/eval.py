@@ -18,9 +18,11 @@ vLLM loads the candidate.
   ``LoRARequest``. Produced by full-parameter adapters
   (:class:`FullDeepspeedAdapter`).
 
-The Kaggle host contract (chat template, max_model_len 4096, max_lora_rank
-32, temperature 1.0, top_p 1.0, max_tokens 3584) is preserved on the LoRA
-path so the dev score still correlates with the leaderboard.
+The Kaggle host contract (chat template, max_model_len 8192, max_lora_rank
+32, temperature 0.0 greedy, top_p 1.0, max_tokens 7680, max_num_seqs 64)
+is preserved on the LoRA path so the dev score correlates with the
+leaderboard. These values match the Kaggle Evaluation page's runtime args,
+not metric.score()'s python-level defaults — those two disagree.
 """
 
 from __future__ import annotations
@@ -165,7 +167,7 @@ def _run_vllm_eval(
     # over ~50 prompts. Fit: Nemotron-3-Nano BF16 is ~18 GB; H200 has 144 GB.
     dp = int(cfg.get("data_parallel_size", 1))
     seed = int(cfg.get("seed", 0))
-    max_model_len = int(cfg.get("max_model_len", 4096))
+    max_model_len = int(cfg.get("max_model_len", 8192))
     gpu_memory_utilization = float(cfg.get("gpu_memory_utilization", 0.85))
 
     # Default ON for eval: skips torch.compile + Inductor autotune. Required on
@@ -187,7 +189,7 @@ def _run_vllm_eval(
             data_parallel_size=dp,
             seed=seed,
             max_model_len=max_model_len,
-            max_num_seqs=int(cfg.get("max_num_seqs", 128)),
+            max_num_seqs=int(cfg.get("max_num_seqs", 64)),
             gpu_memory_utilization=gpu_memory_utilization,
             dtype="auto",
             trust_remote_code=True,
@@ -204,7 +206,7 @@ def _run_vllm_eval(
             seed=seed,
             max_model_len=max_model_len,
             max_lora_rank=max_lora_rank,
-            max_num_seqs=int(cfg.get("max_num_seqs", 128)),
+            max_num_seqs=int(cfg.get("max_num_seqs", 64)),
             gpu_memory_utilization=gpu_memory_utilization,
             enable_lora=True,
             enable_prefix_caching=True,
@@ -222,9 +224,9 @@ def _run_vllm_eval(
     llm = LLM(**engine_kwargs)
 
     sampling_kwargs: dict[str, Any] = dict(
-        temperature=float(cfg.get("temperature", 1.0)),
+        temperature=float(cfg.get("temperature", 0.0)),
         top_p=float(cfg.get("top_p", 1.0)),
-        max_tokens=int(cfg.get("max_tokens", 3584)),
+        max_tokens=int(cfg.get("max_tokens", 7680)),
         seed=seed,
     )
     rep_penalty = cfg.get("repetition_penalty")
@@ -334,8 +336,8 @@ def _run_hf_eval(
     is_full_model = plan.checkpoint.kind == "full_state"
     limit = cfg.get("limit")
     seed = int(cfg.get("seed", 0))
-    max_new_tokens = int(cfg.get("max_tokens", 3584))
-    temperature = float(cfg.get("temperature", 1.0))
+    max_new_tokens = int(cfg.get("max_tokens", 7680))
+    temperature = float(cfg.get("temperature", 0.0))
     top_p = float(cfg.get("top_p", 1.0))
     batch_size = int(cfg.get("hf_batch_size", 4))
 

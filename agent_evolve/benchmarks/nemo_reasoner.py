@@ -120,7 +120,35 @@ class DevRow:
 
 
 def _load_dev_rows(path: Path) -> list[DevRow]:
+    """Load dev rows from CSV (``.csv``) or JSONL (``.jsonl``/``.json``).
+
+    Both shapes must have ``prompt`` and ``answer`` keys per row; ``id``
+    and ``domain`` are optional.
+    """
     rows: list[DevRow] = []
+    suffix = path.suffix.lower()
+    if suffix in (".jsonl", ".json"):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                rows.append(
+                    DevRow(
+                        id=str(raw.get("id", "")),
+                        prompt=str(raw.get("prompt", "")),
+                        answer=str(raw.get("answer", "")),
+                        domain=raw.get("domain") or None,
+                    )
+                )
+        return rows
+    # Default: CSV (``.csv`` or anything else — preserves prior behavior).
     with open(path) as f:
         reader = csv.DictReader(f)
         for raw in reader:
@@ -200,12 +228,17 @@ class NemoReasonerBenchmark:
         gen_cfg = {
             "temperature": cfg.get("temperature", 0.0),
             "top_p": cfg.get("top_p", 1.0),
-            "max_tokens": cfg.get("max_tokens", 3584),
-            "max_model_len": cfg.get("max_model_len", 4096),
+            # Host-runtime defaults (Kaggle Evaluation page, verified against
+            # metric.score() runtime args, NOT its python-level defaults):
+            # max_tokens=7680, max_model_len=8192, max_num_seqs=64. Using the
+            # old stale defaults (3584/4096/128) caused a ~8-pt dev→Kaggle
+            # underestimate on cycle 0004 Recipe A (local 0.5068 → Kaggle 0.59).
+            "max_tokens": cfg.get("max_tokens", 7680),
+            "max_model_len": cfg.get("max_model_len", 8192),
             "max_lora_rank": cfg.get("max_lora_rank", 32),
             "tensor_parallel_size": cfg.get("tensor_parallel_size", 1),
             "gpu_memory_utilization": cfg.get("gpu_memory_utilization", 0.85),
-            "max_num_seqs": cfg.get("max_num_seqs", 128),
+            "max_num_seqs": cfg.get("max_num_seqs", 64),
             "seed": cfg.get("seed", 0),
             "model_path": cfg.get("model_path") or _model_path_from_base(workspace),
             "limit": cfg.get("limit"),

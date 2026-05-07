@@ -36,7 +36,7 @@ from typing import Any, Callable
 
 from mcp.server.fastmcp import FastMCP
 
-from ..backends import local_handlers
+from ..backends import BackendBridge, local_handlers
 from ..checkpoints import (
     FoldedSlot,
     fold_checkpoints,
@@ -588,11 +588,38 @@ def _register_backend_tools() -> None:
     Called on module import so tools appear in the MCP handshake. The
     handlers themselves resolve the workspace root via the
     resolver-callable pattern, so no per-call rebinding is needed.
+
+    When ``NEMO_MAS_COMPUTE_BACKEND`` is set the compute-bound bridge
+    (``launch_training``, ``run_eval``, ``rerun_recipe_with_seeds``,
+    ``batch_generate``, ``call_teacher_model``, ``load_checkpoint_for_inference``,
+    ``run_short_training``) is also registered — so the trainer teammate
+    can actually reach the platform's StageRegistry instead of hitting a
+    "no such MCP tool" wall and writing a stub ``training_run``.
     """
     ws_resolver = lambda: Path(os.environ.get("NEMO_MAS_WORKSPACE_ROOT")  # noqa: E731
                                or os.environ.get("NEMO_MAS_SEED_WORKSPACE")
                                or "seed_workspaces/nemo_mas_reasoner")
-    handlers = local_handlers(ws_resolver)
+    handlers = dict(local_handlers(ws_resolver))
+
+    # Compute-bound bridge. Construction failure (missing kubeconfig,
+    # benchmark import error) is logged but non-fatal — the server still
+    # serves local tools so memory + QA flow keeps working.
+    try:
+        bridge = BackendBridge.from_env(ws_resolver)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "BackendBridge.from_env failed (%s); compute-bound tools "
+            "(launch_training, run_eval, …) will NOT be registered. "
+            "Trainer teammate will refuse to train.", exc,
+        )
+        bridge = None
+    if bridge is not None:
+        # Bridge entries win on name collision — local_handlers has no
+        # launch_training, but we make the ordering explicit.
+        handlers.update(bridge.as_registry())
+        logger.info(
+            "BackendBridge registered: %s", sorted(bridge.as_registry()),
+        )
 
     for name, handler in handlers.items():
         # Skip any handler whose name collides with a memory/checkpoint

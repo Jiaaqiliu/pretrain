@@ -3,7 +3,21 @@
     "nemo_mas": {
       "type": "stdio",
       "command": "/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python",
-      "args": ["-m", "agent_evolve.model.algorithms.nemo_mas.agent_teams.server"]
+      "args": ["-m", "agent_evolve.model.algorithms.nemo_mas.agent_teams.server"],
+      "env": {
+        "NEMO_MAS_WORK_DIR": "/fsx/zzsamshi/a-evolve/runs/nemo-mas-teams-v2",
+        "NEMO_MAS_CHECKPOINT_MODE": "manual",
+        "NEMO_MAS_MEMORY_PATH": "/fsx/zzsamshi/a-evolve/runs/nemo-mas-teams-v2/memory/records.jsonl",
+        "NEMO_MAS_WORKSPACE_ROOT": "/fsx/zzsamshi/a-evolve/runs/nemo-mas-teams-v2/cycles/0002/.fork_target/nodes/workspace/workspace",
+        "NEMO_MAS_COMPUTE_BACKEND": "k8s",
+        "AE_K8S_NAMESPACE": "default",
+        "AE_K8S_IMAGE": "801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:latest",
+        "AE_K8S_PVC": "fsx-pvc",
+        "AE_K8S_QUEUE_BUDGET": "2",
+        "AE_K8S_QUEUE_TIMEOUT": "900",
+        "AE_K8S_NODE_LABEL": "0",
+        "AE_TRAIN_DDP": "1"
+      }
     }
   }
 }

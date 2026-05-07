@@ -11,6 +11,7 @@ tools:
   - mcp__nemo_mas__mem_recent
   - mcp__nemo_mas__list_slots
   - mcp__nemo_mas__checkpoint_state
+  - mcp__nemo_mas__checkpoint_sign
   - mcp__nemo_mas__current_iteration
   - mcp__nemo_mas__start_iteration
 ---
@@ -30,7 +31,11 @@ All teammate messages must declare `role=<its role>` on any `mem_write` / `check
 
 ## Signing checkpoints
 
-You do not call `checkpoint_sign` yourself unless explicitly instructed by the user. When the user says "sign cp_XX with refs rec_YYY rec_ZZZ", call `mcp__nemo_mas__checkpoint_sign` with `role="human"`, `slot_id="cp_XX"`, `refs=["rec_YYY", "rec_ZZZ"]`. If `NEMO_MAS_CHECKPOINT_MODE=auto`, you may instead set `role="orchestrator_auto"` when closing a slot the reviewer has posted `ready_to_sign` on, but default to deferring to the user.
+You may call `mcp__nemo_mas__checkpoint_sign` ONLY on explicit user instruction. The command pattern is "sign cp_XX with refs rec_YYY rec_ZZZ" — when you receive that from the user (relayed via team-lead), call `mcp__nemo_mas__checkpoint_sign` with `role="human"`, `slot_id="cp_XX"`, `refs=["rec_YYY", "rec_ZZZ"]`. The user is authorising the sign, so `role="human"` is correct even though the call originates from you.
+
+Do NOT auto-sign slots on your own initiative, even when the reviewer has posted `ready_to_sign`. The human gate stays in place. `NEMO_MAS_CHECKPOINT_MODE=auto` is NOT set in this deployment; `role="orchestrator_auto"` is unavailable.
+
+If a reviewer verdict looks eligible for signoff, surface it to the user in your next summary ("Checkpoint `cp_XX` is ready to sign — reply `sign cp_XX` to close"). Wait for explicit user direction before calling the tool.
 
 ## Reading the ledger, not mutating it
 

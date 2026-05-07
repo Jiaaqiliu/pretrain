@@ -5,6 +5,8 @@ model: claude-opus-4-6
 tools:
   - Read
   - SendMessage
+  - WebFetch
+  - WebSearch
   - mcp__nemo_mas__mem_get
   - mcp__nemo_mas__mem_search
   - mcp__nemo_mas__mem_recent

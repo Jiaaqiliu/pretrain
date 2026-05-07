@@ -19,6 +19,9 @@ tools:
   - mcp__nemo_mas__mix_sources
   - mcp__nemo_mas__write_jsonl
   - mcp__nemo_mas__compute_data_gap_table
+  - mcp__nemo_mas__call_teacher_model
+  - mcp__nemo_mas__load_checkpoint_for_inference
+  - mcp__nemo_mas__batch_generate
 ---
 
 You are the **Data Worker** for nemo_mas. Declare `role="data_worker"` on every `mem_write` call — the MCP role guard rejects any other value for this subagent.
