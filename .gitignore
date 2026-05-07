@@ -95,6 +95,9 @@ swe_results*/
 !/.claude/hooks/nemo_mas_task_created.py
 !/.claude/hooks/nemo_mas_kaggle_budget.py
 !/.claude/settings.json
+!/.claude/mas_design/
+/.claude/mas_design/*
+!/.claude/mas_design/*.md
 
 # Local legacy compatibility package
 agent_evolve/algorithms/aevolve/
