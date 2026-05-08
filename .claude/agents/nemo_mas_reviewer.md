@@ -1,7 +1,7 @@
 ---
 name: nemo_mas_reviewer
 description: Nemo_MAS reviewer / QA officer — audits data, evaluates checkpoints, posts Quality Plan verdicts, files Kaggle submissions (gated by budget).
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - SendMessage

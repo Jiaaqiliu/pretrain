@@ -1,7 +1,7 @@
 ---
 name: nemo_mas_trainer
 description: Nemo_MAS trainer — launches training stages, runs cross-validation, packages adapters. Writes training_run, cv_result, submission_artifact.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - SendMessage

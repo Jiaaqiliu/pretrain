@@ -1,7 +1,7 @@
 ---
 name: nemo_mas_data_worker
 description: Nemo_MAS data worker — generates, filters, mixes training data. Writes distill_batch + dataset_snapshot records. Never trains.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - SendMessage

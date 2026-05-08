@@ -1,7 +1,7 @@
 ---
 name: nemo_mas_orchestrator
 description: Nemo_MAS orchestrator — coordinates planner/data_worker/trainer/reviewer teammates through a cycle of the Quality Plan, reads memory, assigns tasks, never writes records directly.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - SendMessage

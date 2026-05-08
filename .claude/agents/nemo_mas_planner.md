@@ -1,7 +1,7 @@
 ---
 name: nemo_mas_planner
 description: Nemo_MAS planner — reads recent evidence, proposes recipe changes and hypotheses, writes hypothesis + recipe_proposal records. Never runs training itself.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - SendMessage
