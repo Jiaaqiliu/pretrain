@@ -955,14 +955,19 @@ class BackendBridge:
             log_every=log_every,
         )
 
-    def launch_training(self, *, recipe_path: str,
-                        data_path: str, ckpt_out: str,
+    def launch_training(self, *, recipe_path: str | None = None,
+                        data_path: str | None = None,
+                        ckpt_out: str | None = None,
                         max_steps: int | None = None,
                         monitor: bool = True) -> str:
-        # Training always runs through the platform's StageRegistry — the
-        # backend's run_trial dispatches to model/runners/stages/*.py.
-        # We never shell out to a workspace-local script; there's no
-        # runner_path argument.
+        # Training runs through the platform's StageRegistry; the backend's
+        # run_trial dispatches to model/runners/stages/*.py reading from the
+        # live workspace YAMLs (train/pipeline.yaml, model/adapter.yaml,
+        # train/optimizer.yaml, train/batching.yaml). There is no argument
+        # plumbing for per-call recipe/data/out overrides — the caller must
+        # stage those via workspace YAML edits BEFORE invoking this tool.
+        # recipe_path/data_path/ckpt_out are preserved only in mutation_plan
+        # as provenance hints; they are NOT honored by the runner.
         try:
             from agent_evolve.model.types import (
                 CheckpointRef, TrainingSearchNode, TrialBudget,
@@ -973,7 +978,11 @@ class BackendBridge:
             node_id=f"node-nemomas-{uuid.uuid4().hex[:8]}",
             parent_id="",
             branch_id=0,
-            mutation_plan=f"manual launch recipe={recipe_path} data={data_path}",
+            mutation_plan=(
+                f"manual launch (workspace YAML drives actual recipe). "
+                f"hint recipe={recipe_path} data={data_path} out={ckpt_out} "
+                f"max_steps={max_steps}"
+            ),
             workspace_patch=None,
         )
         budget = TrialBudget(seconds=None, steps=max_steps, tokens=None)
@@ -992,9 +1001,13 @@ class BackendBridge:
             ckpt_path=ckpt_path, metric_name=metric_name,
             metric_value=metric_value,
             cost=getattr(result, "cost", {}),
-            note="If monitor=true and the backend killed mid-run, status "
-                 "will be train_failed; write a failed_attempt rather "
-                 "than a training_run.",
+            note=(
+                "Actual recipe came from workspace YAMLs; the "
+                "recipe_path/data_path/ckpt_out args are provenance hints "
+                "only. If monitor=true and the backend killed mid-run, "
+                "status will be train_failed; write a failed_attempt rather "
+                "than a training_run."
+            ),
         )
 
     def cancel_training(self, *, job_name: str | None = None,

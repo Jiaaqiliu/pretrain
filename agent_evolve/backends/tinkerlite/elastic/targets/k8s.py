@@ -184,10 +184,16 @@ class K8sComputeTarget:
         # Job names need to be DNS-1123 compliant and unique.
         job_name = f"aev-{stage_label}-{uuid.uuid4().hex[:8]}".lower().replace("_", "-")
 
+        # Per-recipe image override. Recipes that need Mamba CUDA kernels
+        # (causal_conv1d + mamba_ssm) set cfg["image"] = "<ecr>/a-evolve:kernels"
+        # to avoid the NoneType fwd_function crash that hits :latest. Falls
+        # back to the backend's constructor-time default otherwise.
+        image = str(cfg.get("image") or self.image)
+
         manifest = build_job_manifest(
             job_name=job_name,
             namespace=self.namespace,
-            image=self.image,
+            image=image,
             cfg_path=str(cfg_path),
             world_size=world_size,
             pvc_name=self.pvc_name,

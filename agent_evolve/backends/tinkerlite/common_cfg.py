@@ -31,7 +31,7 @@ def _common_config(
         raise RuntimeError(
             "ddp config requires model/base.yaml::path or AE_BASE_MODEL_PATH"
         )
-    return {
+    out = {
         "model_path": str(model_path),
         "lora_rank": int(adapter_cfg.get("rank", 16)),
         "lora_alpha": int(adapter_cfg.get("alpha", 32)),
@@ -45,7 +45,19 @@ def _common_config(
         "lr": float(optimizer_cfg.get("lr", 5e-5)),
         "workspace_root": str(workspace.root),
         "ae_root": str(Path(__file__).resolve().parents[3]),
+        # Mamba CUDA kernels need matching causal_conv1d + mamba_ssm wheels
+        # (available only in the :kernels image tag). Default False so the
+        # backwards-compatible :latest image doesn't crash on the NoneType
+        # fwd_function. Recipes that know they're on :kernels set this True.
+        "use_mamba_kernels": bool(adapter_cfg.get("use_mamba_kernels", False)),
     }
+    # Per-recipe k8s image override. If adapter.yaml sets `image:`, the
+    # elastic k8s target uses it in place of the backend-default image.
+    # Only emitted when set so :latest callers stay unchanged.
+    image = adapter_cfg.get("image")
+    if image:
+        out["image"] = str(image)
+    return out
 
 
 def build_sft_cfg(
@@ -84,6 +96,10 @@ def build_sft_cfg(
         # memory exceeds a single GPU). Sourced from adapter.yaml so the
         # choice travels with the LoRA shape it pairs with.
         "train_strategy": str(adapter_cfg.get("train_strategy", "ddp")),
+        # Periodic mid-training save every N optimizer steps. Produces
+        # .../step_<N>/ subdirs under out_adapter_dir so a late-run failure
+        # doesn't discard the full run. 0 (default) disables.
+        "save_every_steps": int(batching_cfg.get("save_every_steps", 0)),
         "out_adapter_dir": str(outdir),
         "out_result_path": str(result_path),
         "budget_seconds": budget_seconds,
