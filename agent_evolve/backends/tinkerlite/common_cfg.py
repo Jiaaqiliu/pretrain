@@ -78,6 +78,12 @@ def build_sft_cfg(
         "seed": int(stage.get("seed", 42)),
         "log_every": int(batching_cfg.get("log_every", 5)),
         "warmup_ratio": float(optimizer_cfg.get("warmup_ratio", 0.03)),
+        "lr_schedule": str(optimizer_cfg.get("lr_schedule", "cosine")),
+        # train_strategy: "ddp" (default, backwards-compatible) or "fsdp"
+        # (FSDP FULL_SHARD — required when trainable-params × base-model
+        # memory exceeds a single GPU). Sourced from adapter.yaml so the
+        # choice travels with the LoRA shape it pairs with.
+        "train_strategy": str(adapter_cfg.get("train_strategy", "ddp")),
         "out_adapter_dir": str(outdir),
         "out_result_path": str(result_path),
         "budget_seconds": budget_seconds,

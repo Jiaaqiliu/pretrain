@@ -57,29 +57,72 @@ def _log_all_ranks(rank: int, msg: str) -> None:
 
 
 def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
-    """Load base + LoRA adapter on this rank's GPU, wrap in DDP, return (model, tokenizer, optimizer).
+    """Load base + LoRA adapter on this rank's GPU, wrap for distributed training.
 
-    Order matters: PEFT adapter load runs BEFORE ``dist.init_process_group``
-    so we avoid PEFT's TP-sharding code path (which requires a newer
-    transformers than we have). DDP wrap happens AFTER process-group init.
+    Strategy dispatch via ``cfg["train_strategy"]``:
+
+      - ``"ddp"`` (default, backwards-compatible): each rank holds a full copy
+        of the base model, LoRA adapter is plain-DDP-wrapped. Fits only for
+        small LoRAs that leave room on each GPU (tens of MB trainable).
+      - ``"fsdp"``: FSDP FULL_SHARD wraps the transformer so base + grads +
+        optimizer states are sharded across ``world_size`` ranks. Required
+        for large-footprint LoRAs (rank=32 + MLP modules on a 30B base).
+
+    Order matters for both paths: the PEFT adapter is attached BEFORE
+    ``init_process_group`` so PEFT's ``set_peft_model_state_dict`` doesn't
+    route through the TP import path that needs a newer transformers than
+    we have pinned.
     """
     import torch
     import torch.distributed as dist
     from peft import LoraConfig, PeftModel, get_peft_model
-    from torch.nn.parallel import DistributedDataParallel as DDP
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    # Resolve train_strategy from config first, then fall back to the
+    # workspace's model/adapter.yaml. The fallback is needed because the
+    # driver-side MCP server that built .ddp_config.json may have been
+    # spawned before common_cfg.py learned the key — this worker runs from
+    # the live filesystem and can always read adapter.yaml fresh.
+    strategy = str(cfg.get("train_strategy") or "").lower()
+    if not strategy:
+        try:
+            import yaml as _yaml
+            _ayaml = Path(cfg["workspace_root"]) / "model" / "adapter.yaml"
+            if _ayaml.is_file():
+                strategy = str(
+                    (_yaml.safe_load(_ayaml.read_text()) or {}).get(
+                        "train_strategy", "ddp"
+                    )
+                ).lower()
+            else:
+                strategy = "ddp"
+        except Exception:
+            strategy = "ddp"
 
     _print(rank, f"loading tokenizer from {cfg['model_path']}")
     tokenizer = AutoTokenizer.from_pretrained(cfg["model_path"], trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    _print(rank, "loading base model in bf16")
-    base = AutoModelForCausalLM.from_pretrained(
-        cfg["model_path"],
+    # Mamba CUDA kernels (causal_conv1d + mamba_ssm) live in the
+    # `:kernels` image tag; the default `:latest` image ships
+    # mamba_ssm 2.2.5 with causal_conv1d_fwd_function=None, which
+    # hard-crashes ssd_combined with "'NoneType' object is not callable"
+    # when FSDP's shard dispatch routes into it. Config knob
+    # cfg["use_mamba_kernels"] (default True — image-appropriate) lets
+    # callers override per-run when they know they're on the old image.
+    use_kernels = bool(cfg.get("use_mamba_kernels", True))
+    _print(rank, f"loading base model in bf16 "
+                 f"(strategy={strategy}, use_mamba_kernels={use_kernels})")
+    _from_pretrained_kwargs = dict(
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",
+        use_mamba_kernels=use_kernels,
+    )
+    base = AutoModelForCausalLM.from_pretrained(
+        cfg["model_path"],
+        **_from_pretrained_kwargs,
     )
     # After CUDA_VISIBLE_DEVICES masking in main(), each rank sees exactly
     # one GPU (exposed as cuda:0). Physical mapping is local_rank → cuda:0.
@@ -104,6 +147,22 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         )
         model = get_peft_model(base, lora_cfg)
 
+    # FSDP's FlatParameter flattener requires uniform dtype across every
+    # param in a flat group (trainable + frozen). Some Nemotron-3-Nano
+    # layers (LayerNorm, embed, lm_head, Mamba gates) load as float32 even
+    # when torch_dtype=bfloat16 is requested, and PEFT's default LoRA keeps
+    # lora_A/lora_B in float32 for numerical stability. That mix triggers
+    #   "Must flatten tensors with uniform dtype but got bfloat16 and float32"
+    # during FSDP wrap. Coerce everything to bfloat16 before wrap. Applies
+    # to both parameters AND buffers (RMSNorm weights sit on buffers in
+    # some architectures).
+    for _p in model.parameters():
+        if _p.dtype == torch.float32:
+            _p.data = _p.data.to(torch.bfloat16)
+    for _name, _b in model.named_buffers():
+        if _b.dtype == torch.float32:
+            _b.data = _b.data.to(torch.bfloat16)
+
     model.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant": False}
     )
@@ -114,15 +173,30 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         except Exception:
             pass
 
-    # Now safe to init DDP — adapter weights are already on each rank's GPU.
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl")
-        _print(rank, f"DDP init done (after PEFT load)")
+        _print(rank, f"process group init done (after PEFT load)")
 
-    # DDP wrap. Only LoRA params are trainable; wrap the full model so DDP
-    # sees them through .parameters(). find_unused_parameters=True is needed
-    # because LoRA adds params only on some modules (others stay frozen).
-    # Each rank sees exactly one GPU (cuda:0 after the CVD mask).
+    if strategy == "fsdp":
+        ddp_model, optimizer = _wrap_fsdp(model, cfg, rank)
+    else:
+        ddp_model, optimizer = _wrap_ddp(model, cfg, rank)
+
+    trainable_count = sum(p.numel() for p in ddp_model.parameters() if p.requires_grad)
+    _print(rank, f"model ready (cuda:0 after CVD mask), "
+                 f"trainable params: {trainable_count / 1e6:.1f}M "
+                 f"(strategy={strategy})")
+    return ddp_model, tokenizer, optimizer
+
+
+def _wrap_ddp(model, cfg: dict, rank: int):
+    """Plain DDP: each rank holds a full model copy."""
+    import torch
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    # Only LoRA params are trainable; wrap the full model so DDP sees them
+    # through .parameters(). find_unused_parameters=True is needed because
+    # LoRA adds params only on some modules (others stay frozen).
     ddp_model = DDP(
         model,
         device_ids=[0],
@@ -130,26 +204,127 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         find_unused_parameters=True,
         gradient_as_bucket_view=True,
     )
-
     trainable = [p for p in ddp_model.parameters() if p.requires_grad]
     try:
         optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]), fused=True)
     except (RuntimeError, TypeError):
         optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]))
     optimizer.zero_grad()
+    return ddp_model, optimizer
 
-    _print(rank, f"model ready (cuda:0 after CVD mask), "
-                 f"trainable params: {sum(p.numel() for p in trainable) / 1e6:.1f}M")
-    return ddp_model, tokenizer, optimizer
+
+def _wrap_fsdp(model, cfg: dict, rank: int):
+    """FSDP FULL_SHARD wrap. Shards base params + grads + optimizer across ranks.
+
+    Follows the HF+PEFT+FSDP recipe:
+    (https://huggingface.co/docs/peft/main/en/accelerate/fsdp)
+
+      - ``sharding_strategy=FULL_SHARD`` so the base model, gradients, and
+        optimizer states are ZeRO-3-style sharded across world_size ranks.
+      - ``use_orig_params=False`` (per PEFT doc) so the auto_wrap_policy can
+        wrap trainable and frozen params separately and we actually realise
+        GPU savings.
+      - ``auto_wrap_policy=fsdp_auto_wrap_policy(model)`` from PEFT — wraps
+        each transformer block and groups trainable LoRA params with their
+        containing block.
+      - ``mixed_precision=bf16`` matches the base dtype.
+      - ``sync_module_states=True`` so rank 0's weights are broadcast after
+        wrap; without this every rank starts from its own load and FSDP
+        sees divergent shards.
+    """
+    import torch
+    from torch.distributed.fsdp import (
+        FullyShardedDataParallel as FSDP,
+        MixedPrecision,
+        ShardingStrategy,
+        BackwardPrefetch,
+    )
+    from peft.utils.other import fsdp_auto_wrap_policy
+
+    mixed = MixedPrecision(
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
+        buffer_dtype=torch.bfloat16,
+    )
+    fsdp_model = FSDP(
+        model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        mixed_precision=mixed,
+        auto_wrap_policy=fsdp_auto_wrap_policy(model),
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+        device_id=torch.cuda.current_device(),
+        use_orig_params=False,
+        # Each rank already loaded identical weights via from_pretrained
+        # before this wrap, so we don't need FSDP to broadcast rank 0's
+        # weights; setting True triggers a needlessly slow re-read from
+        # FSX that hung the first attempt at ~60 GB/rank.
+        sync_module_states=False,
+        forward_prefetch=False,
+        limit_all_gathers=True,
+    )
+
+    trainable = [p for p in fsdp_model.parameters() if p.requires_grad]
+    # fused=True is not supported by FSDP flat-parameter tensors; use plain AdamW.
+    optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]))
+    optimizer.zero_grad()
+    return fsdp_model, optimizer
 
 
 def _save_rank0(ddp_model, tokenizer, outdir: Path) -> None:
-    """Rank-0 saves the PEFT adapter (unwrapping DDP first)."""
-    outdir.mkdir(parents=True, exist_ok=True)
-    inner = ddp_model.module  # unwrap DDP
-    inner.save_pretrained(str(outdir))
-    tokenizer.save_pretrained(str(outdir))
-    if not (outdir / "adapter_config.json").is_file():
+    """Rank-0 saves the PEFT adapter (unwrapping DDP/FSDP first).
+
+    FSDP path: enter the FULL_STATE_DICT state-dict context so rank 0 sees
+    unsharded base + adapter params. All ranks must participate in the
+    context entry (collective all-gather under the hood) even though only
+    rank 0 performs the actual save.
+    """
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    from torch.distributed.fsdp import (
+        FullyShardedDataParallel as FSDP,
+        FullStateDictConfig,
+        StateDictType,
+    )
+
+    rank = dist.get_rank() if dist.is_initialized() else 0
+
+    if isinstance(ddp_model, DDP):
+        inner = ddp_model.module
+        if rank != 0:
+            return
+        outdir.mkdir(parents=True, exist_ok=True)
+        inner.save_pretrained(str(outdir))
+        tokenizer.save_pretrained(str(outdir))
+    elif isinstance(ddp_model, FSDP):
+        # All ranks must execute the state-dict collective; only rank 0 writes.
+        # Previous version called save_pretrained (which triggers the all-gather)
+        # only on rank 0, so ranks 1-N exited the context manager immediately
+        # and the rank-0 all-gather hung for 600s → NCCL watchdog kill.
+        save_cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        inner = ddp_model.module if hasattr(ddp_model, "module") else ddp_model
+        with FSDP.state_dict_type(ddp_model, StateDictType.FULL_STATE_DICT, save_cfg):
+            # Drive the collective on every rank. rank0_only=True means
+            # non-zero ranks get an empty dict back; rank 0 gets the unsharded
+            # full state dict with base + adapter weights gathered to CPU.
+            full_sd = inner.state_dict()
+        if rank == 0:
+            outdir.mkdir(parents=True, exist_ok=True)
+            # PEFT save_pretrained only writes the adapter weights (filtered
+            # by adapter_name); it re-reads from inner.state_dict() which is
+            # now the unsharded dict we just gathered.
+            inner.save_pretrained(str(outdir), state_dict=full_sd)
+            tokenizer.save_pretrained(str(outdir))
+        if dist.is_initialized():
+            dist.barrier()
+    else:
+        # Non-distributed fallback (single-process tests).
+        if rank != 0:
+            return
+        outdir.mkdir(parents=True, exist_ok=True)
+        ddp_model.save_pretrained(str(outdir))
+        tokenizer.save_pretrained(str(outdir))
+
+    if rank == 0 and not (outdir / "adapter_config.json").is_file():
         raise RuntimeError(f"save_pretrained did not emit adapter_config.json under {outdir}")
 
 
@@ -201,11 +376,17 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
 
     collator = PadToLongest(pad_token_id=tokenizer.pad_token_id)
 
+    # cfg["lr_schedule"]: "cosine" (default, backwards-compatible) or "linear".
+    # Winning Recipe W1 uses linear decay to 0; historical MAS cycles used cosine.
+    lr_schedule = str(cfg.get("lr_schedule") or "cosine").lower()
+
     def _current_lr(step: int) -> float:
         if step < warmup_steps:
             return base_lr * (step + 1) / warmup_steps
         progress = (step - warmup_steps) / max(1, total_opt_steps - warmup_steps)
         progress = min(1.0, max(0.0, progress))
+        if lr_schedule == "linear":
+            return base_lr * (1.0 - progress)
         return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
     device = "cuda:0"  # after CVD mask, each rank sees one GPU
@@ -253,14 +434,29 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
                     _print(rank, f"step {opt_step}/{total_opt_steps} "
                                  f"loss={mean_loss:.4f} lr={lr:.2e} "
                                  f"elapsed={(time.time()-t0)/60:.1f}min")
+                # Periodic mid-training save. Bounds the blast radius of a
+                # late-run save-path or NCCL failure so we never lose more
+                # than save_every_steps of compute.
+                save_every = int(cfg.get("save_every_steps") or 0)
+                if save_every > 0 and opt_step % save_every == 0:
+                    ckpt_dir = Path(cfg["out_adapter_dir"]) / f"step_{opt_step}"
+                    _print(rank, f"periodic save → {ckpt_dir}")
+                    _save_rank0(ddp_model, tokenizer, ckpt_dir)
+                    # Re-enable train() — save_pretrained can flip eval mode
+                    # on adapter subtrees.
+                    ddp_model.train()
                 if max_steps > 0 and opt_step >= max_steps:
                     stop = True
                     break
 
     wall_seconds = time.time() - t0
+    # _save_rank0 must be entered by EVERY rank — the FSDP state_dict_type
+    # context manager performs a collective all-gather that only completes
+    # when all ranks participate. Ranks 1..N-1 return early inside
+    # _save_rank0; only rank 0 writes the adapter files.
+    outdir = Path(cfg["out_adapter_dir"])
+    _save_rank0(ddp_model, tokenizer, outdir)
     if rank == 0:
-        outdir = Path(cfg["out_adapter_dir"])
-        _save_rank0(ddp_model, tokenizer, outdir)
         _print(rank, f"saved adapter to {outdir} in {wall_seconds:.1f}s")
 
     return {
@@ -380,9 +576,11 @@ def _run_gspo(cfg: dict, rank: int, world_size: int) -> dict:
                     break
 
     wall_seconds = time.time() - t0
+    # All ranks must enter _save_rank0 for FSDP's collective state-dict
+    # gather; see SFT-path comment.
+    outdir = Path(cfg["out_adapter_dir"])
+    _save_rank0(ddp_model, tokenizer, outdir)
     if rank == 0:
-        outdir = Path(cfg["out_adapter_dir"])
-        _save_rank0(ddp_model, tokenizer, outdir)
         _print(rank, f"saved adapter to {outdir}")
 
     return {
@@ -444,6 +642,20 @@ def main() -> int:
         result = _run_sft(cfg, rank, world_size)
     elif kind == "gspo":
         result = _run_gspo(cfg, rank, world_size)
+    elif kind == "save_only":
+        # Smoke-test the FSDP save collective end-to-end without training.
+        # Builds the model identically to SFT (so the dtype cast + FSDP wrap
+        # + kernels flag all exercise), then jumps straight to _save_rank0.
+        # A green run produces adapter_model.safetensors in a few minutes.
+        ddp_model, tokenizer, _optim = _build_model_and_optim(cfg, rank, world_size)
+        outdir = Path(cfg["out_adapter_dir"])
+        t0 = time.time()
+        _save_rank0(ddp_model, tokenizer, outdir)
+        result = {
+            "kind": "save_only",
+            "save_elapsed_sec": round(time.time() - t0, 1),
+            "outdir": str(outdir),
+        }
     else:
         raise ValueError(f"Unknown kind={kind!r}")
 
