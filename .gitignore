@@ -99,6 +99,23 @@ swe_results*/
 !/.claude/mas_design/
 /.claude/mas_design/*
 !/.claude/mas_design/*.md
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/trainer-launch-stage/
+!/.claude/skills/trainer-pack-submission/
+!/.claude/skills/trainer-mem/
+!/.claude/skills/reviewer-audit-jsonl/
+!/.claude/skills/reviewer-run-eval/
+!/.claude/skills/reviewer-qa-verdict/
+!/.claude/skills/reviewer-kaggle-submit/
+!/.claude/skills/dw-teacher-distill/
+!/.claude/skills/dw-self-distill/
+!/.claude/skills/dw-curate-mix/
+!/.claude/skills/dw-mem/
+!/.claude/skills/planner-propose-recipe/
+!/.claude/skills/planner-hypothesis/
+!/.claude/skills/planner-mem/
+!/.claude/skills/*/SKILL.md
 
 # Local legacy compatibility package
 agent_evolve/algorithms/aevolve/
