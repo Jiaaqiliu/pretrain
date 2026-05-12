@@ -1,0 +1,51 @@
+# Quality Plan checkpoints for this workspace.
+#
+# 4-slot minimal gate chain matched to the Kaggle NVIDIA Nemotron
+# Reasoning challenge: confirm data, confirm training, confirm eval,
+# then package + submit the LoRA adapter.
+#
+# State per slot comes from folding checkpoint_review records (written
+# by the reviewer role) over memory/records.jsonl. A slot advances only
+# when the reviewer posts verdict=ready_to_sign; in manual mode that
+# becomes pending_human until a person clicks Sign, in auto mode the
+# reviewer (or orchestrator) follows up with checkpoint_sign.
+#
+# Fold only counts evidence tagged `checkpoint:<slot_id>`, so workers
+# must attach the slot id when they write records that serve a gate.
+
+checkpoints:
+  - id: cp_data_check
+    short: Data
+    title: Training data format + eyeball check
+    type: data
+    requires_evidence: [dataset_snapshot, data_audit_finding]
+    depends_on: []
+    required: true
+    signers: reviewer
+
+  - id: cp_training_health
+    short: Train
+    title: Training loss descends, no NaN, checkpoint exists
+    type: training_health
+    requires_evidence: [training_run]
+    depends_on: [cp_data_check]
+    required: true
+    signers: reviewer
+
+  - id: cp_eval_sanity
+    short: Eval
+    title: Local eval metric + eyeballed sample outputs
+    type: eval
+    requires_evidence: [eval_report]
+    depends_on: [cp_training_health]
+    required: true
+    signers: reviewer
+
+  - id: cp_submission_ready
+    short: Submit
+    title: LoRA adapter packaged, Kaggle inference contract satisfied, submitted
+    type: final_submit
+    requires_evidence: [submission_artifact]
+    depends_on: [cp_eval_sanity]
+    required: true
+    signers: reviewer

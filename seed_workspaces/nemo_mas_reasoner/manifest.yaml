@@ -18,12 +18,13 @@ evolvable_layers:
   - recipes/train
   - recipes/data
 
-# Read-only across cycles. Harness + benchmark fixtures.
+# Read-only across cycles. Harness + benchmark fixtures + gate config.
 protected_layers:
   - manifest.yaml
   - prompts                    # role contracts (agent-harness)
   - skills                     # skill playbooks (agent-harness)
   - tools                      # tool allowlists (agent-harness)
+  - checkpoints.yaml           # Quality Plan slot definitions (reviewer signoff)
   - eval/local_splits.yaml     # benchmark fixtures
   - eval/kaggle_eval.yaml
   - eval/constraints.yaml

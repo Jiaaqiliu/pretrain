@@ -1,13 +1,26 @@
-"""Training workspace structural validation."""
+"""Training workspace structural validation.
+
+A training workspace is a tree whose evolvable surface is declared by
+``manifest.yaml``. Structural validation is therefore manifest-driven:
+required files are the ``evolvable_layers`` + ``protected_layers`` the
+manifest itself declares. Artifact layers are created-if-missing since
+they hold per-cycle runtime state.
+
+Supported contract versions:
+  train-1.0  — legacy MCGS layout (model/, data/mix.yaml, train/pipeline.yaml).
+  train-1.1  — fork-as-world layout (recipes/{train,data}/).
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 
-TRAINING_CONTRACT_VERSION = "train-1.0"
+SUPPORTED_CONTRACT_VERSIONS = {"train-1.0", "train-1.1"}
 
-REQUIRED_FILES: list[str] = [
+# Legacy (v1.0) hard-coded layout checks. Kept so existing v1.0 seed
+# workspaces (arc-mas, swe, terminal, etc.) continue to validate.
+_V1_0_REQUIRED_FILES = [
     "manifest.yaml",
     "model/base.yaml",
     "model/adapter.yaml",
@@ -17,15 +30,9 @@ REQUIRED_FILES: list[str] = [
     "eval/local_splits.yaml",
     "eval/error_taxonomy.yaml",
 ]
-
-REQUIRED_DIRS: list[str] = [
-    "model",
-    "data",
-    "train",
-    "eval",
-    "memory",
-    "checkpoints",
-    "evolution",
+_V1_0_REQUIRED_DIRS = [
+    "model", "data", "train", "eval",
+    "memory", "checkpoints", "evolution",
 ]
 
 
@@ -39,31 +46,44 @@ def validate_training_workspace(root: str | Path) -> list[str]:
 
     manifest = root / "manifest.yaml"
     if not manifest.exists():
-        errors.append("Missing manifest.yaml")
-    else:
-        try:
-            import yaml
+        return ["Missing manifest.yaml"]
 
-            with open(manifest) as f:
-                raw = yaml.safe_load(f) or {}
-            if "name" not in raw:
-                errors.append("manifest.yaml missing required field: name")
-            cv = raw.get("contract_version")
-            if cv and cv != TRAINING_CONTRACT_VERSION:
-                errors.append(
-                    f"Contract version mismatch: got {cv}, expected {TRAINING_CONTRACT_VERSION}"
-                )
-        except Exception as exc:
-            errors.append(f"Failed to parse manifest.yaml: {exc}")
+    try:
+        import yaml
+        with open(manifest) as f:
+            raw = yaml.safe_load(f) or {}
+    except Exception as exc:
+        return [f"Failed to parse manifest.yaml: {exc}"]
 
-    for rel in REQUIRED_FILES:
-        if not (root / rel).exists():
-            errors.append(f"Missing required file: {rel}")
+    if "name" not in raw:
+        errors.append("manifest.yaml missing required field: name")
 
-    # Create optional directories that are expected to exist (artifact layers).
-    for d in REQUIRED_DIRS:
-        target = root / d
+    cv = raw.get("contract_version") or "train-1.0"
+    if cv not in SUPPORTED_CONTRACT_VERSIONS:
+        errors.append(
+            f"Contract version {cv!r} not supported "
+            f"(expected one of {sorted(SUPPORTED_CONTRACT_VERSIONS)})"
+        )
+        return errors
+
+    if cv == "train-1.0":
+        for rel in _V1_0_REQUIRED_FILES:
+            if not (root / rel).exists():
+                errors.append(f"Missing required file: {rel}")
+        for d in _V1_0_REQUIRED_DIRS:
+            target = root / d
+            if not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+        return errors
+
+    # train-1.1: manifest-driven. Evolvable + protected layers (if they
+    # name specific files) must exist; artifact layers are created empty.
+    for rel in raw.get("evolvable_layers", []) + raw.get("protected_layers", []):
+        target = root / rel
+        if not target.exists():
+            errors.append(f"Missing layer: {rel}")
+    for rel in raw.get("artifact_layers", []):
+        target = root / rel
         if not target.exists():
             target.mkdir(parents=True, exist_ok=True)
-
     return errors
