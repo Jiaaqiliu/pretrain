@@ -42,3 +42,26 @@ def test_fork_creates_isolated_dir(minimal_workspace: Path, tmp_path: Path) -> N
     # Original workspace untouched
     original_mix = ws.read_yaml("data/mix.yaml")
     assert original_mix["buckets"]["default"] == 1.0
+
+
+def test_fork_excludes_artifact_layers(minimal_workspace: Path, tmp_path: Path) -> None:
+    """Artifact layers declared in manifest are not propagated into the fork."""
+    # Seed artifacts that must NOT cross the fork boundary.
+    (minimal_workspace / "memory" / "records.jsonl").write_text('{"k":"v"}\n')
+    (minimal_workspace / "checkpoints" / "adapter.bin").write_bytes(b"stale")
+    (minimal_workspace / "evolution" / "incumbent.json").write_text("{}")
+
+    ws = TrainingWorkspace.load(minimal_workspace)
+    forked = ws.fork("node-b", _noop_mutation(), work_dir=tmp_path / "work")
+
+    # Artifact directories exist in the fork but are empty.
+    for layer in ws.artifact_layers:
+        layer_dir = forked.root / layer
+        assert layer_dir.is_dir(), f"{layer} should exist in the fork"
+        assert list(layer_dir.iterdir()) == [], f"{layer} should be empty in the fork"
+
+    # Evolvable + protected content is copied byte-for-byte.
+    assert (forked.root / "data" / "mix.yaml").exists()
+    assert (forked.root / "model" / "base.yaml").exists()
+    # Original workspace still has the seeded artifact files.
+    assert (ws.root / "memory" / "records.jsonl").read_text() == '{"k":"v"}\n'

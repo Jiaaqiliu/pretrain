@@ -133,13 +133,23 @@ class TrainingWorkspace:
         mutation: WorkspaceMutation,
         work_dir: str | Path,
     ) -> "TrainingWorkspace":
-        """Copy this workspace into a candidate directory and apply ``mutation``."""
+        """Copy this workspace into a candidate directory and apply ``mutation``.
+
+        Artifact layers (``memory``, ``artifacts``, …) declared in
+        ``manifest.yaml`` are excluded from the copy — they are per-cycle
+        runtime state, not part of the forkable template. The empty
+        directories are recreated in the destination so stages can write
+        into them immediately.
+        """
         work_dir = Path(work_dir)
         dest = work_dir / "nodes" / node_id / "workspace"
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(self.root, dest, dirs_exist_ok=False)
+        ignore = shutil.ignore_patterns(*self.artifact_layers) if self.artifact_layers else None
+        shutil.copytree(self.root, dest, dirs_exist_ok=False, ignore=ignore)
+        for layer in self.artifact_layers:
+            (dest / layer).mkdir(parents=True, exist_ok=True)
 
         candidate = TrainingWorkspace(dest)
         candidate._apply_patch(mutation)
