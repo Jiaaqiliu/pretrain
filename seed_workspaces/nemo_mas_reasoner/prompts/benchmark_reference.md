@@ -123,7 +123,7 @@ change.
   per category.
 - **Boxing discipline is fragile**: SFT data with sloppy box markers
   contaminates the model. The recipe filter
-  `require_verify_pass: true` (in `data/recipes/default.yaml`)
+  `require_verify_pass: true` (in `recipes/data/<name>.yaml`)
   exists for this.
 - **Per-category upsampling has high leverage**: the cycle-2/cycle-3
   observation that cryptarithm at upsample 12 yielded +0.01 on the

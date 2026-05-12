@@ -1,10 +1,14 @@
 # Skill: when_to_skip_sft
 
-When to use: deciding whether the next training_run should be
-SFT-then-RL (default) or RL-only on top of an existing checkpoint.
-This is a high-leverage decision — skipping SFT saves hours of
-GPU time per cycle but only works if the prior checkpoint is
-already in a good basin.
+When to use: deciding whether to run a fresh SFT from base or continue
+from a prior cycle's adapter. Continuing saves ~15h of GPU per cycle but
+only works if the prior checkpoint is already in a good basin for the
+current data mix.
+
+Note: RL is not part of the active recipe set — the `recipes/train/`
+anchor is a pure-SFT recipe (huikang). If you want to introduce RL,
+propose a new training recipe YAML with the RL hyperparameters and
+flag it as out-of-scope for this skill.
 
 ## When it's safe to skip SFT
 
@@ -53,15 +57,17 @@ hyperparameters.
 1. Check conditions above. `mem_get` the relevant
    `training_run`, `cv_result`, `dataset_snapshot`,
    `breakthrough` records.
-2. If safe to skip:
+2. If safe to continue from a prior adapter, your proposal writes a
+   training recipe at `recipes/train/<cycle>_<name>.yaml` that
+   diffs against the anchor by adding an `initial_adapter` field:
 
    ```yaml
-   diff:
-     train/pipeline.yaml:
-       stages:
-         # - sft           # SKIPPED — see Planner note
-         - rl
-       initial_ckpt: <ckpt path from cited training_run>
+   name: cycle12_continue_from_w7_step250
+   inherits: huikang
+   initial_adapter: <abs path from cited training_run, e.g.
+     /fsx/.../runs/<exp>/cycles/NNN1/.fork_target/.../artifacts/sft/w7/step_250/>
+   batching:
+     num_steps: 100    # short continuation
    ```
 
    Cite the `training_run`, `cv_result`, and `dataset_snapshot`

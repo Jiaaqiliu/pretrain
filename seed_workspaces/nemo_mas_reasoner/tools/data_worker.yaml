@@ -86,7 +86,7 @@ tools:
 
   apply_format_filter:
     description: >
-      Apply data/recipes/default.yaml filters to a JSONL
+      Apply recipes/data/<name>.yaml filters to a JSONL
       (\\boxed{}, [verify]: PASS, length cap). Returns filtered path
       + per-reason drop counts.
     schema:
@@ -106,7 +106,7 @@ tools:
 
   mix_sources:
     description: >
-      Build the final train.jsonl per data/mix.yaml weights. Returns
+      Build the final train.jsonl per the active recipes/data/<name>.yaml weights. Returns
       final path + per-source counts.
     schema:
       properties:
@@ -117,7 +117,7 @@ tools:
 
   write_jsonl:
     description: >
-      Write rows to a JSONL file under data/generated/ or data/final/.
+      Write rows to a JSONL file under artifacts/data/<hash>/.
     schema:
       properties:
         path: {type: string}

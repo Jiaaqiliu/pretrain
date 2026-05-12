@@ -3,7 +3,7 @@
 When to use: a `data_gap` (or a `recipe_proposal` from Planner)
 asks for additional long-CoT reasoning traces in a specific category.
 The standard short-completion teacher distill is a different skill
-(not yet written — see `data/recipes/default.yaml` for the
+(not yet written — see `recipes/data/<name>.yaml` for the
 `verify_pass_v1` template).
 
 ## Inputs

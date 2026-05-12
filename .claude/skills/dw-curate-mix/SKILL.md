@@ -1,6 +1,6 @@
 ---
 name: dw-curate-mix
-description: Dedup, format-filter, and mix a set of source JSONLs into `data/final/train.jsonl`, then record a `dataset_snapshot` with per-source counts, hash, and diff vs. the prior snapshot. Use after `dw-teacher-distill` / `dw-self-distill` batches have landed and the Orchestrator asks for a fresh training mix.
+description: Dedup, format-filter, and mix a set of source JSONLs into `artifacts/data/<hash>/dataset.jsonl`, then record a `dataset_snapshot` with per-source counts, hash, and diff vs. the prior snapshot. Use after `dw-teacher-distill` / `dw-self-distill` batches have landed and the Orchestrator asks for a fresh training mix.
 ---
 
 You are the Data Worker. This skill produces ONE `dataset_snapshot` per mix.
@@ -57,15 +57,15 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli data mix \
   ${CURRICULUM_YAML:+--curriculum $CURRICULUM_YAML}
 ```
 
-Output: `{"ok": true, "output": "<ws>/data/final/train.jsonl", "total": N, "per_source": {...}, "sha256_short": "..."}`. The handler writes the mix to the canonical path `data/final/train.jsonl`; do NOT override the destination.
+Output: `{"ok": true, "output": "<ws>/artifacts/data/<hash>/dataset.jsonl", "total": N, "per_source": {...}, "sha256_short": "..."}`. The handler writes the mix to the canonical path `artifacts/data/<hash>/dataset.jsonl`; do NOT override the destination.
 
 ### 5 — Final eyeball
 
 ```bash
-python -m agent_evolve.model.algorithms.nemo_mas.cli data sample --path data/final/train.jsonl -n 10
-python -m agent_evolve.model.algorithms.nemo_mas.cli data count-by --path data/final/train.jsonl --field category
-python -m agent_evolve.model.algorithms.nemo_mas.cli data count-by --path data/final/train.jsonl --field source
-python -m agent_evolve.model.algorithms.nemo_mas.cli data length-dist --path data/final/train.jsonl --field completion
+python -m agent_evolve.model.algorithms.nemo_mas.cli data sample --path artifacts/data/<hash>/dataset.jsonl -n 10
+python -m agent_evolve.model.algorithms.nemo_mas.cli data count-by --path artifacts/data/<hash>/dataset.jsonl --field category
+python -m agent_evolve.model.algorithms.nemo_mas.cli data count-by --path artifacts/data/<hash>/dataset.jsonl --field source
+python -m agent_evolve.model.algorithms.nemo_mas.cli data length-dist --path artifacts/data/<hash>/dataset.jsonl --field completion
 ```
 
 ### 6 — Diff vs prior snapshot
@@ -81,7 +81,7 @@ If a prior snapshot exists, note in the body: `total_delta: +X rows`, `per_categ
 Write `/tmp/dataset_snapshot_body.md`:
 
 ```
-output: data/final/train.jsonl
+output: artifacts/data/<hash>/dataset.jsonl
 total: <from mix>
 sha256_short: <from mix>
 per_source:
@@ -110,7 +110,7 @@ The `checkpoint:<slot_id>` tag is REQUIRED if this snapshot serves a slot (usual
 
 ## Hard rules
 
-- Do NOT overwrite `data/final/train.jsonl` without first writing this `dataset_snapshot`. Reviewer audits from the snapshot, not the raw file.
+- Do NOT overwrite `artifacts/data/<hash>/dataset.jsonl` without first writing this `dataset_snapshot`. Reviewer audits from the snapshot, not the raw file.
 - Do NOT pick your own weights. The spec tells you which sources and what target mix; if unclear, refuse and ask the Orchestrator.
-- Do NOT silently change the dedup / filter behavior. Those live in `data/recipes/default.yaml` and belong to Planner.
+- Do NOT silently change the dedup / filter behavior. Those live in `recipes/data/<name>.yaml` and belong to Planner.
 - Do NOT include sources that didn't pass `data validate`. Fix upstream first.

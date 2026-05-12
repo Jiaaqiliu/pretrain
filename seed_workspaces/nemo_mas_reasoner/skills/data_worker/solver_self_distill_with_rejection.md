@@ -103,7 +103,7 @@ refs: [<request_id>, <source_ckpt_training_run_id>]
   eval, low yield means the ckpt is wrong, not undersampled.
 - Do NOT mix in teacher-distilled traces here. Solver self-distill
   is one batch, teacher distill is another batch — DataCurator
-  mixes them per `data/mix.yaml`.
+  mixes them per the active `recipes/data/<name>.yaml`.
 - Do NOT accept rows where the box matches by accident (e.g. the
   prompt has "= 42" and the model echoed it without reasoning).
   If `filter_by_gold` doesn't already detect this, add a

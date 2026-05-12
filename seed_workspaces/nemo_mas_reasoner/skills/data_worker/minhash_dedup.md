@@ -8,9 +8,9 @@ prior batches.
 ## Inputs
 
 - One or more JSONL paths to dedupe (typically a new
-  `distill_batch` plus the current `data/final/train.jsonl`).
+  `distill_batch` plus the current `artifacts/data/<hash>/dataset.jsonl`).
 - The dedup key: usually `prompt_rendered`. For Nemotron, the
-  `data/recipes/default.yaml` filter `dedup_by:
+  `recipes/data/<name>.yaml` filter `dedup_by:
   prompt_and_source_hash` uses the prompt+source pair as key.
 - Threshold: Jaccard similarity above which two rows are
   considered duplicates. Default 0.85.
@@ -19,7 +19,7 @@ prior batches.
 
 1. Decide the key: prompt-only (`prompt_rendered`) for cross-source
    dedup, or `prompt_and_source_hash` for within-source. Match
-   what `data/recipes/default.yaml` declares.
+   what `recipes/data/<name>.yaml` declares.
 2. `minhash_dedup(input_path=<new batch>, key_field=<key>,
    threshold=0.85)` — produces a deduped JSONL and a report of
    collisions. (For multi-input cases, concat first then dedup.)
@@ -28,7 +28,7 @@ prior batches.
    - `duplicates`: rows dropped, with their nearest-neighbor id in
      the keep set
    - `overlap_with_existing`: if compared against
-     `data/final/train.jsonl`, fraction of new batch that
+     `artifacts/data/<hash>/dataset.jsonl`, fraction of new batch that
      duplicated existing data
 4. If `overlap_with_existing > 0.5`, the new batch is mostly
    redundant. Keep the deduped version but flag this in the

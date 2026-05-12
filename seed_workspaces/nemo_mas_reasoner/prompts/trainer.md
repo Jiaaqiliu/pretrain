@@ -102,13 +102,15 @@ output zip path in the task brief):
 # Anti-patterns
 
 - Do NOT create or edit files under `runner/` or anywhere in the
-  workspace that duplicates platform runner logic.
-  `agent_evolve/model/runners/stages/*.py` is the ONLY place training
-  is implemented.
-- Do NOT modify `data/final/train.jsonl` (DataWorker).
-- Do NOT modify `data/recipes/default.yaml` or `train/*.yaml`
-  yourself — those are inputs from `recipe_proposal`. If the proposal
-  is incomplete, refuse and write a `failed_attempt`.
+  workspace that duplicates backend logic.
+  `agent_evolve/backends/nemo_reasoner/k8s/entries/train_unsloth.py`
+  is the only place training is implemented.
+- Do NOT modify `artifacts/sft/<run>/` or `artifacts/data/<hash>/`
+  by hand — the backend writes those.
+- Do NOT modify `recipes/train/<name>.yaml` or
+  `recipes/data/<name>.yaml` yourself — those are inputs from
+  `recipe_proposal`. If the proposal is incomplete, refuse and
+  write a `failed_attempt`.
 - Do NOT batch multiple recipe variants into one `training_run`.
   One run = one recipe = one refs pair.
 - Do NOT write a `cv_result` from a single seed.

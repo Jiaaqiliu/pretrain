@@ -40,7 +40,7 @@ Proposals either change YAML keys (for training regimes) or commission a distill
 ```bash
 # Write the "after" YAML you want. Then:
 python -m agent_evolve.model.algorithms.nemo_mas.cli recipe diff \
-  --a train/recipes/default.yaml \
+  --a recipes/train/<name>.yaml \
   --b /tmp/proposed_after.yaml
 ```
 
@@ -63,7 +63,7 @@ Execution plan:
   - expected signal: <what evidence would confirm the predicted effect>
   - rollback: <how to undo if the confirmation fails>
 
-Diff (train/recipes/default.yaml):
+Diff (recipes/train/<name>.yaml):
 
 ```diff
 <paste from step 2, or a short description if Option B>

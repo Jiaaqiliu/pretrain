@@ -26,7 +26,7 @@ optional_fields:
   seed:             int   # generation seed if applicable
 ```
 
-Plus `data/recipes/default.yaml` per-row constraints:
+Plus `recipes/data/<name>.yaml::filters` per-row constraints (if present):
 
 - `completion` MUST contain `[verify]: PASS` somewhere (per
   `require_verify_pass: true`).

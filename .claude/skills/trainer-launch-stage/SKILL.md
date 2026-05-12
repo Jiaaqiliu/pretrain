@@ -9,8 +9,8 @@ You are the Trainer. This skill runs ONE full training execution end-to-end and 
 
 - `recipe_id`    — `rec_…` of the `recipe_proposal` you're executing (from the task brief)
 - `dataset_id`   — `rec_…` of the `dataset_snapshot` you're training on
-- `recipe_path`  — workspace-relative path to the recipe YAML, e.g. `train/recipes/sft_v3.yaml`
-- `data_path`    — workspace-relative path to the JSONL, e.g. `data/final/train.jsonl`
+- `recipe_path`  — workspace-relative path to the recipe YAML, e.g. `recipes/train/<name>.yaml`
+- `data_path`    — workspace-relative path to the JSONL, e.g. `artifacts/data/<hash>/dataset.jsonl`
 - `ckpt_out`     — workspace-relative output dir, e.g. `checkpoints/adapters/sft_v3/`
 - `max_steps`    — optional cap; pass through from the task brief if set
 
@@ -121,8 +121,8 @@ Any of: compute backend unset · records missing · `launch` returns non-success
 ## Anti-patterns
 
 - ❌ Do NOT edit files under `runner/` or anywhere in the workspace that duplicates platform runner logic.
-- ❌ Do NOT modify `data/final/train.jsonl` (DataWorker's territory).
-- ❌ Do NOT modify `data/recipes/default.yaml` or `train/*.yaml` yourself — those come from `recipe_proposal`. If incomplete, refuse.
+- ❌ Do NOT modify `artifacts/data/<hash>/dataset.jsonl` (DataWorker's territory).
+- ❌ Do NOT modify `recipes/data/<name>.yaml` or `recipes/train/<name>.yaml` yourself — those come from `recipe_proposal`. If incomplete, refuse.
 - ❌ Do NOT batch multiple recipe variants into one `training_run`. One run = one recipe = one refs pair.
 - ❌ Do NOT call `pack_submission` here. That's `trainer-pack-submission`.
 - ❌ Do NOT call Kaggle. That's the Reviewer's job.

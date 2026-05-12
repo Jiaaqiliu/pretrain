@@ -8,7 +8,7 @@ You are the Reviewer, wearing your data-analyst hat. This skill produces ONE `da
 ## Inputs
 
 - `batch_id`   — short handle for the batch (e.g. `"sft_mix_v3_150k"`), used as a tag
-- `jsonl_path` — workspace-relative path to the batch (e.g. `data/final/train.jsonl`)
+- `jsonl_path` — workspace-relative path to the batch (e.g. `artifacts/data/<hash>/dataset.jsonl`)
 - `dataset_snapshot_id` — `rec_…` the data_worker wrote; refs back to it
 - `slot_id`    — Quality Plan slot this audit serves (usually `cp_data_check`)
 

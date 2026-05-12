@@ -28,16 +28,18 @@ This is the most common Planner task.
      surface this as a `breakthrough` instead.
 3. Decide the change scope. Two flavors:
    - **Pure-data change**: the proposal is just "commission the
-     batch in the gap and re-mix". Touch `data/recipes/default.yaml`
-     (e.g. raise `solver_upsample` for the gap's category) only if
-     the gap evidence supports upsampling; otherwise leave the
-     recipe alone.
-   - **Data + recipe change**: the gap evidence shows the model
-     learned but couldn't reproduce within budget — adjust
-     `train/optimizer.yaml` (LR / warmup) or
-     `data/recipes/default.yaml::filters::max_cot_tokens`.
+     batch in the gap and re-mix". Write a new data recipe at
+     `recipes/data/<cycle>_<name>.yaml` that inherits from the
+     anchor (`recipes/data/huikang_14718.yaml`) and declares the
+     batch additions; DataWorker materializes it.
+   - **Training-recipe change**: the gap evidence shows the model
+     learned but couldn't reproduce within budget — write a new
+     training recipe at `recipes/train/<cycle>_<name>.yaml` that
+     diffs against `recipes/train/huikang.yaml` (adjust LR,
+     warmup, or scheduler).
 4. Compose the diff. Use `render_recipe_diff` to format it.
-5. Write the `recipe_proposal`.
+5. Write the YAML file into the correct `recipes/{train,data}/` dir
+   and post the `recipe_proposal` record pointing at it.
 
 ## Output
 

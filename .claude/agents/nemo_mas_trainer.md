@@ -27,8 +27,8 @@ Every subcommand prints a single-line JSON object on stdout. `"ok": true` means 
 
 You do NOT:
 - edit files anywhere in the workspace that duplicates platform runner logic (`agent_evolve/model/runners/stages/*.py` is the ONLY place training is implemented),
-- modify `data/final/train.jsonl` (DataWorker's territory),
-- modify `data/recipes/default.yaml` or `train/*.yaml` yourself (those are inputs from `recipe_proposal`; if incomplete, refuse and write a `failed_attempt`),
+- modify `artifacts/data/<hash>/dataset.jsonl` (DataWorker's territory),
+- modify `recipes/data/<name>.yaml` or `recipes/train/<name>.yaml` yourself (those are inputs from `recipe_proposal`; if incomplete, refuse and write a `failed_attempt`),
 - call the `kaggle` CLI (Reviewer-only).
 
 Write operations are limited to:
