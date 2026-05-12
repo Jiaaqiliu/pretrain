@@ -1,12 +1,12 @@
 """Unsloth SFT on Nemotron-3-Nano-30B-A3B, recipe-driven, single-GPU.
 
-Reads recipe from YAML (default: train/recipes/huikang.yaml). Env vars
-override specific knobs (LR, NUM_STEPS, SAVE_EVERY, SEED, RUN_NAME).
+Reads recipe from the absolute path in $RECIPE_PATH (caller-supplied, not
+resolved from any workspace root). Env vars override specific knobs.
 Launched inside a k8s pod by jobs/train_1gpu.yaml.
 
 Env:
-    RECIPE_PATH     — recipe YAML (default: workspace train/recipes/huikang.yaml)
-    OUTPUT_DIR      — where to save step_{N}/ + final/ (required)
+    RECIPE_PATH     — absolute path to recipe YAML (required)
+    OUTPUT_DIR      — where to save step_{N}/ + final/ + train.log (required)
     RUN_NAME        — for wandb + log prefix (default 'unsloth-train')
     LR              — override recipe.optimizer.lr
     NUM_STEPS       — override recipe.batching.num_steps
@@ -23,12 +23,10 @@ from cut_cross_entropy import linear_cross_entropy
 from peft import LoraConfig
 from peft.tuners.lora import Linear as LoraLinear
 
-# ── Locate + load recipe ─────────────────────────────────────────────
-DEFAULT_RECIPE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "train", "recipes", "huikang.yaml",
+# ── Load recipe (caller-supplied absolute path; no implicit fallback) ─
+RECIPE_PATH = os.environ.get("RECIPE_PATH") or sys.exit(
+    "error: RECIPE_PATH env var required (absolute path to recipe YAML)"
 )
-RECIPE_PATH = os.environ.get("RECIPE_PATH", DEFAULT_RECIPE)
 with open(RECIPE_PATH) as _f: R = yaml.safe_load(_f)
 
 # ── Env overrides (knobs the CLI sweeps) ─────────────────────────────
