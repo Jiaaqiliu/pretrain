@@ -261,14 +261,12 @@ for bstart in range(0, len(examples), BATCH_SIZE):
         model.save_pretrained(sd); tokenizer.save_pretrained(sd)
         log(f"saved {sd}")
 
-# ── Final adapter + Kaggle-compat lm_head key rename ─────────────────
-from safetensors.torch import load_file, save_file
+# ── Final adapter ────────────────────────────────────────────────────
+# Save a clean copy as `final/` alongside the periodic step_{N}/ dirs.
+# Kaggle-specific packaging (zip layout + optional lm_head rename/drop)
+# lives in agent_evolve/backends/nemo_reasoner/pack_for_kaggle.py so the
+# same transform can be applied to any step_{N}/ adapter.
 final_dir = os.path.join(OUTPUT_DIR, "final")
 os.makedirs(final_dir, exist_ok=True)
 model.save_pretrained(final_dir); tokenizer.save_pretrained(final_dir)
-st_path = os.path.join(final_dir, "adapter_model.safetensors")
-tensors = load_file(st_path)
-renamed = {k.replace("base_model.model.lm_head.", "base_model.model.backbone.lm_head."): v
-           for k, v in tensors.items()}
-save_file(renamed, st_path)
 log(f"DONE — final={final_dir} peak_VRAM={torch.cuda.max_memory_allocated()/1e9:.1f}GB")
