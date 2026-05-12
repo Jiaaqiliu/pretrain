@@ -1,8 +1,15 @@
-# Huikang 0.85-LB recipe — canonical SoT for k8s training.
+# Huikang 0.85-LB training recipe — anchor (forkable, mutable).
 #
-# Read by k8s/entries/train_unsloth.py via the RECIPE_PATH env var.
-# Override individual knobs at submit time:
-#     ./k8s/submit.sh train --name w7 --lr 2e-4 --steps 460
+# Read by agent_evolve/backends/nemo_reasoner/k8s/entries/train_unsloth.py
+# via the RECIPE_PATH env var. The planner agent writes sibling recipes
+# (cycle<N>_<name>.yaml) that diff against this anchor.
+#
+# Invocation:
+#   BACKEND=/fsx/zzsamshi/a-evolve/agent_evolve/backends/nemo_reasoner
+#   $BACKEND/k8s/submit.sh train \
+#       --train-recipe $FORK/recipes/train/huikang.yaml \
+#       --data-recipe  $FORK/recipes/data/huikang_14718.yaml \
+#       --out $FORK/artifacts/sft/w7 --name w7
 
 name: huikang_0.85
 reference: https://www.kaggle.com/code/huikang/end-to-end-finetuning-for-lb-0-85

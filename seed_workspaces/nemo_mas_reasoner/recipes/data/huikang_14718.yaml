@@ -1,0 +1,33 @@
+# Data recipe — anchor for huikang's 0.85 LB training set.
+#
+# Declarative spec consumed by agent_evolve/backends/nemo_reasoner/data/
+# build_from_recipe.py (TBD). The anchor just points at the canonical
+# materialized JSONL — new recipes are sibling YAMLs that describe mixes,
+# filters, or teacher-generation steps. Data_worker writes them.
+
+name: huikang_14718
+description: >
+  Huikang's public 0.85 LB Kaggle training set: 14,718 prompt/completion
+  rows spanning 7 reasoning domains (bits, cipher, cryptarithm, equations,
+  gravity, numerals, units). Canonical anchor used as the starting mix.
+
+# Materialized JSONL (canonical home — read-only, managed outside the fork).
+# Other recipes can reference this path as a source.
+out_path: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/huikang_14718.jsonl
+provenance: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/huikang_14718.provenance.json
+
+# No sources/filters/teacher_gen blocks here — this is a pre-built artifact.
+# Example of a derived recipe that would live alongside this one:
+#
+#   name: cycle12_more_equations
+#   inherits: huikang_14718
+#   add:
+#     - source: teacher_gen
+#       domain: equations
+#       n: 500
+#       teacher: claude-opus
+#       cot_template: verify_pass_v1
+#   filters:
+#     require_verify_pass: true
+#     max_cot_tokens: 7600
+#     dedup_by: prompt_and_source_hash

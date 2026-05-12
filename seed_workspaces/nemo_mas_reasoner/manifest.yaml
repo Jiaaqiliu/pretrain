@@ -1,56 +1,39 @@
 name: nemo_mas_reasoner
-contract_version: train-1.0
+contract_version: train-1.1
 description: >
-  Orchestrator-worker MAS for Nemotron Reasoning Kaggle. Lightweight role
-  prompts + medium skill pool + typed-record memory with BM25. Parallel
-  alternative to MCGS — same workspace contract, different search strategy.
+  Multi-agent system (planner, data_worker, trainer, reviewer) for the
+  NVIDIA Nemotron Model Reasoning Kaggle challenge. The seed workspace is
+  a forkable template: each evolution cycle forks it into
+  runs/<exp>/cycles/NNNN/workspace/ and agents mutate only the evolvable
+  layers below. Everything outside evolvable_layers is frozen per cycle.
 
 defaults:
   benchmark: nemo_reasoner
-  algorithm: nemo_mas
-  backend: h200_single_node
+  backend: nemo_reasoner   # agent_evolve/backends/nemo_reasoner/k8s/submit.sh
 
-# What the algorithm is allowed to mutate cycle-to-cycle.
-# `prompts` and `skills` are evolvable so the LLM-managed pipeline can sharpen
-# its own protocols across cycles, but in practice the human curates these.
+# The ONLY directories agents write to in a fork. Two evolvable dimensions:
+#   - recipes/train — training hyperparameter YAMLs (planner writes siblings of huikang.yaml)
+#   - recipes/data  — data-mix specs (data_worker writes siblings of huikang_14718.yaml)
 evolvable_layers:
-  - prompts
-  - skills
-  - data/mix.yaml
-  - data/curriculum.yaml
-  - data/recipes
-  - data/generators
-  - data/filters
-  - train/pipeline.yaml
-  - train/optimizer.yaml
-  - train/loss.yaml
-  - train/batching.yaml
-  - rl/reward.py
-  - rl/advantage.py
-  - rl/rollout.yaml
-  - eval/error_taxonomy.yaml
-  - backend                 # backend config tweaks
-# Note: no `runner/` layer. Training is implemented once, at the
-# platform level, under agent_evolve/model/runners/stages/*.py (via
-# @register_stage). The workspace must not carry runner scripts.
+  - recipes/train
+  - recipes/data
 
+# Read-only across cycles. Harness + benchmark fixtures.
 protected_layers:
-  - DESIGN.md
   - manifest.yaml
-  - tools                   # tool whitelist is structural, not evolvable per-cycle
-  - prompts/benchmark_reference.md  # human-curated ground truth about eval
-  - model/base.yaml
-  - eval/local_splits.yaml
+  - prompts                    # role contracts (agent-harness)
+  - skills                     # skill playbooks (agent-harness)
+  - tools                      # tool allowlists (agent-harness)
+  - eval/local_splits.yaml     # benchmark fixtures
   - eval/kaggle_eval.yaml
-  - eval/private_holdout.jsonl
-  - data/raw
+  - eval/constraints.yaml
 
+# Ephemeral per-fork state. TrainingWorkspace.fork() skips these when
+# copying the seed, and runtime outputs land under artifacts/ by the
+# backend's --out contract (train/eval never write outside a fork's
+# artifacts/ tree).
 artifact_layers:
-  - memory                  # records.jsonl + bm25 index
-  - checkpoints
-  - evolution
-  - data/generated          # distill outputs (TeacherDistiller / SolverDistiller)
-  - data/final              # DataCurator outputs
-  - logs                    # training / eval logs
+  - memory                     # agent ledger (records.jsonl + BM25 index)
+  - artifacts                  # model output: sft/, eval/, data/ subtrees
 
 reload_strategy: hot

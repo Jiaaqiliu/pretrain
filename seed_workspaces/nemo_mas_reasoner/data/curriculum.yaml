@@ -1,7 +1,0 @@
-curriculum:
-  - name: warmup
-    focus: easy
-    weight: 1.0
-  - name: targeted_hard
-    focus: hard
-    weight: 0.0

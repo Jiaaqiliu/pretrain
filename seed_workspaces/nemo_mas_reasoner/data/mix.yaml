@@ -1,4 +1,0 @@
-buckets:
-  default: 0.7
-  failure_replay: 0.15
-  generic_synthetic: 0.15
