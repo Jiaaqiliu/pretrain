@@ -6,3 +6,10 @@ splits:
   # checkout. Keep as an absolute path so forks of this workspace don't have
   # to duplicate the data.
   kaggle_dev_local: /fsx/zzsamshi/nemotron-auto-research/data/splits/dev_local.csv
+  # Canonical balanced dev set for NVIDIA Nemotron Reasoning Challenge.
+  # See /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/README.md.
+  # 726 rows across 6 scored domains (bits=226, cipher/eq/gravity/numerals/units=100 each).
+  # 0 rows overlap with train/huikang_14718.jsonl.
+  balanced_dev726: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/dev/balanced_dev726.csv
+  # Deprecated predecessor (kept for back-compat with historical eval results).
+  balanced_dev600: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/legacy/balanced_dev600.csv

@@ -176,6 +176,45 @@ def render_hf_dataset(
     return Dataset.from_dict(out)
 
 
+# ── Chat-formatted row loader (Unsloth SFT) ─────────────────────────────
+
+def load_chat_rows(
+    workspace: Any,
+    *,
+    split: str = "train",
+    max_items: int | None = None,
+) -> list[dict]:
+    """Load raw ``{"messages": [...]}`` rows from ``data/sources.yaml``.
+
+    Unlike :func:`render_hf_dataset` (which pre-tokenizes with a prompt /
+    completion mask), this returns the untransformed rows so the
+    Unsloth/SFTTrainer stage can apply its own chat template. Fails loud
+    if no sources are found for ``split``.
+    """
+    root = Path(workspace.root)
+    sources_path = root / "data" / "sources.yaml"
+    paths = list(_discover_jsonl_paths(sources_path, root, split))
+    if not paths:
+        raise FileNotFoundError(
+            f"No training sources found for split={split!r} in {sources_path}"
+        )
+    rows: list[dict] = []
+    for path in paths:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                rows.append(row)
+                if max_items is not None and len(rows) >= max_items:
+                    return rows
+    return rows
+
+
 class PadToLongest:
     """Dynamic-padding collator preserving ``-100`` labels. Torch-backed."""
 

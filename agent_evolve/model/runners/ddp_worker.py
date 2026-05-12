@@ -137,13 +137,18 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         model = PeftModel.from_pretrained(base, start_adapter, is_trainable=True)
     else:
         _print(rank, f"attaching fresh LoRA rank={cfg['lora_rank']}")
+        # target_modules can be either a list (explicit leaf names) or the
+        # string "all-linear" — PEFT resolves the latter to every nn.Linear.
+        # huikang's 0.85-LB adapter uses "all-linear"; we support it here.
+        tm_cfg = cfg["target_modules"]
+        tm = tm_cfg if isinstance(tm_cfg, str) else list(tm_cfg)
         lora_cfg = LoraConfig(
             r=int(cfg["lora_rank"]),
             lora_alpha=int(cfg["lora_alpha"]),
             lora_dropout=float(cfg["lora_dropout"]),
             bias="none",
             task_type="CAUSAL_LM",
-            target_modules=list(cfg["target_modules"]),
+            target_modules=tm,
         )
         model = get_peft_model(base, lora_cfg)
 
@@ -205,10 +210,24 @@ def _wrap_ddp(model, cfg: dict, rank: int):
         gradient_as_bucket_view=True,
     )
     trainable = [p for p in ddp_model.parameters() if p.requires_grad]
+    # AdamW knobs — defaults match PyTorch (β1=0.9, β2=0.999, wd=0.0). huikang's
+    # 0.85-LB recipe uses β2=0.95 (not 0.999) — heavier discounting of past
+    # gradient-squared, suited to short SFT runs where the Adam moment estimate
+    # shouldn't over-smooth recent updates.
+    beta1 = float(cfg.get("adam_beta1", 0.9))
+    beta2 = float(cfg.get("adam_beta2", 0.999))
+    eps = float(cfg.get("adam_eps", 1e-8))
+    weight_decay = float(cfg.get("weight_decay", 0.0))
     try:
-        optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]), fused=True)
+        optimizer = torch.optim.AdamW(
+            trainable, lr=float(cfg["lr"]), betas=(beta1, beta2),
+            eps=eps, weight_decay=weight_decay, fused=True,
+        )
     except (RuntimeError, TypeError):
-        optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]))
+        optimizer = torch.optim.AdamW(
+            trainable, lr=float(cfg["lr"]), betas=(beta1, beta2),
+            eps=eps, weight_decay=weight_decay,
+        )
     optimizer.zero_grad()
     return ddp_model, optimizer
 
@@ -264,8 +283,15 @@ def _wrap_fsdp(model, cfg: dict, rank: int):
     )
 
     trainable = [p for p in fsdp_model.parameters() if p.requires_grad]
+    beta1 = float(cfg.get("adam_beta1", 0.9))
+    beta2 = float(cfg.get("adam_beta2", 0.999))
+    eps = float(cfg.get("adam_eps", 1e-8))
+    weight_decay = float(cfg.get("weight_decay", 0.0))
     # fused=True is not supported by FSDP flat-parameter tensors; use plain AdamW.
-    optimizer = torch.optim.AdamW(trainable, lr=float(cfg["lr"]))
+    optimizer = torch.optim.AdamW(
+        trainable, lr=float(cfg["lr"]), betas=(beta1, beta2),
+        eps=eps, weight_decay=weight_decay,
+    )
     optimizer.zero_grad()
     return fsdp_model, optimizer
 
@@ -354,6 +380,28 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
     epochs = int(cfg["epochs"])
     log_every = max(1, int(cfg["log_every"]))
 
+    # wandb: rank-0 only. Enabled when cfg["wandb_enabled"] is truthy. Silent
+    # no-op on other ranks and when wandb package is missing.
+    wandb_run = None
+    if rank == 0 and cfg.get("wandb_enabled"):
+        try:
+            import wandb
+            api_key = cfg.get("wandb_api_key") or os.environ.get("WANDB_API_KEY")
+            if api_key:
+                wandb.login(key=api_key, relogin=False)
+            wandb_run = wandb.init(
+                project=str(cfg.get("wandb_project") or "nemo-mas"),
+                name=str(cfg.get("wandb_run_name") or Path(cfg["out_adapter_dir"]).name),
+                config={k: v for k, v in cfg.items()
+                        if k not in ("wandb_api_key",) and
+                        isinstance(v, (int, float, str, bool, list, dict, type(None)))},
+                reinit=True,
+            )
+            _print(rank, f"wandb initialized: {wandb_run.name} ({wandb_run.id})")
+        except Exception as e:
+            _print(rank, f"wandb init failed, continuing without it: {e}")
+            wandb_run = None
+
     # Sharded per-rank indices. Standard DDP-sampler pattern.
     def _rank_epoch_indices(epoch: int) -> list[list[int]]:
         rng = random.Random(int(cfg["seed"]) + epoch)
@@ -434,6 +482,16 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
                     _print(rank, f"step {opt_step}/{total_opt_steps} "
                                  f"loss={mean_loss:.4f} lr={lr:.2e} "
                                  f"elapsed={(time.time()-t0)/60:.1f}min")
+                # wandb log every opt step (rank 0 only; no-op if not inited).
+                if wandb_run is not None:
+                    try:
+                        wandb_run.log({
+                            "train/loss": mean_loss,
+                            "train/lr": lr,
+                            "train/elapsed_min": (time.time() - t0) / 60.0,
+                        }, step=opt_step)
+                    except Exception:
+                        pass
                 # Periodic mid-training save. Bounds the blast radius of a
                 # late-run save-path or NCCL failure so we never lose more
                 # than save_every_steps of compute.
@@ -458,6 +516,15 @@ def _run_sft(cfg: dict, rank: int, world_size: int) -> dict:
     _save_rank0(ddp_model, tokenizer, outdir)
     if rank == 0:
         _print(rank, f"saved adapter to {outdir} in {wall_seconds:.1f}s")
+    if wandb_run is not None:
+        try:
+            wandb_run.summary["final_loss"] = losses[-1] if losses else float("nan")
+            wandb_run.summary["avg_loss"] = sum(losses) / max(1, len(losses))
+            wandb_run.summary["wall_seconds"] = wall_seconds
+            wandb_run.summary["total_opt_steps"] = opt_step
+            wandb_run.finish()
+        except Exception:
+            pass
 
     return {
         "total_steps": opt_step,

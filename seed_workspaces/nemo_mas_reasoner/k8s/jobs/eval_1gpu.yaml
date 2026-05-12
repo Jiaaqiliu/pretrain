@@ -1,0 +1,91 @@
+# 1-pod × 8-GPU TP=8 vLLM eval — single node impact.
+# Expects EVAL_CONFIG_PATH to point at a pre-written .eval_config.json
+# (submit.sh writes this). Eval worker loads adapter + runs dev726.
+#
+# Placeholders: ${JOB_NAME} ${EVAL_CONFIG_PATH} ${NODE_NAME}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: default
+  labels:
+    app: a-evolve
+    role: eval
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: a-evolve
+        role: eval
+    spec:
+      restartPolicy: Never
+      nodeName: ${NODE_NAME}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: evaluator
+          image: 801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:kernels
+          imagePullPolicy: IfNotPresent
+          workingDir: /fsx/zzsamshi/a-evolve
+          command: ["python"]
+          args:
+            - "-m"
+            - "agent_evolve.model.runners.eval_worker"
+            - "--config"
+            - "${EVAL_CONFIG_PATH}"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+            - name: WANDB_DISABLED
+              value: "true"
+            - name: TOKENIZERS_PARALLELISM
+              value: "false"
+            - name: PYTHONPATH
+              value: "/fsx/zzsamshi/a-evolve"
+            - name: HOME
+              value: "/tmp"
+            - name: VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER
+              value: "0"
+            - name: VLLM_USE_FLASHINFER_MOE_FP8
+              value: "0"
+            - name: VLLM_USE_FLASHINFER_MOE_FP4
+              value: "0"
+            - name: VLLM_ALLREDUCE_USE_FLASHINFER
+              value: "0"
+            - name: TORCHINDUCTOR_USE_STATIC_CUDA_LAUNCHER
+              value: "0"
+            - name: TORCHINDUCTOR_FX_GRAPH_CACHE
+              value: "0"
+            - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+              value: "0"
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: "/tmp/torchinductor"
+            - name: TRITON_CACHE_DIR
+              value: "/tmp/triton"
+            - name: VLLM_CACHE_ROOT
+              value: "/tmp/vllm-cache"
+          resources:
+            limits:
+              nvidia.com/gpu: "${GPU_COUNT}"
+            requests:
+              nvidia.com/gpu: "${GPU_COUNT}"
+          volumeMounts:
+            - name: fsx
+              mountPath: /fsx
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: fsx
+          persistentVolumeClaim:
+            claimName: fsx-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi

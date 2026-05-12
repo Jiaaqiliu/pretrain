@@ -42,6 +42,7 @@ credentials.json
 seed_workspaces/*/memory/episodic/*.jsonl
 seed_workspaces/*/memory/semantic/*.jsonl
 seed_workspaces/*/evolution/
+seed_workspaces/*/artifacts/
 inspect_evals/
 
 # Logs
@@ -125,6 +126,7 @@ program.md
 program_v2.md
 program_v3.md
 program_v3_old.md
+example.md
 results.tsv
 test.ipynb
 seed_workspaces/skillbench_zero/

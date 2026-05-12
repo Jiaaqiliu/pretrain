@@ -1,0 +1,69 @@
+# Huikang 0.85-LB recipe — canonical SoT for k8s training.
+#
+# Read by k8s/entries/train_unsloth.py via the RECIPE_PATH env var.
+# Override individual knobs at submit time:
+#     ./k8s/submit.sh train --name w7 --lr 2e-4 --steps 460
+
+name: huikang_0.85
+reference: https://www.kaggle.com/code/huikang/end-to-end-finetuning-for-lb-0-85
+
+model:
+  path: /fsx/models/Nemotron-3-Nano-30B-A3B-unsloth
+  kaggle_base_name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  dtype: bfloat16
+  max_seq_len: 8192
+
+adapter:
+  type: lora
+  rank: 32
+  alpha: 32
+  dropout: 0.0
+  bias: none
+  use_gradient_checkpointing: unsloth
+  # All 9 LoRA targets incl. lm_head (huikang injects lm_head manually —
+  # Unsloth drops it from MoE models even when listed).
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - up_proj
+    - down_proj
+    - in_proj
+    - out_proj
+    - lm_head
+
+data:
+  train_jsonl: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/huikang_14718.jsonl
+
+optimizer:
+  name: adamw
+  lr: 2.0e-4
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.0
+  max_grad_norm: 1.0e9
+
+scheduler:
+  type: linear      # linear decay from lr to 0 over num_steps
+  warmup_steps: 0
+
+batching:
+  batch_size: 32       # effective global batch (per_device_bs × grad_accum since TP=1 DP=1)
+  micro_batch_size: 4  # per forward pass; grad_accum = ceil(batch_size / micro_batch_size)
+  num_steps: 460       # ≈ 1 epoch on 14,718 rows at batch 32
+  save_every: 50
+  seed: 42
+
+dtype_discipline:
+  # Enforced by assertion in train_unsloth.py.
+  lora_params: float32
+  base_params: bfloat16
+  moe_router:  float32    # NemotronHPreTrainedModel._keep_in_fp32_modules_strict
+
+tricks:
+  moe_tie_weights: true        # Tinker convention: tie A for up/B for down across 128 experts
+  cce_patched_forward: true    # cut-cross-entropy to skip 256k-vocab logit materialization
+  mamba_fast_path: true        # force nemotron_h.is_fast_path_available = True
+  unsloth_force_compile: true
+  attn_implementation: eager

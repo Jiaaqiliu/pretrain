@@ -216,6 +216,7 @@ def _run_vllm_eval(
             enforce_eager=enforce_eager,
         )
 
+
     logger.info(
         "[eval] loading vLLM engine (full_model=%s): %s",
         is_full_model,

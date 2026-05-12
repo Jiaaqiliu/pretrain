@@ -1,0 +1,92 @@
+# 1-pod × 1-GPU Unsloth training — huikang recipe.
+# Single node impact (one GPU). Parameterize via submit.sh.
+#
+# Placeholders: ${JOB_NAME} ${IMAGE} ${OUTPUT_DIR} ${RUN_NAME} ${LR}
+#               ${NUM_STEPS} ${SAVE_EVERY} ${SEED} ${NODE_NAME}
+#               ${WANDB_DISABLED} ${WANDB_API_KEY}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: default
+  labels:
+    app: a-evolve
+    role: train
+    recipe: huikang
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: a-evolve
+        role: train
+        recipe: huikang
+    spec:
+      restartPolicy: Never
+      # Pin to a single chosen node to bound impact.
+      nodeName: ${NODE_NAME}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: trainer
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          workingDir: /fsx/zzsamshi/a-evolve
+          command: ["python"]
+          args:
+            - "/fsx/zzsamshi/a-evolve/seed_workspaces/nemo_mas_reasoner/k8s/entries/train_unsloth.py"
+          env:
+            - name: RECIPE_PATH
+              value: "${RECIPE_PATH}"
+            - name: OUTPUT_DIR
+              value: "${OUTPUT_DIR}"
+            - name: RUN_NAME
+              value: "${RUN_NAME}"
+            - name: LR
+              value: "${LR}"
+            - name: NUM_STEPS
+              value: "${NUM_STEPS}"
+            - name: SAVE_EVERY
+              value: "${SAVE_EVERY}"
+            - name: SEED
+              value: "${SEED}"
+            - name: WANDB_DISABLED
+              value: "${WANDB_DISABLED}"
+            - name: WANDB_PROJECT
+              value: "nemo-mas-w"
+            - name: WANDB_NAME
+              value: "${RUN_NAME}"
+            - name: WANDB_API_KEY
+              value: "${WANDB_API_KEY}"
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+            - name: TOKENIZERS_PARALLELISM
+              value: "false"
+            - name: PYTHONPATH
+              value: "/fsx/zzsamshi/a-evolve"
+            - name: HOME
+              value: "/tmp"
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: fsx
+              mountPath: /fsx
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: fsx
+          persistentVolumeClaim:
+            claimName: fsx-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi

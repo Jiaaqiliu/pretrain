@@ -13,6 +13,7 @@ REGION="${AE_ECR_REGION:-ap-southeast-3}"
 ACCOUNT="${AE_ECR_ACCOUNT:-801953956576}"
 REPO="${AE_ECR_REPO:-zzsamshi/a-evolve}"
 REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+DOCKERFILE_NAME="${DOCKERFILE:-Dockerfile}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 AE_ROOT="$(cd "${HERE}/../../../../../.." && pwd)"
@@ -32,7 +33,7 @@ fi
 IMAGE="${REGISTRY}/${REPO}:${TAG}"
 echo "[build] building ${IMAGE}"
 echo "[build] context=${AE_ROOT}"
-echo "[build] dockerfile=${HERE}/Dockerfile"
+echo "[build] dockerfile=${HERE}/${DOCKERFILE_NAME}"
 
 aws ecr get-login-password --region "${REGION}" \
   | docker login --username AWS --password-stdin "${REGISTRY}"
@@ -40,19 +41,26 @@ aws ecr get-login-password --region "${REGION}" \
 # Use the repo root as context but don't COPY anything in — the Dockerfile
 # doesn't reference local files. We set context to the Dockerfile's dir to
 # keep the build upload tiny.
-docker build -t "${IMAGE}" -f "${HERE}/Dockerfile" "${HERE}"
+docker build -t "${IMAGE}" -f "${HERE}/${DOCKERFILE_NAME}" "${HERE}"
 
 echo "[build] pushing ${IMAGE}"
 docker push "${IMAGE}"
 
-# Also tag latest so consumers that don't pin can still grab the newest.
-LATEST="${REGISTRY}/${REPO}:latest"
-docker tag "${IMAGE}" "${LATEST}"
-docker push "${LATEST}"
+# Only retag as :latest when building the default Dockerfile, so alternate
+# image variants (e.g. Dockerfile.unsloth) don't clobber the canonical tag.
+if [[ "${DOCKERFILE_NAME}" == "Dockerfile" ]]; then
+  LATEST="${REGISTRY}/${REPO}:latest"
+  docker tag "${IMAGE}" "${LATEST}"
+  docker push "${LATEST}"
+  echo
+  echo "pushed: ${IMAGE}"
+  echo "pushed: ${LATEST}"
+else
+  echo
+  echo "pushed: ${IMAGE}"
+  echo "(skipping :latest retag because DOCKERFILE=${DOCKERFILE_NAME})"
+fi
 
-echo
-echo "pushed: ${IMAGE}"
-echo "pushed: ${LATEST}"
 echo
 echo "use in K8sTinkerLiteBackend via image=... kwarg, or:"
 echo "  export AE_K8S_IMAGE=${IMAGE}"
