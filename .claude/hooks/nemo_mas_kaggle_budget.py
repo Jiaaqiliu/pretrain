@@ -14,8 +14,8 @@ Wired via ``.claude/settings.json``::
 We count ``kaggle_submission_result`` records in the active ledger and
 reject the call once ``max_kaggle_submits_per_run`` has been reached.
 The cap lives in ``<NEMO_MAS_WORK_DIR>/meta.json`` so each run can set
-its own (default: 1). Replaces the
-``NemoMASAlgorithm(max_kaggle_submits_per_run=...)`` ctor arg.
+its own (default: 1). Override at the session level via
+``NEMO_MAS_KAGGLE_MAX_PER_RUN`` env var.
 
 Exit 0 = allow. Exit 2 = block with stderr shown to the teammate.
 """

@@ -12,19 +12,17 @@ defaults:
   backend: nemo_reasoner   # agent_evolve/backends/nemo_reasoner/k8s/submit.sh
 
 # The ONLY directories agents write to in a fork. Two evolvable dimensions:
-#   - recipes/train — training hyperparameter YAMLs (planner writes siblings of huikang.yaml)
-#   - recipes/data  — data-mix specs (data_worker writes siblings of huikang_14718.yaml)
+#   - recipes/train — training hyperparameter YAMLs (planner writes siblings of default.yaml)
+#   - recipes/data  — data-mix specs (data_worker writes siblings of default_data.yaml)
 evolvable_layers:
   - recipes/train
   - recipes/data
 
-# Read-only across cycles. Harness + benchmark fixtures + gate config.
+# Read-only across cycles. Benchmark fixtures only — agent role
+# contracts, skills, and tools live under .claude/ (Claude Code config,
+# project-scoped) and are not part of the workspace.
 protected_layers:
   - manifest.yaml
-  - prompts                    # role contracts (agent-harness)
-  - skills                     # skill playbooks (agent-harness)
-  - tools                      # tool allowlists (agent-harness)
-  - checkpoints.yaml           # Quality Plan slot definitions (reviewer signoff)
   - eval/local_splits.yaml     # benchmark fixtures
   - eval/kaggle_eval.yaml
   - eval/constraints.yaml

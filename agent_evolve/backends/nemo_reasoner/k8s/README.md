@@ -14,8 +14,8 @@ FORK=/path/to/fork/workspace        # agent harness exports this
 
 # Training
 $BACKEND/k8s/submit.sh train \
-    --train-recipe $FORK/recipes/train/huikang.yaml \
-    --data-recipe  $FORK/recipes/data/huikang_14718.yaml \
+    --train-recipe $FORK/recipes/train/default.yaml \
+    --data-recipe  $FORK/recipes/data/default_data.yaml \
     --out          $FORK/artifacts/sft/w7 \
     --name         w7
 
@@ -32,7 +32,7 @@ Overrides:
 
 ## Recipe anchor
 
-`seed_workspaces/nemo_mas_reasoner/recipes/train/huikang.yaml` is the seed training recipe — single source of truth for lr, optimizer, scheduler, LoRA spec, batching, MoE tying toggle, CCE toggle, mamba fast path. New recipes are sibling YAMLs written by the planner agent; pass the absolute path via `--train-recipe`.
+`seed_workspaces/nemo_mas_reasoner/recipes/train/default.yaml` is the seed training recipe — single source of truth for lr, optimizer, scheduler, LoRA spec, batching, MoE tying toggle, CCE toggle, mamba fast path. New recipes are sibling YAMLs written by the planner agent; pass the absolute path via `--train-recipe`.
 
 ## Outputs
 
@@ -50,7 +50,7 @@ All outputs land under `--out` (caller-supplied, typically `$FORK/artifacts/{sft
 
 ### `train_1gpu.yaml` — proven, reliable
 - 1 pod, 1 GPU (`nvidia.com/gpu: 1`), optional `nodeName` pin
-- Runs `entries/train_unsloth.py` — huikang's full recipe:
+- Runs `entries/train_unsloth.py` — the full default recipe:
   - LoRA r=32 α=32, 9 target modules incl. `lm_head`
   - AdamW β=(0.9,0.95), eps=1e-8, wd=0, grad_clip=1e9
   - linear LR decay from `--lr` to 0, no warmup
@@ -84,7 +84,7 @@ Eval uses the platform's `:kernels` image (`agent_evolve/backends/tinkerlite/ela
 
 ## Canonical data paths
 
-- Train: `/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/huikang_14718.jsonl`
+- Train: `/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/default_14718.jsonl`
 - Dev:   `/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/dev/balanced_dev726.csv`
 
 See `seed_workspaces/nemo_mas_reasoner/eval/local_splits.yaml` for the split registry.

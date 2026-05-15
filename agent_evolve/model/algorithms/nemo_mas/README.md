@@ -136,9 +136,7 @@ Transitions come from two kinds of record:
 2. Reviewer reads the evidence and calls
    `checkpoint_review_suggest(slot_id, verdict, reason, refs)`.
 3. Slot advances; `ready_to_sign` in manual mode halts progress until a
-   human signs. In the Bedrock runtime the halt fires at the next
-   `run_cycle` entry; in the Agent Teams runtime it fires at the
-   `TaskCreated` hook boundary.
+   human signs. The halt fires at the next `run_cycle` entry.
 
 ## Files
 
@@ -146,7 +144,6 @@ Transitions come from two kinds of record:
 __init__.py       public API (NemoMASAlgorithm, RecipeMemory, schema)
 schema.py         MemoryRecord, KIND_WHITELIST, REF_RULES, validate_record
 memory.py         RecipeMemory — JSONL + vendored BM25
-checkpoints.py    fold_checkpoints, load_slot_decls, FoldedSlot
 tools.py          per-role tool factories (YAML → (specs, handlers))
 spawner.py        SpawnHandler — wraps BedrockAgent for workers
 orchestrator.py   NemoMASAlgorithm — TRAINING_ALGORITHMS entry
@@ -167,7 +164,6 @@ fingerprints.
 # Tests (23 tests, ~1.5s, no AWS/GPU)
 /fsx/zzsamshi/nemotron-auto-research/.venv/bin/python -m pytest \
     tests/model/test_nemo_mas_cycle_outcome.py \
-    tests/model/test_nemo_mas_signoff_agentteams.py \
     tests/model/test_nemo_mas_mcp_server.py -q
 
 # Dry-run: stub BedrockAgent, no compute
@@ -265,14 +261,15 @@ Role enforcement is in `agent_teams/role_guard.py`: teammates pass
 additionally restricted to `role ∈ {human, reviewer (auto only),
 orchestrator_auto}`.
 
-Two hooks enforce Quality-Plan gates at the CC boundary:
+One hook runs at the CC boundary:
 
-- `TaskCreated` → `.claude/hooks/nemo_mas_task_created.py` blocks
-  (exit 2) when a required slot is in `pending_human`.
-- `PreToolUse(mcp__nemo_mas__kaggle_submit)` →
-  `.claude/hooks/nemo_mas_kaggle_budget.py` blocks once
-  `kaggle_submission_result` count hits the per-run cap (default 1,
-  override via `NEMO_MAS_KAGGLE_MAX_PER_RUN` or `meta.json`).
+- `PreToolUse(Agent)` → `.claude/hooks/nemo_mas_agent_spawn.py` logs
+  `nemo_mas_*` subagent spawns into the active ledger as
+  `task_assignment` records (never blocks; soft-fails to stderr).
+
+Kaggle's per-run cap is enforced inside the `kaggle_submit` handler
+itself (see `backends.py`), not at the hook layer. The cap defaults to
+1; override via `NEMO_MAS_KAGGLE_MAX_PER_RUN`.
 
 ## vs. `mcgs`
 

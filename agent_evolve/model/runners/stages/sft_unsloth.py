@@ -1,8 +1,8 @@
 """Unsloth-backed SFT stage.
 
-Alternative to the platform's ``sft`` stage, matching the recipe top public
-Kaggle notebooks use to reach ~0.85 LB on the NVIDIA Nemotron Reasoning
-challenge (dgxchen, konbu17, huikang). Drives ``trl.SFTTrainer`` on top of
+Alternative to the platform's ``sft`` stage, implementing the default recipe
+(see ``recipes/train/default_base.yaml``) that reaches ~0.85 LB on the
+NVIDIA Nemotron Reasoning challenge. Drives ``trl.SFTTrainer`` on top of
 ``unsloth.FastLanguageModel`` so LoRA fine-tuning of Nemotron-3-Nano-30B-A3B
 fits on a single GPU at 8k context. Expects chat rows (``{"messages": [...]}``).
 
@@ -28,10 +28,10 @@ from ...stage_registry import StageContext, StageResult, register_stage
 from ...types import CheckpointRef
 
 
-# huikang 0.85-LB defaults, applied when ``use_published_recipe: true``.
-# Matches end-to-end-finetuning-for-lb-0-85 (huikang). The lm_head entry is
-# NOT a no-op — our post-wrap code manually LoRA-injects lm_head because
-# Unsloth drops it from MoE targets even when requested.
+# Default 0.85-LB recipe, applied when ``use_published_recipe: true``.
+# The lm_head entry is NOT a no-op — our post-wrap code manually
+# LoRA-injects lm_head because Unsloth drops it from MoE targets even
+# when requested.
 _PUBLISHED_RECIPE = {
     "lr": 2e-4,
     "lr_scheduler_type": "linear",
@@ -123,7 +123,7 @@ def _run_real_unsloth_stage(
     )
     FastLanguageModel.for_training(model)
 
-    # ── Nemotron-H specific patches (huikang 0.85-LB recipe) ─────────────
+    # ── Nemotron-H specific patches (default 0.85-LB recipe) ─────────────
     # 1) Force Mamba CUDA fast path on. Unsloth's Nemotron_H patching flips
     #    `is_fast_path_available` off which falls back to a ~100× slower
     #    pure-Python SSM loop.

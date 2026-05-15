@@ -27,8 +27,11 @@ not metric.score()'s python-level defaults — those two disagree.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -36,6 +39,86 @@ from typing import Any
 from ...types import EvalPlan
 
 logger = logging.getLogger(__name__)
+
+
+_LM_HEAD_OLD = "base_model.model.lm_head."
+_LM_HEAD_NEW = "base_model.model.backbone.lm_head."
+
+
+def _stage_vllm_compatible_adapter(ckpt_dir: Path, base_model_path: str) -> Path:
+    """Return a vLLM-loadable copy of ``ckpt_dir``.
+
+    Unsloth-saved LoRA checkpoints keep lm_head keys under
+    ``base_model.model.lm_head.*`` and retain a ``.base_layer.*`` shadow.
+    vLLM's LoRA loader on Nemotron-H wants the keys under
+    ``base_model.model.backbone.lm_head.*`` and rejects ``.base_layer.*``.
+    If ``ckpt_dir`` is already in the renamed form we return it unchanged.
+    Otherwise we stage a converted copy under /tmp (hash-keyed, reused
+    across runs) and return that path.
+    """
+    st_path = ckpt_dir / "adapter_model.safetensors"
+    cfg_path = ckpt_dir / "adapter_config.json"
+    if not st_path.is_file() or not cfg_path.is_file():
+        return ckpt_dir
+
+    from safetensors import safe_open
+
+    needs_rename = False
+    needs_strip = False
+    with safe_open(str(st_path), framework="pt", device="cpu") as f:
+        for k in f.keys():
+            if k.startswith(_LM_HEAD_OLD):
+                needs_rename = True
+            if ".base_layer." in k:
+                needs_strip = True
+            if needs_rename and needs_strip:
+                break
+    if not (needs_rename or needs_strip):
+        return ckpt_dir
+
+    digest = hashlib.sha1(str(ckpt_dir.resolve()).encode()).hexdigest()[:12]
+    staged = Path(tempfile.gettempdir()) / "vllm_adapter_cache" / f"{ckpt_dir.name}-{digest}"
+    marker = staged / ".converted_ok"
+    if marker.is_file():
+        logger.info("[eval] reusing cached vLLM-compatible adapter at %s", staged)
+        return staged
+
+    from safetensors.torch import load_file, save_file
+
+    if staged.exists():
+        shutil.rmtree(staged)
+    staged.mkdir(parents=True, exist_ok=True)
+    for f in ckpt_dir.iterdir():
+        if f.name == "adapter_model.safetensors":
+            continue
+        if f.is_file():
+            shutil.copy2(f, staged / f.name)
+
+    tensors = load_file(str(st_path))
+    renamed: dict = {}
+    kept = dropped = 0
+    for k, v in tensors.items():
+        if ".base_layer." in k:
+            dropped += 1
+            continue
+        if k.startswith(_LM_HEAD_OLD):
+            k = _LM_HEAD_NEW + k[len(_LM_HEAD_OLD):]
+        renamed[k] = v
+        kept += 1
+    save_file(renamed, str(staged / "adapter_model.safetensors"))
+
+    staged_cfg = staged / "adapter_config.json"
+    cfg = json.loads(staged_cfg.read_text())
+    cfg["inference_mode"] = True
+    cfg["lora_dropout"] = 0.0
+    cfg["base_model_name_or_path"] = base_model_path
+    staged_cfg.write_text(json.dumps(cfg, indent=2))
+    marker.write_text("ok\n")
+    logger.info(
+        "[eval] staged vLLM-compatible adapter at %s (kept=%d, dropped=%d)",
+        staged, kept, dropped,
+    )
+    return staged
 
 
 def run_eval_plan(
@@ -155,6 +238,10 @@ def _run_vllm_eval(
         raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
 
     is_full_model = plan.checkpoint.kind == "full_state"
+    if not is_full_model:
+        checkpoint_path = str(
+            _stage_vllm_compatible_adapter(Path(checkpoint_path), str(model_path))
+        )
 
     limit = cfg.get("limit")
     tp = int(cfg.get("tensor_parallel_size", 1))

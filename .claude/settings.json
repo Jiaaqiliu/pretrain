@@ -1,6 +1,8 @@
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "NEMO_MAS_WORK_DIR": "/fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline",
+    "NEMO_MAS_MEMORY_PATH": "/fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/memory/records.jsonl"
   },
   "permissions": {
     "allow": [
@@ -14,31 +16,24 @@
       "Bash(/fsx/bnghe/miniconda3/bin/python -c \"import agent_evolve, yaml; print\\('ok'\\)\")",
       "Bash(/fsx/bnghe/miniconda3/bin/pytest tests/agents/trainers tests/benchmarks/test_nemotron_reasoning.py tests/algorithms/training_evolve tests/integration/test_nemotron_smoke.py -x -q)",
       "Bash(/fsx/bnghe/miniconda3/bin/pytest tests/integration/test_nemotron_smoke.py -x -q)",
-      "Bash(/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_task_created.py)",
-      "Bash(/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_kaggle_budget.py)"
+      "Bash(/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_agent_spawn.py)",
+      "Bash(kubectl get *)",
+      "Bash(kubectl describe *)",
+      "Bash(kubectl top *)",
+      "Bash(kubectl config *)"
     ],
     "additionalDirectories": [
       "/fsx/zzsamshi/a-evolve/.claude"
     ]
   },
   "hooks": {
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_task_created.py"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
-        "matcher": "mcp__nemo_mas__kaggle_submit",
+        "matcher": "Agent",
         "hooks": [
           {
             "type": "command",
-            "command": "/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_kaggle_budget.py"
+            "command": "/fsx/zzsamshi/a-evolve/.claude/hooks/nemo_mas_agent_spawn.py"
           }
         ]
       }

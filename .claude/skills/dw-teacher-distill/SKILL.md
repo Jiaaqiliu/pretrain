@@ -14,9 +14,8 @@ You are the Data Worker. This skill produces ONE `distill_batch` per teacher cal
 - `out_path`       — workspace-relative JSONL for distilled rows (e.g. `data/raw/distill/<batch>.jsonl`)
 - `category`       — category tag for the batch (from the spec)
 - `count`          — expected row count (from the spec; 0 means "all prompts")
-- `slot_id`        — optional; if the batch serves `cp_data_check`, propagate as tag
 
-Required env: `NEMO_MAS_COMPUTE_BACKEND` must be set. The `teacher call` handler delegates through `BackendBridge`.
+Compute always runs on k8s; no backend env var to set. The `teacher call` handler delegates through `BackendBridge`.
 
 ## Steps
 
@@ -100,7 +99,6 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
   --role data_worker --kind distill_batch \
   --title "distill <category> via <teacher_model>: n=<count>" \
   --body-file /tmp/distill_batch_body.md \
-  ${SLOT_ID:+--tag checkpoint:$SLOT_ID} \
   --ref "$SPEC_ID"
 ```
 

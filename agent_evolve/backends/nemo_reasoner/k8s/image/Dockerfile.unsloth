@@ -1,6 +1,6 @@
 # Unsloth trainer image — builds on the same NGC base as Dockerfile but
 # adds unsloth + trl 0.24 + cut-cross-entropy + bitsandbytes for the
-# huikang 0.85-LB Nemotron-H reproduction.
+# default 0.85-LB Nemotron-H reproduction.
 #
 # Pinned to match /fsx/zzsamshi/nemotron-auto-research/.venv so the pod
 # and the local 8-GPU smoke produce the same tensors:

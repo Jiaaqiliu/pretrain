@@ -56,7 +56,42 @@ TOKENIZER_FILES = [
 ]
 
 
-def pack(ckpt: Path, out_zip: Path, *, drop_lm_head: bool, rename_lm_head: bool) -> dict:
+def _detect_pretransformed(cfg: dict, keys: list[str]) -> list[str]:
+    """Return signals that ``ckpt`` was already mutated for local vLLM eval.
+
+    A raw unsloth-saved checkpoint has:
+      * ``base_model_name_or_path`` ending in ``-unsloth``
+      * ``.base_layer.*`` shadow tensors (unsloth's PEFT wrap leaves them)
+      * lm_head keys under ``base_model.model.lm_head.*``
+
+    Local eval staging (see ``model/runners/stages/eval.py``
+    ``_stage_vllm_compatible_adapter``) rewrites all three. That staged
+    form has been validated against local vLLM but has NEVER been scored
+    on the Kaggle LB — all successful Kaggle submissions used the raw
+    form. Packing a pre-transformed adapter silently is how a packed
+    submission ends up at a different byte size than the reference
+    (step_250 → 0.78 → 1.37 GB) and risks either a host-side load error
+    or a silent scoring divergence.
+    """
+    signals = []
+    base = str(cfg.get("base_model_name_or_path", ""))
+    if base and not base.endswith("-unsloth"):
+        signals.append(f"base_model_name_or_path={base!r} (raw form points to *-unsloth)")
+    if not any(".base_layer." in k for k in keys):
+        signals.append("no .base_layer.* tensors (raw unsloth saves always include them)")
+    if any(k.startswith("base_model.model.backbone.lm_head.") for k in keys):
+        signals.append("lm_head keys already under .backbone.lm_head.* (raw form uses .lm_head.*)")
+    return signals
+
+
+def pack(
+    ckpt: Path,
+    out_zip: Path,
+    *,
+    drop_lm_head: bool,
+    rename_lm_head: bool,
+    allow_pretransformed: bool = False,
+) -> dict:
     if not ckpt.is_dir():
         raise SystemExit(f"error: --ckpt is not a directory: {ckpt}")
     if drop_lm_head and rename_lm_head:
@@ -77,6 +112,33 @@ def pack(ckpt: Path, out_zip: Path, *, drop_lm_head: bool, rename_lm_head: bool)
     with safe_open(src_st, framework="pt", device="cpu") as f:
         for k in f.keys():
             tensors[k] = f.get_tensor(k)
+
+    keys = list(tensors.keys())
+    signals = _detect_pretransformed(cfg, keys)
+    if signals:
+        lines = "\n  - ".join(signals)
+        raw_hint = ""
+        if ckpt.name.endswith("_vllm"):
+            sibling = ckpt.with_name(ckpt.name[:-len("_vllm")])
+            if sibling.is_dir():
+                raw_hint = f"\n\nRaw sibling found at: {sibling}\nRe-run with --ckpt {sibling}"
+        if not allow_pretransformed:
+            raise SystemExit(
+                "error: checkpoint looks pre-transformed for local vLLM eval, not "
+                "raw training output. Only the raw form has ever scored on the "
+                "Kaggle LB (step_200 → 0.74, step_250 → 0.78).\n\n"
+                f"Detected:\n  - {lines}"
+                f"{raw_hint}\n\n"
+                "If you have evidence the transformed form is Kaggle-compatible, "
+                "pass --allow-pretransformed to override."
+            )
+        print(
+            "[pack] WARNING: packing pre-transformed adapter (override via "
+            "--allow-pretransformed):",
+            flush=True,
+        )
+        for s in signals:
+            print(f"[pack]   - {s}", flush=True)
 
     n_before = len(tensors)
     n_lm = sum(1 for k in tensors if ".lm_head." in k)
@@ -131,9 +193,15 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path, help="Output submission.zip path")
     ap.add_argument("--drop-lm-head", action="store_true", help="Strip lm_head LoRA keys + remove from target_modules (matches W4/step_200 shape)")
     ap.add_argument("--rename-lm-head", action="store_true", help="Rewrite lm_head keys to backbone.lm_head.* (if Kaggle rejects the default naming)")
+    ap.add_argument("--allow-pretransformed", action="store_true", help="Override the safety check that refuses pre-transformed (local vLLM eval) adapter dirs. Only use if you have LB evidence the transformed form scores.")
     args = ap.parse_args()
 
-    result = pack(args.ckpt, args.out, drop_lm_head=args.drop_lm_head, rename_lm_head=args.rename_lm_head)
+    result = pack(
+        args.ckpt, args.out,
+        drop_lm_head=args.drop_lm_head,
+        rename_lm_head=args.rename_lm_head,
+        allow_pretransformed=args.allow_pretransformed,
+    )
 
     print(f"[pack] {result['action']}")
     print(f"[pack] keys: {result['n_keys_before']} → {result['n_keys_after']}")

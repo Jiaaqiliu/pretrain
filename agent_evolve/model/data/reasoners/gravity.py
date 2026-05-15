@@ -11,7 +11,7 @@ from .store_types import (
 )
 
 
-def reasoning_gravity(problem: Problem) -> str | None:
+def solve(problem: Problem) -> str | None:
     lines: list[str] = []
     lines.append(
         "We need to determine the falling distance using d = k*t^2. "

@@ -1,9 +1,9 @@
 ---
 name: trainer-pack-submission
-description: Package a LoRA adapter checkpoint into `submission.zip` for Kaggle and record a `submission_artifact`. Only invoke when the orchestrator asks for a Kaggle submission. Do NOT upload to Kaggle — that is the Reviewer's job.
+description: Package a LoRA adapter checkpoint into `submission.zip` for Kaggle and record a `submission_artifact`. Only invoke when the orchestrator asks for a Kaggle submission. Pair with the `trainer-kaggle-submit` skill — they are separate so the budget hook can gate the upload step alone.
 ---
 
-You are the Trainer. This skill packages a LoRA adapter for Kaggle submission. You do NOT submit; the Reviewer owns `kaggle_submit`.
+You are the Trainer. This skill packages a LoRA adapter for Kaggle submission. The `trainer-kaggle-submit` skill is what actually uploads it.
 
 ## Inputs
 
@@ -61,7 +61,7 @@ base_model_name_or_path: <string>
 notes: <anything odd — unusual target modules, larger-than-expected zip, etc.>
 ```
 
-No fenced-JSON requirement on `submission_artifact` — the Reviewer reads this record directly.
+No fenced-JSON requirement on `submission_artifact` — the kaggle-submit skill reads this record directly when it pushes the zip.
 
 ### 5 — Append the record
 
@@ -77,6 +77,6 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
 
 ## Hard rules
 
-- Do NOT run `kaggle` CLI yourself. The Reviewer calls `kaggle_submit` after posting `cp_submission_ready ready_to_sign`.
+- Do NOT run `kaggle` CLI from this skill — pack is upload-free. The `trainer-kaggle-submit` skill is the budget-gated path that pushes the zip.
 - Do NOT rename files inside the zip — the Kaggle host expects the adapter files at the archive root.
 - Do NOT pack a full-weight checkpoint as a Kaggle submission. Only LoRA adapter dirs with `adapter_config.json`.

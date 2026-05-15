@@ -1,0 +1,31 @@
+# Default training recipe — tunable surface (anchor: huikang 0.85-LB).
+#
+# All structural fields (model, adapter shape, tricks, dtype discipline,
+# data path) live in ``default_base.yaml`` and merge under this file via
+# ``inherits``. Only the keys below are intended to change cycle-to-cycle;
+# planner proposals MUST diff against this file.
+#
+# Invocation:
+#   BACKEND=/fsx/zzsamshi/a-evolve/agent_evolve/backends/nemo_reasoner
+#   $BACKEND/k8s/submit.sh train \
+#       --train-recipe $FORK/recipes/train/default.yaml \
+#       --data-recipe  $FORK/recipes/data/default_data.yaml \
+#       --out $FORK/artifacts/sft/w7 --name w7
+
+name: default
+inherits: default_base
+
+optimizer:
+  lr: 2.0e-4
+  weight_decay: 0.0
+
+scheduler:
+  type: linear      # linear decay from lr to 0 over num_steps
+  warmup_steps: 0
+
+batching:
+  batch_size: 32       # effective global batch (per_device_bs × grad_accum since TP=1 DP=1)
+  micro_batch_size: 4  # per forward pass; grad_accum = ceil(batch_size / micro_batch_size)
+  num_steps: 460       # ≈ 1 epoch on 14,718 rows at batch 32
+  save_every: 50
+  seed: 42

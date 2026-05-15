@@ -1,21 +1,17 @@
-"""nemo_mas — Orchestrator-worker MAS algorithm for Nemotron Reasoning.
+"""nemo_mas — Multi-agent system for the Nvidia Nemotron Reasoning Kaggle.
 
-A no-arg-constructible alternative to ``mcgs`` in ``TRAINING_ALGORITHMS``.
-The orchestrator and four workers (Analyst, DataEngineer, Theorist,
-Engineer) coordinate through a typed-record memory store with BM25
-search. The algorithm itself never trains, evaluates, or generates data
-— it brokers LLM workers, which call backend tools provided by the
-caller.
+The interactive Claude Code Agent Teams runtime is the only entry point.
+Workers (planner, data_worker, trainer) coordinate through a typed-record
+shared ledger with BM25 search, executing through the Bash CLI and the
+MCP server in ``agent_teams/``.
 
-Entry point: ``NemoMASAlgorithm.run_cycle(ctx) -> MCGSCycleReport``.
-
-See ``seed_workspaces/nemo_mas_reasoner/DESIGN.md`` for the full design.
+Public API exposed here is the data layer only — memory, schema, and the
+record validation rules. The runtime itself lives in ``agent_teams/``.
 """
 
 from __future__ import annotations
 
 from .memory import RecipeMemory
-from .orchestrator import NemoMASAlgorithm
 from .schema import (
     KIND_WHITELIST,
     REF_RULES,
@@ -27,7 +23,6 @@ from .schema import (
 __all__ = [
     "KIND_WHITELIST",
     "MemoryRecord",
-    "NemoMASAlgorithm",
     "RecipeMemory",
     "RecordValidationError",
     "REF_RULES",

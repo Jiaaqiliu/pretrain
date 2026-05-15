@@ -67,7 +67,7 @@ def _candidate_words_for_partial(
     return candidates
 
 
-def reasoning_cipher(problem: Problem) -> str | None:
+def solve(problem: Problem) -> str | None:
     dash = "–"
     lines: list[str] = []
     lines.append(

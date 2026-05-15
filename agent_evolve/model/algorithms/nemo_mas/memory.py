@@ -1,8 +1,22 @@
 """RecipeMemory — append-only typed-record store with BM25 search.
 
-Storage: one JSONL file (records.jsonl) under ``memory/``. Each line is
-one ``MemoryRecord``. Internal ``_link`` records are interleaved (added by
-post-hoc linking via ``link()``) and filtered from normal queries.
+Storage:
+  - ``records.jsonl`` under ``memory/``: one JSON line per record with
+    all scalar metadata (id, cycle, author, kind, title, tags, refs, ts)
+    and a ``body_path`` pointer. Bodies are NOT inlined.
+  - ``records/<role>/<kind>/<id>.md`` under ``memory/``: the full record
+    body as a standalone markdown file. Grep-friendly; browsable.
+
+Write path: (1) write body .md, (2) append JSONL line. Crash between
+those leaves an orphan .md (recoverable by rebuilding JSONL from files)
+rather than a dangling pointer.
+
+Read path: on ``_load``, each line is parsed; if ``body_path`` is set,
+the body is hydrated from disk. Legacy records with inline ``body`` and
+no ``body_path`` still work unchanged.
+
+Internal ``_link`` records are interleaved (added by post-hoc linking
+via ``link()``) and filtered from normal queries.
 
 BM25: vendored Okapi BM25 (no external dep). Index is rebuilt on load and
 on each write. The corpus is expected to fit in memory (<100k records);
@@ -146,6 +160,9 @@ class RecipeMemory:
     def __init__(self, records_path: Path | str):
         self.records_path = Path(records_path)
         self.records_path.parent.mkdir(parents=True, exist_ok=True)
+        # Bodies live in ``<records_path>.parent/records/<role>/<kind>/<id>.md``.
+        self._body_root = self.records_path.parent / "records"
+        self._body_root.mkdir(parents=True, exist_ok=True)
         self._records: list[MemoryRecord] = []
         self._by_id: dict[str, MemoryRecord] = {}
         self._idx_by_id: dict[str, int] = {}
@@ -153,6 +170,31 @@ class RecipeMemory:
         self._lock = threading.Lock()
         self._cycle_id: str = "init"
         self._load()
+
+    # ── body-file helpers ───────────────────────────────────────
+
+    def _body_rel_path(self, role: str, kind: str, rec_id: str) -> str:
+        """Workspace-relative body path as stored in the JSONL pointer."""
+        return f"records/{role}/{kind}/{rec_id}.md"
+
+    def _body_abs_path(self, rel: str) -> Path:
+        """Resolve a stored body_path against this ledger's body root."""
+        # Defensive: ignore any leading "records/" since _body_root already
+        # has that component. Accept either shape on read for forward compat.
+        if rel.startswith("records/"):
+            return self._body_root / rel[len("records/"):]
+        return self._body_root / rel
+
+    def _read_body(self, rel: str) -> str:
+        try:
+            return self._body_abs_path(rel).read_text(encoding="utf-8")
+        except OSError:
+            return ""  # body file missing — leave empty rather than crashing
+
+    def _write_body(self, rel: str, body: str) -> None:
+        p = self._body_abs_path(rel)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
 
     # ── lifecycle ────────────────────────────────────────────────
 
@@ -172,6 +214,17 @@ class RecipeMemory:
                 except json.JSONDecodeError:
                     continue
                 rec = MemoryRecord.from_dict(d)
+                # Hydrate body from disk when the JSONL line carries only a
+                # pointer. Records migrated from pre-split format keep their
+                # inline body and skip this branch.
+                if rec.body_path and not rec.body:
+                    rec = MemoryRecord(
+                        id=rec.id, cycle_id=rec.cycle_id, author=rec.author,
+                        kind=rec.kind, title=rec.title,
+                        body=self._read_body(rec.body_path),
+                        tags=rec.tags, refs=rec.refs, ts=rec.ts,
+                        body_path=rec.body_path,
+                    )
                 self._records.append(rec)
                 self._by_id[rec.id] = rec
                 self._idx_by_id[rec.id] = len(self._records) - 1
@@ -202,9 +255,17 @@ class RecipeMemory:
 
         Raises RecordValidationError if the role isn't allowed to write
         this kind, or any per-kind ref rule fails.
+
+        Persistence: the body is written to a standalone markdown file at
+        ``records/<role>/<kind>/<id>.md``; the JSONL line carries only
+        scalar metadata and a ``body_path`` pointer. The .md file is
+        written FIRST so a crash before the JSONL append leaves an orphan
+        file (recoverable) rather than a dangling pointer.
         """
+        rec_id = _new_id()
+        body_rel = self._body_rel_path(role, kind, rec_id)
         rec = MemoryRecord(
-            id=_new_id(),
+            id=rec_id,
             cycle_id=self._cycle_id,
             author=role,
             kind=kind,
@@ -213,15 +274,19 @@ class RecipeMemory:
             tags=tuple(tags),
             refs=tuple(refs),
             ts=_now_iso(),
+            body_path=body_rel,
         )
         validate_record(rec, role=role, ref_lookup=self._ref_lookup)
         with self._lock:
+            # Body file first — crash-safe ordering: a dangling JSONL
+            # pointer is worse than an orphan .md.
+            self._write_body(body_rel, body)
             self._records.append(rec)
             self._by_id[rec.id] = rec
             self._idx_by_id[rec.id] = len(self._records) - 1
             self._bm25.add(rec.id, _doc_text(rec))
             with self.records_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(rec.to_dict()) + "\n")
+                f.write(json.dumps(rec.to_dict(inline_body=False)) + "\n")
         return rec
 
     def _ref_lookup(self, rec_id: str) -> str | None:
@@ -300,26 +365,31 @@ class RecipeMemory:
             raise RecordValidationError(f"child id {child_id!r} not found")
         if parent_id not in self._by_id:
             raise RecordValidationError(f"parent id {parent_id!r} not found")
+        rec_id = _new_id()
+        body = f"relation={relation}\nchild={child_id}\nparent={parent_id}"
+        body_rel = self._body_rel_path(role, "_link", rec_id)
         rec = MemoryRecord(
-            id=_new_id(),
+            id=rec_id,
             cycle_id=self._cycle_id,
             author=role,
             kind="_link",
             title=f"link {child_id}->{parent_id}",
-            body=f"relation={relation}\nchild={child_id}\nparent={parent_id}",
+            body=body,
             tags=(relation,),
             refs=(child_id, parent_id),
             ts=_now_iso(),
+            body_path=body_rel,
         )
         # Internal kind → bypass whitelist; still requires resolvable refs
         # (which we just verified).
         with self._lock:
+            self._write_body(body_rel, body)
             self._records.append(rec)
             self._by_id[rec.id] = rec
             self._idx_by_id[rec.id] = len(self._records) - 1
             self._bm25.add(rec.id, _doc_text(rec))
             with self.records_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(rec.to_dict()) + "\n")
+                f.write(json.dumps(rec.to_dict(inline_body=False)) + "\n")
         return rec
 
     def all_records(self) -> list[MemoryRecord]:

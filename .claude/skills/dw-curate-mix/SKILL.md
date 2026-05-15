@@ -11,7 +11,6 @@ You are the Data Worker. This skill produces ONE `dataset_snapshot` per mix.
 - `sources`           — list of workspace-relative JSONL paths (one per batch, or curated subsets)
 - `weights`           — parallel list of target proportions (sum need not = 1; each weight is a target fraction of that source's rows)
 - `curriculum_yaml`   — optional workspace-relative path (provenance only; the mix handler doesn't execute curriculum logic)
-- `slot_id`           — usually `cp_data_check`
 
 ## Steps
 
@@ -102,15 +101,14 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
   --role data_worker --kind dataset_snapshot \
   --title "mix sha=<sha>: n=<N>" \
   --body-file /tmp/dataset_snapshot_body.md \
-  --tag "checkpoint:$SLOT_ID" \
   $(for id in $DISTILL_BATCH_IDS; do echo --ref $id; done)
 ```
 
-The `checkpoint:<slot_id>` tag is REQUIRED if this snapshot serves a slot (usually `cp_data_check`). Each `distill_batch` id goes in `--ref`.
+Each `distill_batch` id goes in `--ref`.
 
 ## Hard rules
 
-- Do NOT overwrite `artifacts/data/<hash>/dataset.jsonl` without first writing this `dataset_snapshot`. Reviewer audits from the snapshot, not the raw file.
+- Do NOT overwrite `artifacts/data/<hash>/dataset.jsonl` without first writing this `dataset_snapshot`. The Planner audits from the snapshot, not the raw file.
 - Do NOT pick your own weights. The spec tells you which sources and what target mix; if unclear, refuse and ask the Orchestrator.
 - Do NOT silently change the dedup / filter behavior. Those live in `recipes/data/<name>.yaml` and belong to Planner.
 - Do NOT include sources that didn't pass `data validate`. Fix upstream first.

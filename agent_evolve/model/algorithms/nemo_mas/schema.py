@@ -20,73 +20,60 @@ from typing import Callable, Iterable
 # ── Per-role write whitelist ─────────────────────────────────────────
 
 # "any" pseudo-role — kinds any worker can write (with constraints).
-# checkpoint_event is here so every role may attach evidence or reopen a slot;
-# signoff by an agent is additionally gated by the checkpoint_sign tool.
-_CROSS_CUTTING = frozenset({"breakthrough", "failed_attempt", "checkpoint_event"})
+_CROSS_CUTTING = frozenset({"breakthrough", "failed_attempt"})
 
-# Orchestrator may write directive_response and checkpoint_event (the latter
-# only through its `checkpoint_sign` tool in auto mode, which enforces the
-# evidence precondition). It cannot write any worker-kind record.
-_ORCHESTRATOR_AUTO_KINDS = frozenset({"directive_response", "checkpoint_event"})
+# The ``main`` author is the interactive Claude Code session itself —
+# the lead human + Claude Code that routes work to subagents. It writes
+# task_assignment whenever it spawns a teammate (auto-written by the
+# Agent-spawn hook, never by an LLM turn). Not a spawnable worker role;
+# the main session has no separate subagent definition.
+_MAIN_KINDS = frozenset({"task_assignment"})
 
 KIND_WHITELIST: dict[str, frozenset[str]] = {
-    "reviewer": frozenset({
+    "planner": frozenset({
+        "recipe_proposal",
+        # Analytical kinds the planner produces while studying the data /
+        # eval surface (formerly the reviewer's territory):
         "data_audit_finding",
         "benchmark_rule",
-        "profile_run",
-        "eval_report",
         "error_pattern",
         "data_gap",
-        "directive_response",
-        # QA officer duty: verdicts on Quality Plan checkpoint evidence.
-        # Exactly one kind per role owns this; the reviewer is it.
-        "checkpoint_review",
-        # Result of a kaggle_submit call — the reviewer pipes the CLI's
-        # submission_id + initial status into memory.
-        "kaggle_submission_result",
     }) | _CROSS_CUTTING,
     "data_worker": frozenset({
         "distill_batch",
         "dataset_snapshot",
-        "directive_response",
-    }) | _CROSS_CUTTING,
-    "planner": frozenset({
-        "hypothesis",
-        "recipe_proposal",
-        "directive_response",
     }) | _CROSS_CUTTING,
     "trainer": frozenset({
         "training_run",
         "cv_result",
-        "directive_response",
         # Packaged LoRA adapter zip ready for Kaggle submission. Produced
         # by pack_submission; body contains zip path + adapter_config
-        # summary. Reviewer cites this when posting cp_submission_ready.
+        # summary.
         "submission_artifact",
+        # Eval over a freshly-finished training_run lives with the trainer
+        # now (the previous role split kept it on the reviewer).
+        "eval_report",
+        # Short calibration / sanity training runs that don't deserve a
+        # full training_run record.
+        "profile_run",
+        # Result of a kaggle_submit call — the trainer pipes the CLI's
+        # submission_id + initial status into memory.
+        "kaggle_submission_result",
     }) | _CROSS_CUTTING,
-    # Pseudo-role used when the orchestrator's checkpoint_sign /
-    # directive_respond tools write records on its behalf. Not a spawnable
-    # worker role.
-    "orchestrator_auto": _ORCHESTRATOR_AUTO_KINDS,
+    "main": _MAIN_KINDS,
 }
 
 # All known kinds (for validation of refs targets, mem_search filters,
-# and friendly error messages). ``human_directive`` is not in any role's
-# whitelist because only the viewer writes it; it is still a valid ref
-# target, so it belongs here. Internal kinds prefixed with `_` are
+# and friendly error messages). Internal kinds prefixed with `_` are
 # system records (e.g. links) and never returned by normal queries.
 ALL_KINDS: frozenset[str] = (
-    KIND_WHITELIST["reviewer"]
+    KIND_WHITELIST["planner"]
     | KIND_WHITELIST["data_worker"]
-    | KIND_WHITELIST["planner"]
     | KIND_WHITELIST["trainer"]
-    | KIND_WHITELIST["orchestrator_auto"]
-    | frozenset({"human_directive"})
+    | KIND_WHITELIST["main"]
 )
 
-# Kinds writable only by the frontend (not through any agent role).
-# ``validate_record`` honors these when ``author`` starts with ``human:``.
-HUMAN_KINDS: frozenset[str] = frozenset({"human_directive"})
+HUMAN_KINDS: frozenset[str] = frozenset()
 
 INTERNAL_KINDS: frozenset[str] = frozenset({"_link"})
 
@@ -156,16 +143,6 @@ REF_RULES: dict[str, RefRule] = {
     "training_run":        _require_refs_with_kinds("recipe_proposal", "dataset_snapshot"),
     "cv_result":           _require_ref_kind("training_run"),
     "eval_report":         _require_ref_kind("training_run"),
-    # A signoff/reopen/evidence event must point at something — usually the
-    # evidence records that justify it. Minimum one ref; the slot-specific
-    # "covers all requires_evidence kinds" check is done by the signing tool,
-    # not here (this is schema, not workflow).
-    "checkpoint_event":    _require_min_refs(1),
-    # QA verdict from the reviewer role. MUST cite the evidence records it
-    # is judging — no refs means "no evidence reviewed", which is useless.
-    "checkpoint_review":   _require_min_refs(1),
-    # Every orchestrator reply must point at the human_directive it answers.
-    "directive_response":  _require_ref_kind("human_directive"),
     # Packaged adapter zip must trace back to a training_run so reviewers
     # can audit which checkpoint shipped.
     "submission_artifact": _require_ref_kind("training_run"),
@@ -191,19 +168,31 @@ class MemoryRecord:
     tags: tuple[str, ...] = ()
     refs: tuple[str, ...] = ()
     ts: str = ""                         # ISO-8601, set by memory store
+    body_path: str = ""                  # workspace-relative path to body.md; empty for inline-body records
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self, *, inline_body: bool = True) -> dict:
+        """Serialize to dict for the ledger JSONL.
+
+        When ``inline_body=False`` (the default on new writes), ``body`` is
+        dropped from the payload and only ``body_path`` is kept. Readers
+        rehydrate via ``RecipeMemory._load``. Callers that need a fully
+        self-contained payload (e.g. export, debug) pass ``inline_body=True``.
+        """
+        d = {
             "id": self.id,
             "cycle_id": self.cycle_id,
             "author": self.author,
             "kind": self.kind,
             "title": self.title,
-            "body": self.body,
             "tags": list(self.tags),
             "refs": list(self.refs),
             "ts": self.ts,
         }
+        if self.body_path:
+            d["body_path"] = self.body_path
+        if inline_body or not self.body_path:
+            d["body"] = self.body
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "MemoryRecord":
@@ -217,6 +206,7 @@ class MemoryRecord:
             tags=tuple(d.get("tags") or ()),
             refs=tuple(d.get("refs") or ()),
             ts=d.get("ts", ""),
+            body_path=d.get("body_path", ""),
         )
 
 

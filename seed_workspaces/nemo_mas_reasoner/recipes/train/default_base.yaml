@@ -1,0 +1,69 @@
+# Default training anchor — FROZEN. Do not edit from the planner.
+#
+# Reproduces the huikang 0.85-LB recipe. The "default" name is a
+# convention; the upstream source (referenced below) remains huikang.
+#
+# This file holds everything the planner must NOT touch:
+#   - base model path + dtype + max_seq_len
+#   - adapter shape (LoRA rank/alpha/dropout/targets including lm_head)
+#   - data path
+#   - dtype discipline (lora=fp32, base=bf16, moe_router=fp32)
+#   - tricks (MoE tie, CCE patch, Mamba fast path, force-compile, attn eager)
+#   - optimizer structural fields (name/betas/eps/max_grad_norm)
+#
+# Tunable knobs live in the sibling ``default.yaml`` and merge on top of
+# this file via the ``inherits: default_base`` key. Planner proposals
+# diff against ``default.yaml``; if a proposal needs a key from this
+# file changed, that is a structural change requiring a separate
+# discussion with the lead (and a separate base file, forked).
+
+name: default_base
+reference: https://www.kaggle.com/code/huikang/end-to-end-finetuning-for-lb-0-85
+
+model:
+  path: /fsx/models/Nemotron-3-Nano-30B-A3B-unsloth
+  kaggle_base_name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  dtype: bfloat16
+  max_seq_len: 8192
+
+adapter:
+  type: lora
+  rank: 32
+  alpha: 32
+  dropout: 0.0
+  bias: none
+  use_gradient_checkpointing: unsloth
+  # All 9 LoRA targets incl. lm_head (huikang injects lm_head manually —
+  # Unsloth drops it from MoE models even when listed).
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - up_proj
+    - down_proj
+    - in_proj
+    - out_proj
+    - lm_head
+
+data:
+  train_jsonl: /fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/default_14718.jsonl
+
+optimizer:
+  name: adamw
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  max_grad_norm: 1.0e9
+
+dtype_discipline:
+  # Enforced by assertion in train_unsloth.py.
+  lora_params: float32
+  base_params: bfloat16
+  moe_router:  float32    # NemotronHPreTrainedModel._keep_in_fp32_modules_strict
+
+tricks:
+  moe_tie_weights: true        # Tinker convention: tie A for up/B for down across 128 experts
+  cce_patched_forward: true    # cut-cross-entropy to skip 256k-vocab logit materialization
+  mamba_fast_path: true        # force nemotron_h.is_fast_path_available = True
+  unsloth_force_compile: true
+  attn_implementation: eager

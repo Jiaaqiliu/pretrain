@@ -16,8 +16,8 @@
 # Examples:
 #   FORK=/path/to/fork/workspace
 #   ./submit.sh train \
-#       --train-recipe $FORK/recipes/train/huikang.yaml \
-#       --data-recipe  $FORK/recipes/data/huikang_14718.yaml \
+#       --train-recipe $FORK/recipes/train/default.yaml \
+#       --data-recipe  $FORK/recipes/data/default_data.yaml \
 #       --out          $FORK/artifacts/sft/w7 \
 #       --name         w7
 #
@@ -33,6 +33,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
+# Benchmark scorer reads its split registry + kaggle_eval.yaml from the
+# nemo_mas_reasoner seed workspace. ``workspace_root`` in the eval plan
+# must point here, not at the repo root.
+SEED_WORKSPACE="$REPO_ROOT/seed_workspaces/nemo_mas_reasoner"
 CANONICAL_DEV_CSV=/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/dev/balanced_dev726.csv
 DEFAULT_TRAIN_IMAGE=801953956576.dkr.ecr.ap-southeast-3.amazonaws.com/zzsamshi/a-evolve:unsloth-v5
 WANDB_API_KEY_DEFAULT="${WANDB_API_KEY:-}"
@@ -161,7 +165,7 @@ case "$sub" in
     },
     "metadata": {"source": "submit.sh eval", "tp": $TP}
   },
-  "workspace_root": "$REPO_ROOT",
+  "workspace_root": "$SEED_WORKSPACE",
   "benchmark_name": "nemo_reasoner",
   "split": "balanced_dev726",
   "out_result_path": "$OUTDIR/.eval_result.json"

@@ -30,7 +30,7 @@ bijection used.
 
 Limitations:
   * We assume LHS length 5 with the operator at position 2 — matches every
-    row in balanced_dev600 (verified) and the huikang generator.
+    row in balanced_dev600 (verified) and the default generator.
   * We stop at the first satisfying rule set; we do not enumerate all.
   * Template families enumerate up to 6^L candidates at RHS length L; caps at
     L=5 (7,776 templates per op) so per-row wall stays sub-second.
@@ -115,7 +115,7 @@ def _op_builders() -> dict[str, Callable[[z3.ExprRef, z3.ExprRef], z3.ExprRef]]:
         _z3_digit(a, "t") * _z3_digit(b, "u")
         - _z3_digit(a, "u") * _z3_digit(b, "t")
     )
-    # Additional digit-level ops from huikang's equation_numeric._rare_candidates
+    # Additional digit-level ops from default equation_numeric._rare_candidates
     ops["digit_mul"] = lambda a, b: (
         _z3_digit(a, "t") * _z3_digit(b, "t") * 10
         + _z3_digit(a, "u") * _z3_digit(b, "u")
@@ -674,6 +674,85 @@ def solve_row(
     if ok:
         return True, w
     return False, None
+
+
+# ── Uniform per-domain API ────────────────────────────────────────────────
+# Every Kaggle-domain verifier under this package exposes the same shape:
+#
+#     parse(prompt, stored_answer="", _id="") -> Problem | None
+#     verify(prompt, stored_answer)           -> dict
+#
+# For ``equations``, ``verify`` cascades:
+#   1. arithmetic z3 verifier (``equations_arith.solve_row``) — fast
+#   2. symbolic S1–S5 verifier (``solve_row`` above) — slower fallback
+# Both check "stored answer is consistent with examples under SOME rule".
+
+DOMAIN = "equations"
+
+
+def parse(prompt: str, stored_answer: str = "", _id: str = ""):
+    from agent_evolve.model.data.reasoners.store_types import Example, Problem
+    examples, q_lhs = parse_row(prompt)
+    if not examples or not q_lhs:
+        return None
+    return Problem(
+        id=_id,
+        category="equation_numeric_deduce",
+        examples=[Example(lhs, rhs) for lhs, rhs in examples],
+        question=q_lhs,
+        answer=stored_answer,
+        prompt=prompt,
+    )
+
+
+def verify(prompt: str, stored_answer: str, time_budget_sec: float = 3.0) -> dict:
+    """Cascading verifier: arithmetic z3 → S1–S5 symbolic.
+
+    Returns {"domain", "agrees", "prediction", "status", "witness", "method"}.
+    ``method`` is one of ``"arith"`` / ``"symbolic"`` / ``""`` (when unverified).
+    """
+    base = {"domain": DOMAIN, "agrees": False, "prediction": None,
+            "status": "", "witness": None, "method": ""}
+    # Pass 1: arithmetic z3.
+    try:
+        from .equations_arith import _parse_row as _parse_arith
+        from .equations_arith import solve_row as _solve_arith
+    except ImportError as exc:  # z3 not available
+        _parse_arith = None
+        _solve_arith = None
+        arith_import_error: str | None = f"equations_arith import failed: {exc!r}"
+    else:
+        arith_import_error = None
+    if _parse_arith is not None and _solve_arith is not None:
+        try:
+            examples, q_lhs = _parse_arith(prompt)
+        except Exception as exc:  # noqa: BLE001
+            examples, q_lhs = [], None
+            arith_import_error = f"arith parse error: {exc!r}"
+        if examples and q_lhs:
+            try:
+                ok, witness = _solve_arith(
+                    examples, q_lhs, stored_answer,
+                    time_budget_sec=time_budget_sec * 0.4,
+                )
+            except Exception as exc:  # noqa: BLE001
+                ok, witness = False, f"arith solve_row error: {exc!r}"
+            if ok:
+                return {**base, "agrees": True, "prediction": stored_answer,
+                        "status": "ok", "witness": witness, "method": "arith"}
+    # Pass 2: symbolic S1–S5.
+    ex2, q_lhs2 = parse_row(prompt)
+    if not ex2 or not q_lhs2:
+        return {**base, "status": "parse_failed"}
+    try:
+        ok2, witness2 = solve_row(ex2, q_lhs2, stored_answer,
+                                   time_budget_sec=time_budget_sec)
+    except Exception as exc:  # noqa: BLE001
+        return {**base, "status": f"verifier_error: {exc!r}"}
+    if ok2:
+        return {**base, "agrees": True, "prediction": stored_answer,
+                "status": "ok", "witness": witness2, "method": "symbolic"}
+    return {**base, "status": "unexplained"}
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────

@@ -17,29 +17,11 @@ Two tiers:
     ``call_teacher_model``. If the backend is in mock mode these still
     work (they just return mock outputs).
 
-Recommended composition::
-
-    from agent_evolve.model.algorithms.nemo_mas import NemoMASAlgorithm
-    from agent_evolve.model.algorithms.nemo_mas.backends import (
-        local_handlers, BackendBridge, demo_compute_handlers,
-    )
-
-    bridge = BackendBridge(workspace_root, benchmark, backend)
-    algo = NemoMASAlgorithm(backend_registry={
-        **local_handlers(workspace_root),
-        **bridge.as_registry(),
-    })
-
-For purely offline / demo work::
-
-    algo = NemoMASAlgorithm(backend_registry={
-        **local_handlers(workspace_root),
-        **demo_compute_handlers(),
-    })
-
-Both styles produce structured JSON outputs that the LLM workers can
-parse. None of these handlers raise — failures come back as
-``{"ok": false, "reason": "..."}`` so the agent can adapt.
+The Agent Teams MCP server (``agent_teams/server.py``) wires these into
+its tool surface; the Bash CLI (``cli.py``) calls them directly. Outputs
+are structured JSON the LLM workers parse. None of these handlers raise
+— failures come back as ``{"ok": false, "reason": "..."}`` so the agent
+can adapt.
 """
 
 from __future__ import annotations
@@ -130,14 +112,13 @@ def local_handlers(
     """Build the full local-tool handler dict for a given workspace root.
 
     ``workspace_root`` may be a fixed path or a zero-arg callable that
-    returns the current cycle's forked workspace path. Callable form lets
-    ``NemoMASAlgorithm`` redirect writes into ``work_dir/cycles/<NNNN>/
-    .fork_target/nodes/workspace/workspace`` each cycle without rebuilding
-    the registry — otherwise the seed workspace gets mutated in-place.
+    returns the current cycle's forked workspace path. The callable form
+    lets the MCP server resolve the active fork lazily on each tool call,
+    so writes always land under ``work_dir/cycles/<NNNN>/.fork_target/
+    nodes/workspace/workspace`` rather than the seed.
 
-    All returned handlers accept keyword args matching the tool spec in
-    ``tools.py::_BACKEND_TOOL_CATALOGUE`` and return JSON-serialized
-    strings (per the BedrockAgent tool contract).
+    All returned handlers accept keyword args matching the corresponding
+    MCP tool spec and return JSON-serialized strings.
     """
     if callable(workspace_root):
         _resolve_ws = lambda: Path(workspace_root())  # noqa: E731
@@ -528,9 +509,7 @@ def local_handlers(
     # The Kaggle host loads our adapter onto the frozen Nemotron-3-Nano-30B
     # base and scores it in vLLM. Our job: package the LoRA adapter dir
     # into ``submission.zip`` with ``adapter_config.json`` at the archive
-    # root, sanity-check rank <= 32, and report what shipped. The reviewer
-    # later cites the resulting record when posting a cp_submission_ready
-    # verdict.
+    # root, sanity-check rank <= 32, and report what shipped.
 
     def pack_submission(*, ckpt_path: str, out_zip: str) -> str:
         import zipfile
@@ -588,21 +567,18 @@ def local_handlers(
             ),
         )
 
-    # ── Kaggle API (reviewer) ───────────────────────────────────
+    # ── Kaggle API (trainer) ────────────────────────────────────
     #
     # Uses the `kaggle` CLI (credentials expected at ~/.kaggle/kaggle.json).
     # We keep these out of the k8s pods — they're cheap HTTPS calls and
     # the driver host already has AWS + Kaggle creds. Submission is
-    # gated by the Quality Plan (reviewer only calls this after verdict
-    # ready_to_sign on cp_submission_ready) and by the per-run budget
-    # enforced in the reviewer's task brief.
+    # gated by the per-run budget enforced in the trainer's task brief.
 
     _KAGGLE_COMPETITION = "nvidia-nemotron-model-reasoning-challenge"
     # Hard budget: Kaggle gives us 5 submits/day and we pick 2 finals; a
-    # single marathon run shouldn't burn more than 1. If the
-    # NemoMASAlgorithm sets a higher per-run limit, this handler-level
-    # fallback still refuses once the shared records.jsonl has already
-    # captured that many kaggle_submission_result records.
+    # single marathon run shouldn't burn more than 1. The kaggle-budget
+    # hook (.claude/hooks/) is the primary enforcement; this handler-level
+    # fallback refuses if invoked outside the hook path.
     _KAGGLE_MAX_PER_RUN = int(os.environ.get("NEMO_MAS_KAGGLE_MAX_PER_RUN", "1"))
 
     def _count_prior_submits() -> int:
@@ -637,9 +613,8 @@ def local_handlers(
         if prior >= _KAGGLE_MAX_PER_RUN:
             return _err(
                 f"kaggle_submit refused: {prior} submit(s) already made this "
-                f"run, budget is {_KAGGLE_MAX_PER_RUN}. Post verdict="
-                "ready_to_sign without submitting; the human can push via "
-                "the CLI manually."
+                f"run, budget is {_KAGGLE_MAX_PER_RUN}. The human can push "
+                "manually via the Kaggle CLI if needed."
             )
         ws = _resolve_ws()
         zp = Path(zip_path)
@@ -677,7 +652,7 @@ def local_handlers(
             )
         # The CLI prints "Successfully submitted to ..." but doesn't
         # expose the submission id. We pull it via a follow-up list call
-        # so the reviewer can track score status later.
+        # so the trainer can track score status later.
         list_out = subprocess.run(
             ["kaggle", "competitions", "submissions",
              "-c", _KAGGLE_COMPETITION, "-v"],
@@ -1082,7 +1057,7 @@ class BackendBridge:
                    name_contains: str = "aev-") -> str:
         """Read-only snapshot of the team's k8s cluster + job state.
 
-        Intended for reviewer audit: cross-check whether a claimed
+        Intended for trainer audit: cross-check whether a claimed
         ``training_run`` actually produced a real k8s job that did real
         work. Never mutates the cluster. Surfaces:
 
@@ -1397,8 +1372,8 @@ class BackendBridge:
         # backends.py.)
         return _err(
             "call_teacher_model is not implemented at the bridge level. "
-            "Wire in a teacher-model handler explicitly via the "
-            "backend_registry kwarg of NemoMASAlgorithm.",
+            "Wire in a teacher-model handler explicitly when constructing "
+            "BackendBridge.",
             model=model, n_prompts=len(prompts),
             max_tokens=max_tokens, temperature=temperature,
         )

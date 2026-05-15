@@ -39,23 +39,45 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# Shared checkpoint slot declarations + fold function live with the backend
-# algorithm so the two sides never drift. Insert the repo root on sys.path so
-# the import resolves no matter where the viewer is run from.
+# Insert the repo root on sys.path so imports resolve no matter where the
+# viewer is run from.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-from agent_evolve.model.algorithms.nemo_mas.checkpoints import (  # noqa: E402
-    CHECKPOINT_MODE_AUTO,
-    CHECKPOINT_MODE_MANUAL,
-    FoldedSlot,
-    evidence_refs_for_slot,
-    fold_checkpoints,
-    load_slot_decls,
-)
-from agent_evolve.model.algorithms.nemo_mas.orchestrator import (  # noqa: E402
+from agent_evolve.model.algorithms.nemo_mas.agent_teams import (  # noqa: E402
     cycle_workspace_path,
 )
+
+# The checkpoint / Quality-Plan cockpit was deprecated together with the
+# headless ``orchestrator.run_cycle`` runtime. The viewer's record / chart
+# / leaderboard pages all work without it; the cockpit endpoints below
+# now no-op via these stubs so the existing call sites stay compiling.
+CHECKPOINT_MODE_AUTO = "auto"
+CHECKPOINT_MODE_MANUAL = "manual"
+
+
+class FoldedSlot:  # noqa: D401 - structural stand-in
+    """Stand-in for the deleted ``checkpoints.FoldedSlot``.
+
+    Kept so call sites that still reference the type stay parseable. The
+    fold function below always returns ``[]`` so no slot ever materializes;
+    cockpit pages render empty.
+    """
+
+    id: str = ""
+    state: str = "absent"
+
+
+def fold_checkpoints(_records, _mode, *, slots=None):  # noqa: ARG001
+    return []
+
+
+def load_slot_decls(_workspace):  # noqa: ARG001
+    return []
+
+
+def evidence_refs_for_slot(_slot, _records):  # noqa: ARG001
+    return []
 
 # Multi-run discovery:
 #   ``RUNS_ROOT`` is the parent directory that holds one subdirectory per

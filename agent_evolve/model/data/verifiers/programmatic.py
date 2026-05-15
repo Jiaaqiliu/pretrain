@@ -1,20 +1,23 @@
-"""Programmatic label verification for the balanced_dev600 dev set.
+"""Programmatic label verification: dataset-level scan that applies the
+default per-domain solver as a ground-truth oracle and reports per-domain
+agreement vs. the stored ``answer``.
 
-Uses huikang's open-sourced domain solvers (ported into
-agent_evolve.model.data.reasoners) as ground-truth oracles for all 6
-Kaggle-scored domains. For each dev row we:
+Reads a CSV with columns ``id, prompt, answer, domain`` (the shape produced
+by ``data/scripts/build_dev_set``). Writes a JSONL of per-row verdicts plus
+a per-domain summary on stdout.
 
-  1. Parse the plain-text Kaggle prompt into a ``Problem`` (examples +
-     question + stored answer).
-  2. Run the category's ``reasoning_<domain>`` function.
-  3. Extract ``\\boxed{..}`` from the reasoning trace and compare to the
-     stored answer with the same ``verify()`` the dev scorer uses.
+The per-domain logic lives in :mod:`agent_evolve.model.data.verifiers.<domain>`
+— this file is just a runner over the
+:data:`agent_evolve.model.data.verifiers.VERIFIERS` map.
 
-Disagreement indicates either a label error in the dev set OR a solver
+Disagreement indicates either a label error in the dataset OR a solver
 that couldn't handle a particular example edge case.
 
-Input:  balanced_dev600.csv with (id, prompt, answer, domain, source).
-Output: balanced_dev600.programmatic.jsonl with per-row verdicts.
+Usage::
+
+    python -m agent_evolve.model.data.verifiers.programmatic \\
+        --input runs/.../eval/balanced_dev600.csv \\
+        --output runs/.../eval/balanced_dev600.programmatic.jsonl
 """
 
 from __future__ import annotations
@@ -23,124 +26,16 @@ import argparse
 import csv
 import json
 import logging
-import re
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 sys.path.insert(0, "/fsx/zzsamshi/a-evolve")
 
-from agent_evolve.benchmarks.nemo_reasoner import extract_final_answer, verify  # noqa: E402
-from agent_evolve.model.data.reasoners.bit_manipulation import reasoning_bit_manipulation  # noqa: E402
-from agent_evolve.model.data.reasoners.cipher import reasoning_cipher  # noqa: E402
-from agent_evolve.model.data.reasoners.cryptarithm import reasoning_cryptarithm  # noqa: E402
-from agent_evolve.model.data.reasoners.equation_numeric import reasoning_equation_numeric  # noqa: E402
-from agent_evolve.model.data.reasoners.gravity import reasoning_gravity  # noqa: E402
-from agent_evolve.model.data.reasoners.numeral import reasoning_numeral  # noqa: E402
-from agent_evolve.model.data.reasoners.store_types import Example, Problem  # noqa: E402
-from agent_evolve.model.data.reasoners.unit_conversion import reasoning_unit_conversion  # noqa: E402
+from agent_evolve.model.data.verifiers import VERIFIERS  # noqa: E402
 
 logger = logging.getLogger(__name__)
-
-
-# ── Prompt parsers: plain text → Problem ───────────────────────────────────
-
-
-def _parse_bits(prompt: str, answer: str, _id: str) -> Problem | None:
-    pairs = re.findall(r"([01]{8})\s*->\s*([01]{8})", prompt)
-    q = re.search(r"determine the output for:\s*([01]{8})", prompt)
-    if not pairs or not q:
-        return None
-    examples = [Example(i, o) for i, o in pairs]
-    return Problem(id=_id, category="bit_manipulation", examples=examples,
-                   question=q.group(1), answer=answer, prompt=prompt)
-
-
-def _parse_numerals(prompt: str, answer: str, _id: str) -> Problem | None:
-    # Examples like "23 -> XXIII"
-    pairs = re.findall(r"(\d+)\s*->\s*([IVXLCDM]+)", prompt)
-    q = re.search(r"write the number (\d+) in the Wonderland", prompt)
-    if not pairs or not q:
-        return None
-    examples = [Example(i, o) for i, o in pairs]
-    return Problem(id=_id, category="numeral", examples=examples,
-                   question=q.group(1), answer=answer, prompt=prompt)
-
-
-def _parse_units(prompt: str, answer: str, _id: str) -> Problem | None:
-    # "24.12 m becomes 34.78"
-    pairs = re.findall(r"([-+]?\d*\.?\d+)\s*m\s+becomes\s+([-+]?\d*\.?\d+)", prompt)
-    q = re.search(r"convert the following measurement:\s*([-+]?\d*\.?\d+)\s*m", prompt)
-    if not pairs or not q:
-        return None
-    examples = [Example(i, o) for i, o in pairs]
-    return Problem(id=_id, category="unit_conversion", examples=examples,
-                   question=q.group(1), answer=answer, prompt=prompt)
-
-
-def _parse_gravity(prompt: str, answer: str, _id: str) -> Problem | None:
-    # "For t = 1.54s, distance = 11.74 m"
-    pairs = re.findall(
-        r"For t\s*=\s*([-+]?\d*\.?\d+)s?,\s*distance\s*=\s*([-+]?\d*\.?\d+)\s*m",
-        prompt,
-    )
-    q = re.search(r"falling distance for t\s*=\s*([-+]?\d*\.?\d+)s?", prompt)
-    if not pairs or not q:
-        return None
-    examples = [Example(t, d) for t, d in pairs]
-    return Problem(id=_id, category="gravity", examples=examples,
-                   question=q.group(1), answer=answer, prompt=prompt)
-
-
-def _parse_cipher(prompt: str, answer: str, _id: str) -> Problem | None:
-    # Examples: "<cipher words> -> <plaintext words>"
-    # Take every "-> " line; question is after "decrypt the following text:"
-    lines = prompt.splitlines()
-    examples = []
-    for ln in lines:
-        m = re.match(r"^\s*([^-]+?)\s*->\s*(.+?)\s*$", ln)
-        if m and "wonderland" not in ln.lower() and "example" not in ln.lower():
-            left = m.group(1).strip()
-            right = m.group(2).strip()
-            # Only plausible cipher examples: alphabetic with spaces
-            if re.fullmatch(r"[a-z ]+", left) and re.fullmatch(r"[a-z ]+", right):
-                examples.append(Example(left, right))
-    q = re.search(r"decrypt the following text:\s*(.+?)\s*(\n|$)", prompt)
-    if not examples or not q:
-        return None
-    return Problem(id=_id, category="cipher", examples=examples,
-                   question=q.group(1).strip(), answer=answer, prompt=prompt)
-
-
-def _parse_equations(prompt: str, answer: str, _id: str) -> Problem | None:
-    # "X = Y" lines where X and Y are opaque symbol strings
-    # and question "determine the result for: X"
-    lines = prompt.splitlines()
-    examples = []
-    for ln in lines:
-        m = re.match(r"^\s*(\S+)\s*=\s*(\S+)\s*$", ln)
-        if m:
-            examples.append(Example(m.group(1), m.group(2)))
-    q = re.search(r"determine the result for:\s*(\S+)", prompt)
-    if not examples or not q:
-        return None
-    return Problem(id=_id, category="equation_numeric_deduce", examples=examples,
-                   question=q.group(1), answer=answer, prompt=prompt)
-
-
-# Router: dev-set domain → (parser, solver)
-SOLVERS: dict[str, tuple[Callable, Callable]] = {
-    "bits":      (_parse_bits,      reasoning_bit_manipulation),
-    "numerals":  (_parse_numerals,  reasoning_numeral),
-    "units":     (_parse_units,     reasoning_unit_conversion),
-    "gravity":   (_parse_gravity,   reasoning_gravity),
-    "cipher":    (_parse_cipher,    reasoning_cipher),
-    "equations": (_parse_equations, reasoning_equation_numeric),
-}
-
-
-# ── Runner ─────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -156,38 +51,38 @@ def load_rows(path: Path, limit: int | None = None) -> list[Row]:
     rows: list[Row] = []
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
-            rows.append(Row(r["id"], r["prompt"], r["answer"], r.get("domain", ""), r.get("source", "")))
+            rows.append(Row(
+                id=r["id"],
+                prompt=r["prompt"],
+                answer=r["answer"],
+                domain=r.get("domain", ""),
+                source=r.get("source", ""),
+            ))
             if limit and len(rows) >= limit:
                 break
     return rows
 
 
 def judge_row(r: Row) -> dict:
-    spec = SOLVERS.get(r.domain)
+    """Verify a single row by dispatching to the domain's verifier."""
     base = {
         "id": r.id, "domain": r.domain, "source": r.source,
         "stored_answer": r.answer,
     }
-    if spec is None:
-        return {**base, "solver_prediction": None, "solver_status": "no_solver", "agrees": None}
-    parser, solver = spec
-    try:
-        problem = parser(r.prompt, r.answer, r.id)
-    except Exception as exc:  # noqa: BLE001
-        return {**base, "solver_prediction": None, "solver_status": f"parse_error: {exc!r}", "agrees": None}
-    if problem is None:
-        return {**base, "solver_prediction": None, "solver_status": "parse_failed", "agrees": None}
-    try:
-        reasoning = solver(problem)
-    except Exception as exc:  # noqa: BLE001
-        return {**base, "solver_prediction": None, "solver_status": f"solver_error: {exc!r}", "agrees": None}
-    if reasoning is None:
-        return {**base, "solver_prediction": None, "solver_status": "no_solution", "agrees": None}
-    pred = extract_final_answer(reasoning)
-    if pred is None or not pred:
-        return {**base, "solver_prediction": pred, "solver_status": "no_boxed", "agrees": None}
-    agrees = verify(r.answer, pred)
-    return {**base, "solver_prediction": pred, "solver_status": "ok", "agrees": agrees}
+    fn = VERIFIERS.get(r.domain)
+    if fn is None:
+        return {**base, "solver_prediction": None,
+                "solver_status": "no_solver" if r.domain not in VERIFIERS else "verifier_unavailable",
+                "agrees": None}
+    v = fn(r.prompt, r.answer)
+    return {
+        **base,
+        "solver_prediction": v.get("prediction"),
+        "solver_status": v.get("status", ""),
+        "agrees": v.get("agrees"),
+        "witness": v.get("witness"),
+        "method": v.get("method"),
+    }
 
 
 def main() -> int:
@@ -208,9 +103,10 @@ def main() -> int:
         for v in verdicts:
             f.write(json.dumps(v) + "\n")
 
-    # Summary
-    from collections import defaultdict
-    per = defaultdict(lambda: {"n": 0, "ok": 0, "agree": 0, "disagree": 0, "parse_fail": 0, "no_solution": 0, "no_boxed": 0, "errors": 0})
+    per: dict[str, dict[str, int]] = defaultdict(lambda: {
+        "n": 0, "ok": 0, "agree": 0, "disagree": 0,
+        "parse_fail": 0, "no_solution": 0, "no_boxed": 0, "errors": 0,
+    })
     for v in verdicts:
         b = per[v["domain"]]
         b["n"] += 1
@@ -230,7 +126,7 @@ def main() -> int:
         else:
             b["errors"] += 1
 
-    print("\n=== programmatic label verification (huikang solvers) ===")
+    print("\n=== programmatic label verification (default solvers / verifiers) ===")
     print(f"{'domain':10s} {'n':>4} {'solved':>7} {'agree':>6} {'disagree':>9} "
           f"{'parse_fail':>11} {'no_sol':>7} {'no_box':>7} {'errors':>7}  "
           f"{'label_trust':>12}")
@@ -245,7 +141,7 @@ def main() -> int:
     if bad:
         print(f"\n=== {len(bad)} disagreements (labels worth human review) ===")
         for v in bad[:20]:
-            print(f"  id={v['id']} dom={v['domain']:10s} src={v['source']:13s} "
+            print(f"  id={v['id']} dom={v['domain']:10s} src={v.get('source',''):13s} "
                   f"stored={v['stored_answer']!r}  solver={v['solver_prediction']!r}")
     return 0
 

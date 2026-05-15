@@ -53,7 +53,7 @@ Rule = Callable[[tuple], int]
 
 
 def _bit(val: str | int, i: int) -> int:
-    """Return the i-th bit (left-to-right by convention used in huikang traces)."""
+    """Return the i-th bit (left-to-right by convention used in default traces)."""
     if isinstance(val, int):
         s = f"{val:08b}"
     else:
@@ -289,6 +289,67 @@ def is_bits_label_consistent(
         ok = False
         witnesses.append("<no-consistent-rule>")
     return ok, witnesses
+
+
+# ── Uniform per-domain API ────────────────────────────────────────────────
+# Every Kaggle-domain verifier under this package exposes the same shape:
+#
+#     parse(prompt, stored_answer="", _id="") -> Problem | None
+#     verify(prompt, stored_answer)           -> dict
+#
+# For ``bits``, ``verify`` runs the stricter consistency check
+# (``is_bits_label_consistent``) — the puzzle is under-determined, so
+# "label agrees with examples under SOME rule in the family" is the right
+# semantic rather than "label matches the unique solver guess".
+
+DOMAIN = "bits"
+
+
+def _parse_bits_prompt(prompt: str) -> tuple[list[tuple[str, str]], str | None]:
+    import re as _re
+    pairs = _re.findall(r"([01]{8})\s*->\s*([01]{8})", prompt)
+    q = _re.search(r"determine the output for:\s*([01]{8})", prompt)
+    return pairs, (q.group(1) if q else None)
+
+
+def parse(prompt: str, stored_answer: str = "", _id: str = ""):
+    from agent_evolve.model.data.reasoners.store_types import Example, Problem
+    pairs, q = _parse_bits_prompt(prompt)
+    if not pairs or not q:
+        return None
+    return Problem(
+        id=_id,
+        category="bit_manipulation",
+        examples=[Example(i, o) for i, o in pairs],
+        question=q,
+        answer=stored_answer,
+        prompt=prompt,
+    )
+
+
+def verify(prompt: str, stored_answer: str) -> dict:
+    """Stricter consistency-based verifier for bits labels.
+
+    Returns {"domain", "agrees", "prediction", "status", "witness"}. When the
+    label is consistent under some rule in family F, ``agrees`` is True and
+    ``witness`` lists the per-bit rule(s) that explain it.
+    """
+    base = {"domain": DOMAIN, "agrees": False, "prediction": None,
+            "status": "", "witness": None}
+    pairs, q = _parse_bits_prompt(prompt)
+    if not pairs or not q:
+        return {**base, "status": "parse_failed"}
+    try:
+        consistent, witnesses = is_bits_label_consistent(pairs, q, stored_answer)
+    except Exception as exc:  # noqa: BLE001
+        return {**base, "status": f"verifier_error: {exc!r}"}
+    return {
+        "domain": DOMAIN,
+        "agrees": bool(consistent),
+        "prediction": stored_answer if consistent else None,
+        "status": "ok",
+        "witness": witnesses if consistent else None,
+    }
 
 
 # ── CLI entry ─────────────────────────────────────────────────────────────

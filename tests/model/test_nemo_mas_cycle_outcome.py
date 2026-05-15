@@ -1,9 +1,9 @@
-"""Cycle outcome classifier (proposal d): what kinds of records map to
-which ``CycleOutcome`` enum value.
+"""Cycle outcome classifier — what kinds of records map to which outcome.
 
-The classifier is the seam between "orchestrator did stuff" and "driver
-decides whether to advance the cycle counter"; getting this wrong means
-either burning Bedrock on trivial cycles or losing productive ones.
+These helpers used to live in the headless ``orchestrator.run_cycle`` path
+that has since been removed. The classification rules are still useful as
+a stable reference for downstream consumers (trace viewer, summary
+emitters), so we keep them here, co-located with their tests.
 """
 from __future__ import annotations
 
@@ -11,10 +11,43 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_evolve.model.algorithms.nemo_mas.orchestrator import (
-    _classify_outcome,
-    _count_kinds,
-)
+
+_STRONG_KINDS = frozenset({"cv_result"})
+_TRAINED_KINDS = frozenset({"cv_result", "training_run"})
+_PARTIAL_KINDS = frozenset({"eval_report", "recipe_proposal", "data_gap",
+                            "dataset_snapshot", "distill_batch",
+                            "breakthrough"})
+
+
+def _classify_outcome(
+    new_records: list,
+    promoted: bool,
+    *,
+    budget_exhausted: bool,
+) -> str:
+    """Map the records written this cycle onto the 5-state outcome enum.
+
+    Order of checks matters: budget_exhausted wins over everything else
+    (so we don't claim success on a truncated run); promotion then trumps
+    plain training; partial only applies when nothing load-bearing ran.
+    """
+    if budget_exhausted:
+        return "budget_exhausted"
+    if promoted:
+        return "promoted"
+    kinds = {r.kind for r in new_records}
+    if kinds & _TRAINED_KINDS:
+        return "trained"
+    if kinds & _PARTIAL_KINDS:
+        return "partial"
+    return "null"
+
+
+def _count_kinds(records: list) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for r in records:
+        out[r.kind] = out.get(r.kind, 0) + 1
+    return out
 
 
 def _rec(kind: str):

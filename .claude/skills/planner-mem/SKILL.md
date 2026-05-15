@@ -1,6 +1,6 @@
 ---
 name: planner-mem
-description: Read / search / append records in the nemo_mas shared ledger as the Planner. Thin wrapper around `python -m agent_evolve.model.algorithms.nemo_mas.cli mem ...`. Use when you need context from prior cycles or to append `breakthrough` / `failed_attempt` outside the structured propose / hypothesis flows.
+description: Read / search / append records in the nemo_mas shared ledger as the Planner. Thin wrapper around `python -m agent_evolve.model.algorithms.nemo_mas.cli mem ...`. Use when you need historical context or to append `breakthrough` / `failed_attempt` outside the structured propose flow.
 ---
 
 Thin reference for reading and writing the shared ledger as the Planner. All commands print one JSON object on stdout.
@@ -9,16 +9,15 @@ Thin reference for reading and writing the shared ledger as the Planner. All com
 
 ```bash
 python -m agent_evolve.model.algorithms.nemo_mas.cli mem recent --kind breakthrough -k 5
-python -m agent_evolve.model.algorithms.nemo_mas.cli mem recent --kind cv_result -k 3
 python -m agent_evolve.model.algorithms.nemo_mas.cli mem recent --kind eval_report -k 5
 python -m agent_evolve.model.algorithms.nemo_mas.cli mem recent --kind data_gap -k 3
 python -m agent_evolve.model.algorithms.nemo_mas.cli mem search \
-  --query "<topic>" --kind hypothesis --top-k 8
+  --query "<topic>" --kind recipe_proposal --top-k 8
 ```
 
 ## Append
 
-Your role (`--role planner`) may write: `hypothesis`, `recipe_proposal`, `directive_response`, plus cross-cutting `breakthrough` / `failed_attempt` / `checkpoint_event`. The CLI rejects anything else.
+Your role (`--role planner`) may write: `recipe_proposal`, `data_audit_finding`, `data_gap`, `error_pattern`, `benchmark_rule`, plus cross-cutting `breakthrough` / `failed_attempt`. The CLI rejects anything else.
 
 ```bash
 python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
@@ -29,26 +28,22 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
   --tag <tag>
 ```
 
-- `--ref` is repeatable. `recipe_proposal` MUST `--ref` at least one `eval_report` or `data_gap` (CLI enforces). `hypothesis` MUST `--ref` at least one evidence record (role protocol, enforced by convention and reviewed).
-- `--tag` is repeatable. For `recipe_proposal`: `lora` / `sft` / `rl` / `grpo` / `data_mix` / `distill` shape which Quality Plan slot the proposal feeds. For `hypothesis`: `preliminary` marks single-seed evidence; `supersedes:<old_id>` flags a contradiction of a prior hypothesis.
+- `--ref` is repeatable. `recipe_proposal` MUST `--ref` at least one `eval_report` or `data_gap` (CLI enforces).
+- `--tag` is repeatable. For `recipe_proposal`: `sft` / `data_mix` / `distill` describe the area (scope is SFT-LoRA only — no other training regime, no full-finetune); `preliminary` marks single-seed evidence; `supersedes:<old_id>` flags a contradiction of a prior proposal.
 
 ## Reference lookups
 
 ```bash
-# Look up the current Quality Plan state before planning
-python -m agent_evolve.model.algorithms.nemo_mas.cli checkpoints list
-
-# Look up a specific slot's state
-python -m agent_evolve.model.algorithms.nemo_mas.cli checkpoints state --slot-id cp_eval_sanity
-
-# Diff two recipe YAMLs (a or b can be inline text OR workspace-relative path)
-python -m agent_evolve.model.algorithms.nemo_mas.cli recipe diff --a train/a.yaml --b train/b.yaml
+# Diff two recipe YAMLs. Diffs target the tunable child recipe
+# (e.g. recipes/train/default.yaml), never the frozen `_base` anchor.
+# See planner-propose-recipe for the full rule.
+python -m agent_evolve.model.algorithms.nemo_mas.cli recipe diff \
+  --a recipes/train/default.yaml --b /tmp/proposed_after.yaml
 ```
-
-You may NOT call `checkpoints review-suggest` or `checkpoints sign` — those are Reviewer-only (and the CLI's mode guard will refuse). Read the slot state and let your proposals be shaped by it.
 
 ## What NOT to use this skill for
 
 - Writing a `recipe_proposal` → use `planner-propose-recipe`. Don't hand-roll the body.
-- Writing a `hypothesis` → use `planner-hypothesis`.
-- Writing a `training_run` / `distill_batch` / `eval_report` / `checkpoint_review` → wrong role.
+- Writing a `data_audit_finding` → use `planner-audit-jsonl`. Don't hand-roll the body.
+- Writing a `training_run` / `eval_report` / `kaggle_submission_result` → Trainer's job.
+- Writing a `distill_batch` / `dataset_snapshot` → DataWorker's job.

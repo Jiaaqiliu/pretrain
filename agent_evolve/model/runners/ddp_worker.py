@@ -139,7 +139,7 @@ def _build_model_and_optim(cfg: dict, rank: int, world_size: int):
         _print(rank, f"attaching fresh LoRA rank={cfg['lora_rank']}")
         # target_modules can be either a list (explicit leaf names) or the
         # string "all-linear" — PEFT resolves the latter to every nn.Linear.
-        # huikang's 0.85-LB adapter uses "all-linear"; we support it here.
+        # The default 0.85-LB adapter uses "all-linear"; we support it here.
         tm_cfg = cfg["target_modules"]
         tm = tm_cfg if isinstance(tm_cfg, str) else list(tm_cfg)
         lora_cfg = LoraConfig(
@@ -210,10 +210,10 @@ def _wrap_ddp(model, cfg: dict, rank: int):
         gradient_as_bucket_view=True,
     )
     trainable = [p for p in ddp_model.parameters() if p.requires_grad]
-    # AdamW knobs — defaults match PyTorch (β1=0.9, β2=0.999, wd=0.0). huikang's
-    # 0.85-LB recipe uses β2=0.95 (not 0.999) — heavier discounting of past
-    # gradient-squared, suited to short SFT runs where the Adam moment estimate
-    # shouldn't over-smooth recent updates.
+    # AdamW knobs — defaults match PyTorch (β1=0.9, β2=0.999, wd=0.0). The
+    # default 0.85-LB recipe uses β2=0.95 (not 0.999) — heavier discounting
+    # of past gradient-squared, suited to short SFT runs where the Adam
+    # moment estimate shouldn't over-smooth recent updates.
     beta1 = float(cfg.get("adam_beta1", 0.9))
     beta2 = float(cfg.get("adam_beta2", 0.999))
     eps = float(cfg.get("adam_eps", 1e-8))

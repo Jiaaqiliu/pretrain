@@ -27,7 +27,43 @@ from peft.tuners.lora import Linear as LoraLinear
 RECIPE_PATH = os.environ.get("RECIPE_PATH") or sys.exit(
     "error: RECIPE_PATH env var required (absolute path to recipe YAML)"
 )
-with open(RECIPE_PATH) as _f: R = yaml.safe_load(_f)
+
+def _deep_merge(base: dict, child: dict) -> dict:
+    """Recursively merge ``child`` over ``base``. Child dict values merge
+    key-by-key; child scalars / lists replace entirely. Used to resolve
+    ``inherits:`` in recipe YAMLs so the tunable child (default.yaml) can
+    override only a handful of knobs and inherit the frozen anchor
+    (default_base.yaml) for everything else."""
+    out = dict(base)
+    for k, v in child.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+def _load_recipe(path: str) -> dict:
+    """Load a recipe YAML, resolving a single ``inherits: <name>`` key
+    against ``<name>.yaml`` in the same directory. One level of
+    inheritance is supported — deeper chains are rejected as over-eager
+    design that hides where a value comes from."""
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+    parent_name = cfg.pop("inherits", None)
+    if parent_name is None:
+        return cfg
+    parent_path = os.path.join(os.path.dirname(path), f"{parent_name}.yaml")
+    if not os.path.isfile(parent_path):
+        sys.exit(f"error: recipe {path!r} inherits {parent_name!r}; "
+                 f"expected base file at {parent_path}")
+    with open(parent_path) as f:
+        parent = yaml.safe_load(f)
+    if "inherits" in parent:
+        sys.exit(f"error: nested inherits not supported ({parent_path} "
+                 f"itself declares inherits={parent.get('inherits')!r})")
+    return _deep_merge(parent, cfg)
+
+R = _load_recipe(RECIPE_PATH)
 
 # ── Env overrides (knobs the CLI sweeps) ─────────────────────────────
 def _env_or(key: str, default, cast):

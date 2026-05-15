@@ -1,4 +1,4 @@
-# 1-pod × 1-GPU Unsloth training — huikang recipe.
+# 1-pod × 1-GPU Unsloth training — default recipe.
 # Single node impact (one GPU). Parameterize via submit.sh.
 #
 # Placeholders: ${JOB_NAME} ${IMAGE} ${OUTPUT_DIR} ${RUN_NAME} ${LR}
@@ -13,7 +13,7 @@ metadata:
   labels:
     app: a-evolve
     role: train
-    recipe: huikang
+    recipe: default
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
@@ -22,7 +22,7 @@ spec:
       labels:
         app: a-evolve
         role: train
-        recipe: huikang
+        recipe: default
     spec:
       restartPolicy: Never
       # Pin to a single chosen node to bound impact.
@@ -38,7 +38,7 @@ spec:
           workingDir: /fsx/zzsamshi/a-evolve
           command: ["python"]
           args:
-            - "/fsx/zzsamshi/a-evolve/seed_workspaces/nemo_mas_reasoner/k8s/entries/train_unsloth.py"
+            - "/fsx/zzsamshi/a-evolve/agent_evolve/backends/nemo_reasoner/k8s/entries/train_unsloth.py"
           env:
             - name: RECIPE_PATH
               value: "${RECIPE_PATH}"

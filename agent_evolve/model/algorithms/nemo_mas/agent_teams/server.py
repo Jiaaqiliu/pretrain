@@ -11,19 +11,11 @@ teammate's perspective; named bare here):
   Memory (teammates):
     mem_write, mem_get, mem_search, mem_recent
 
-  Checkpoints (reviewer + lead):
-    checkpoint_state, list_slots, checkpoint_review_suggest, checkpoint_sign
-
   Iteration control (lead):
     start_iteration, current_iteration
 
-  Backend (data_worker + trainer + reviewer):
+  Backend (data_worker + trainer + planner):
     all 20+ handlers from ``local_handlers()``, auto-registered.
-
-The lead talks to this server just like any teammate. In manual mode,
-only the lead is permitted to call ``checkpoint_sign`` (via
-``role="human"``); the reviewer is permitted in auto mode (via
-``role="reviewer"``).
 """
 
 from __future__ import annotations
@@ -37,25 +29,16 @@ from typing import Any, Callable
 from mcp.server.fastmcp import FastMCP
 
 from ..backends import BackendBridge, local_handlers
-from ..checkpoints import (
-    FoldedSlot,
-    fold_checkpoints,
-    load_slot_decls,
-)
 from ..memory import RecipeMemory
 from ..schema import RecordValidationError
 from .hook_utils import (
-    current_checkpoint_mode,
     current_memory_path,
     current_work_dir,
     current_workspace_root,
 )
 from .role_guard import (
-    ROLE_HUMAN,
-    ROLE_ORCHESTRATOR_AUTO,
     RoleGuardError,
     check_worker_role,
-    resolve_signer_role,
 )
 
 logger = logging.getLogger("nemo_mas.agent_teams.server")
@@ -150,10 +133,10 @@ def mem_write(
 ) -> str:
     """Append a typed record to the ledger.
 
-    ``role`` must be one of ``planner``, ``data_worker``, ``trainer``,
-    ``reviewer`` — the kind must be allowed for that role (see
-    ``schema.KIND_WHITELIST``). ``refs`` must resolve to existing records
-    and satisfy any per-kind ref constraints (``schema.REF_RULES``).
+    ``role`` must be one of ``planner``, ``data_worker``, ``trainer`` —
+    the kind must be allowed for that role (see ``schema.KIND_WHITELIST``).
+    ``refs`` must resolve to existing records and satisfy any per-kind
+    ref constraints (``schema.REF_RULES``).
     """
     try:
         check_worker_role(role)
@@ -215,203 +198,6 @@ def mem_recent(
     return _ok(records=[r.to_dict() for r in recs])
 
 
-# ── Checkpoint tools ─────────────────────────────────────────────
-
-
-def _fold_now() -> tuple[list[FoldedSlot], str, list[dict]]:
-    ws = current_workspace_root()
-    mode = current_checkpoint_mode()
-    slots = load_slot_decls(ws) if ws else []
-    if not slots:
-        return ([], mode, [])
-    folded = fold_checkpoints(_get_memory().all_records(), mode, slots=slots)
-    return (folded, mode, slots)
-
-
-@mcp.tool()
-def list_slots() -> str:
-    """List declared Quality Plan slots + their current folded state."""
-    folded, mode, _ = _fold_now()
-    if not folded:
-        return _ok(slots=[], mode=mode,
-                   note="no checkpoints.yaml in active workspace")
-    return _ok(mode=mode, slots=[{
-        "id": s.id, "title": s.title, "state": s.state,
-        "required": s.required,
-        "requires_evidence": list(s.requires_evidence),
-        "depends_on": list(s.depends_on),
-        "evidence_counts": s.evidence_counts,
-        "last_review_verdict": s.last_review_verdict,
-        "last_review_reason": s.last_review_reason,
-        "can_sign": s.can_sign,
-    } for s in folded])
-
-
-@mcp.tool()
-def checkpoint_state(slot_id: str) -> str:
-    """Return the folded state of one slot."""
-    folded, mode, _ = _fold_now()
-    for s in folded:
-        if s.id == slot_id:
-            return _ok(mode=mode, slot={
-                "id": s.id, "title": s.title, "state": s.state,
-                "required": s.required,
-                "requires_evidence": list(s.requires_evidence),
-                "depends_on": list(s.depends_on),
-                "evidence_counts": s.evidence_counts,
-                "last_review_verdict": s.last_review_verdict,
-                "last_review_reason": s.last_review_reason,
-                "can_sign": s.can_sign,
-            })
-    return _err(f"unknown slot_id={slot_id!r}")
-
-
-@mcp.tool()
-def checkpoint_review_suggest(
-    slot_id: str,
-    verdict: str,
-    reason: str,
-    refs: list[str],
-    tags: list[str] | None = None,
-) -> str:
-    """Reviewer-only: attach a QA verdict to a checkpoint slot.
-
-    ``verdict`` ∈ ``{evidence_attached, ready_to_sign, insufficient, reject}``.
-    ``refs`` must cite at least one evidence record being judged.
-    """
-    from ..checkpoints import VALID_VERDICTS
-    _, _, slots = _fold_now()
-    slot_ids = {s["id"] for s in slots}
-    if slot_id not in slot_ids:
-        return _err(f"unknown slot_id={slot_id!r}; "
-                    f"expected one of {sorted(slot_ids)}")
-    if verdict not in VALID_VERDICTS:
-        return _err(f"verdict must be one of {sorted(VALID_VERDICTS)}; "
-                    f"got {verdict!r}")
-    if not refs:
-        return _err("checkpoint_review_suggest requires ≥1 ref to "
-                    "the evidence being judged")
-    if not reason.strip():
-        return _err("reason must be a non-empty one-line summary")
-
-    combined_tags = [
-        f"checkpoint:{slot_id}",
-        f"verdict:{verdict}",
-        "channel:qa_review",
-    ]
-    if tags:
-        combined_tags.extend(t for t in tags if t not in combined_tags)
-    try:
-        rec = _get_memory().write(
-            role="reviewer",
-            kind="checkpoint_review",
-            title=f"{verdict} · {slot_id}",
-            body=reason,
-            tags=tuple(combined_tags),
-            refs=tuple(refs),
-        )
-    except RecordValidationError as e:
-        return _err(str(e))
-    return _ok(id=rec.id, slot_id=slot_id, verdict=verdict)
-
-
-@mcp.tool()
-def checkpoint_sign(
-    slot_id: str,
-    refs: list[str],
-    role: str = ROLE_HUMAN,
-    note: str = "",
-) -> str:
-    """Sign a checkpoint slot, closing it.
-
-    Caller roles:
-      * ``human`` (default, manual or auto mode) — the lead signs on
-        behalf of the user.
-      * ``orchestrator_auto`` (auto mode only) — the lead acting as the
-        orchestrator in auto mode.
-      * ``reviewer`` (auto mode only) — reviewer closes the slot it just
-        approved.
-
-    Evidence check: every kind in ``slot.requires_evidence`` must appear
-    among the refs. Dependency check: all ``slot.depends_on`` must be in
-    a terminal state. Both mirror the in-process ``checkpoint_sign``
-    handler exactly.
-    """
-    folded, mode, slots = _fold_now()
-    slots_by_id = {s["id"]: s for s in slots}
-    slot = slots_by_id.get(slot_id)
-    if slot is None:
-        return _err(f"unknown slot_id={slot_id!r}")
-
-    try:
-        signer_role, actor_label = resolve_signer_role(role)
-    except RoleGuardError as e:
-        return _err(str(e))
-
-    # Manual mode: only ``human`` can sign. Auto mode: human, reviewer,
-    # and orchestrator_auto can all sign.
-    from ..checkpoints import CHECKPOINT_MODE_AUTO, CHECKPOINT_MODE_MANUAL
-    if mode == CHECKPOINT_MODE_MANUAL and role != ROLE_HUMAN:
-        return _err(
-            f"mode={mode!r}: only role='human' may sign in manual mode; "
-            f"got role={role!r}. The reviewer should post "
-            "verdict=ready_to_sign and wait for the lead to sign."
-        )
-
-    if not refs:
-        return _err(
-            f"checkpoint_sign requires evidence refs covering "
-            f"{slot['requires_evidence']}"
-        )
-
-    # Evidence coverage — every required kind must appear in refs.
-    mem = _get_memory()
-    ref_kinds: list[str] = []
-    for rid in refs:
-        rec = mem.get(rid)
-        if rec is None:
-            return _err(f"ref {rid!r} does not resolve")
-        ref_kinds.append(rec.kind)
-    missing = [k for k in slot["requires_evidence"] if k not in ref_kinds]
-    if missing:
-        return _err(
-            f"slot {slot_id!r} requires evidence of kinds "
-            f"{slot['requires_evidence']}; refs cover {ref_kinds}; "
-            f"missing {missing}"
-        )
-
-    # Dependency: all depends_on must be terminal.
-    folded_by_id = {s.id: s for s in folded}
-    unmet = [d for d in slot["depends_on"]
-             if folded_by_id.get(d) is None
-             or folded_by_id[d].state not in {"signed", "reopened"}]
-    if unmet:
-        return _err(
-            f"slot {slot_id!r} depends on {unmet} which are not yet "
-            "signed; produce evidence + sign those first"
-        )
-
-    body = json.dumps({
-        "checkpoint_id": slot_id,
-        "event": "signoff",
-        "actor": actor_label,
-        "note": note,
-    })
-    try:
-        rec = mem.write(
-            role=signer_role,
-            kind="checkpoint_event",
-            title=f"signoff {slot_id}",
-            body=body,
-            tags=(f"checkpoint:{slot_id}", "event:signoff",
-                  f"actor:{actor_label}"),
-            refs=tuple(refs),
-        )
-    except RecordValidationError as e:
-        return _err(str(e))
-    return _ok(id=rec.id, slot_id=slot_id, actor=actor_label, mode=mode)
-
-
 # ── Iteration control ───────────────────────────────────────────
 
 
@@ -424,7 +210,6 @@ def current_iteration() -> str:
         work_dir=str(current_work_dir() or ""),
         workspace_root=str(current_workspace_root() or ""),
         memory_path=str(current_memory_path() or ""),
-        checkpoint_mode=current_checkpoint_mode(),
         current_cycle=meta.get("current_cycle"),
         cycles_completed=meta.get("cycles_completed", 0),
     )
@@ -434,8 +219,7 @@ def current_iteration() -> str:
 def start_iteration() -> str:
     """Start a new cycle: bump counter, fork the seed workspace, update env.
 
-    Replaces the implicit per-invocation fork that ``NemoMASAlgorithm.run_cycle``
-    did in the headless path. Must be called by the lead between cycles.
+    Must be called by the lead between cycles.
 
     Side effects:
       1. ``<work_dir>/meta.json`` gets ``current_cycle`` bumped.
@@ -486,10 +270,6 @@ def start_iteration() -> str:
     meta["current_cycle"] = cycle_id
     meta["cycles_completed"] = next_cycle
     meta.setdefault("seed_workspace", str(seed))
-    # Stamp the checkpoint mode so the trace viewer picks it up per-run
-    # instead of falling back to the viewer-process default (viewer reads
-    # <run>/meta.json::checkpoint_mode in ``_mode_for_active_run``).
-    meta["checkpoint_mode"] = current_checkpoint_mode()
     meta.setdefault("runtime", "agent_teams")
     mpath.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
@@ -515,8 +295,9 @@ def start_iteration() -> str:
             encoding="utf-8",
         )
 
-    # Fork via TrainingWorkspace. Matches the path convention used by
-    # the headless runtime (orchestrator.cycle_workspace_path).
+    # Fork via TrainingWorkspace. Path convention is
+    # ``<work_dir>/cycles/<cycle_id>/.fork_target/nodes/workspace/workspace``
+    # — see ``hook_utils.cycle_workspace_path``.
     try:
         from agent_evolve.model.types import WorkspaceMutation, WorkspacePatch
         from agent_evolve.model.workspace import TrainingWorkspace
@@ -548,13 +329,6 @@ def start_iteration() -> str:
     os.environ["NEMO_MAS_WORKSPACE_ROOT"] = str(cycle_root)
     os.environ.setdefault("NEMO_MAS_MEMORY_PATH",
                           str(wd / "memory" / "records.jsonl"))
-    # ``_common_model/tools`` is a sibling of the seed; pin the lookup so
-    # tool-YAML resolution works inside the fork (matches the headless
-    # algorithm's ``NEMO_MAS_COMMON_MODEL`` swap).
-    os.environ.setdefault(
-        "NEMO_MAS_COMMON_MODEL",
-        str(seed.parent / "_common_model" / "tools"),
-    )
 
     _State.invalidate()
     # Warm up the ledger so the cycle stamp lands on the next write.
@@ -564,7 +338,6 @@ def start_iteration() -> str:
         current_cycle=cycle_id,
         workspace_root=str(cycle_root),
         memory_path=os.environ["NEMO_MAS_MEMORY_PATH"],
-        checkpoint_mode=current_checkpoint_mode(),
         seed=str(seed),
     )
 
@@ -622,11 +395,9 @@ def _register_backend_tools() -> None:
         )
 
     for name, handler in handlers.items():
-        # Skip any handler whose name collides with a memory/checkpoint
+        # Skip any handler whose name collides with a memory/iteration
         # tool we've already decorated — none exist today but be safe.
         if name in ("mem_write", "mem_get", "mem_search", "mem_recent",
-                    "checkpoint_state", "checkpoint_sign",
-                    "checkpoint_review_suggest", "list_slots",
                     "start_iteration", "current_iteration"):
             logger.warning("skipping backend handler %s (name collision)", name)
             continue

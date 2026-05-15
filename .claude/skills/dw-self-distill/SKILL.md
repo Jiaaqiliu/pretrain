@@ -14,9 +14,8 @@ You are the Data Worker. This skill produces ONE `distill_batch` via solver self
 - `gold_field`     — field in prompts holding the gold answer (for rejection)
 - `out_path`       — workspace-relative JSONL for kept rows
 - `category`       — batch category (from spec)
-- `slot_id`        — optional slot tag
 
-Required env: `NEMO_MAS_COMPUTE_BACKEND` must be set.
+Compute always runs on k8s; no backend env var to set.
 
 ## Steps
 
@@ -88,7 +87,6 @@ python -m agent_evolve.model.algorithms.nemo_mas.cli mem append \
   --role data_worker --kind distill_batch \
   --title "self-distill <category> via <ckpt short>: n_kept=<N>" \
   --body-file /tmp/distill_batch_body.md \
-  ${SLOT_ID:+--tag checkpoint:$SLOT_ID} \
   --ref "$SPEC_ID"
 ```
 

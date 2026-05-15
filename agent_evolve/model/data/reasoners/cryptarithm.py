@@ -1,7 +1,16 @@
-"""Equation symbolic reasoning generator.
+"""Cryptarithm reasoner (concat-only sub-strategy).
 
-Currently handles concatenation operators only (forward and reverse).
-Operates directly on the original symbols without letter assignment.
+A partial reasoner for the legacy ``cryptarithm`` Nemotron category and
+for ``equations`` rows whose rule is plain forward/reverse concatenation
+on opaque symbol strings. Operates directly on the original symbols
+without letter→digit assignment.
+
+NOTE: This is not the default solver for the Kaggle ``equations`` domain
+(see ``equation_numeric.reasoning_equation_numeric``, which handles a
+much wider rule family and is wired into ``reasoners.SOLVERS``). This
+file is kept because (a) it is referenced by legacy nemo_mas recipe
+yamls and ``store_types.ProblemCategory``, and (b) it can be used as a
+sub-strategy for a future equations dispatcher.
 """
 
 from __future__ import annotations

@@ -38,18 +38,10 @@ from pathlib import Path
 from typing import Any
 
 from .agent_teams.hook_utils import (
-    current_checkpoint_mode,
     current_memory_path,
     current_workspace_root,
 )
 from .backends import BackendBridge, local_handlers
-from .checkpoints import (
-    CHECKPOINT_MODE_AUTO,
-    CHECKPOINT_MODE_MANUAL,
-    VALID_VERDICTS,
-    fold_checkpoints,
-    load_slot_decls,
-)
 from .memory import RecipeMemory
 from .schema import RecordValidationError
 
@@ -406,7 +398,7 @@ def _cmd_infer_generate(args: argparse.Namespace) -> int:
     })
 
 
-# ── data audit (reviewer) ─────────────────────────────────────────────
+# ── data audit (planner) ──────────────────────────────────────────────
 
 
 def _cmd_data_sample(args: argparse.Namespace) -> int:
@@ -435,7 +427,7 @@ def _cmd_data_validate(args: argparse.Namespace) -> int:
     return _emit(json.loads(out))
 
 
-# ── eval (reviewer) ───────────────────────────────────────────────────
+# ── eval (trainer) ────────────────────────────────────────────────────
 
 
 def _cmd_eval_run(args: argparse.Namespace) -> int:
@@ -446,7 +438,7 @@ def _cmd_eval_run(args: argparse.Namespace) -> int:
     return _emit(json.loads(out))
 
 
-# ── kaggle (reviewer, gated by budget hook) ───────────────────────────
+# ── kaggle (trainer, gated by budget hook) ────────────────────────────
 
 
 def _cmd_kaggle_submit(args: argparse.Namespace) -> int:
@@ -459,167 +451,6 @@ def _cmd_kaggle_fetch_score(args: argparse.Namespace) -> int:
     handlers = dict(local_handlers(_ws_resolver))
     out = handlers["kaggle_fetch_score"](submission_id=args.submission_id or "")
     return _emit(json.loads(out))
-
-
-# ── checkpoints (reviewer QA officer) ─────────────────────────────────
-
-
-def _fold_current() -> tuple[list, str, list[dict]]:
-    ws = current_workspace_root()
-    mode = current_checkpoint_mode()
-    slots = load_slot_decls(ws) if ws else []
-    if not slots:
-        return ([], mode, [])
-    mem = _memory()
-    folded = fold_checkpoints(mem.all_records(), mode, slots=slots)
-    return (folded, mode, slots)
-
-
-def _cmd_ckpt_list(args: argparse.Namespace) -> int:
-    folded, mode, _ = _fold_current()
-    if not folded:
-        return _emit({"ok": True, "slots": [], "mode": mode,
-                      "note": "no checkpoints.yaml in active workspace"})
-    return _emit({
-        "ok": True, "mode": mode,
-        "slots": [{
-            "id": s.id, "title": s.title, "state": s.state,
-            "required": s.required,
-            "requires_evidence": list(s.requires_evidence),
-            "depends_on": list(s.depends_on),
-            "evidence_counts": s.evidence_counts,
-            "last_review_verdict": s.last_review_verdict,
-            "last_review_reason": s.last_review_reason,
-            "can_sign": s.can_sign,
-        } for s in folded],
-    })
-
-
-def _cmd_ckpt_state(args: argparse.Namespace) -> int:
-    folded, mode, _ = _fold_current()
-    for s in folded:
-        if s.id == args.slot_id:
-            return _emit({"ok": True, "mode": mode, "slot": {
-                "id": s.id, "title": s.title, "state": s.state,
-                "required": s.required,
-                "requires_evidence": list(s.requires_evidence),
-                "depends_on": list(s.depends_on),
-                "evidence_counts": s.evidence_counts,
-                "last_review_verdict": s.last_review_verdict,
-                "last_review_reason": s.last_review_reason,
-                "can_sign": s.can_sign,
-            }})
-    return _emit({"ok": False, "reason": f"unknown slot_id={args.slot_id!r}"})
-
-
-def _cmd_ckpt_review_suggest(args: argparse.Namespace) -> int:
-    _, _, slots = _fold_current()
-    slot_ids = {s["id"] for s in slots}
-    if args.slot_id not in slot_ids:
-        return _emit({"ok": False,
-                      "reason": f"unknown slot_id={args.slot_id!r}; "
-                                f"expected one of {sorted(slot_ids)}"})
-    if args.verdict not in VALID_VERDICTS:
-        return _emit({"ok": False,
-                      "reason": f"verdict must be one of {sorted(VALID_VERDICTS)}; "
-                                f"got {args.verdict!r}"})
-    if not args.ref:
-        return _emit({"ok": False,
-                      "reason": "at least one --ref to the evidence being judged"})
-    if not args.reason.strip():
-        return _emit({"ok": False, "reason": "--reason must be non-empty"})
-
-    combined_tags = [
-        f"checkpoint:{args.slot_id}",
-        f"verdict:{args.verdict}",
-        "channel:qa_review",
-    ]
-    if args.tag:
-        combined_tags.extend(t for t in args.tag if t not in combined_tags)
-    mem = _memory()
-    try:
-        rec = mem.write(
-            role="reviewer",
-            kind="checkpoint_review",
-            title=f"{args.verdict} · {args.slot_id}",
-            body=args.reason,
-            tags=tuple(combined_tags),
-            refs=tuple(args.ref),
-        )
-    except RecordValidationError as e:
-        return _emit({"ok": False, "reason": str(e)})
-    return _emit({"ok": True, "id": rec.id,
-                  "slot_id": args.slot_id, "verdict": args.verdict})
-
-
-def _cmd_ckpt_sign(args: argparse.Namespace) -> int:
-    folded, mode, slots = _fold_current()
-    slots_by_id = {s["id"]: s for s in slots}
-    slot = slots_by_id.get(args.slot_id)
-    if slot is None:
-        return _emit({"ok": False, "reason": f"unknown slot_id={args.slot_id!r}"})
-    if mode == CHECKPOINT_MODE_MANUAL and args.role != "human":
-        return _emit({"ok": False,
-                      "reason": f"mode={mode!r}: only role='human' may sign in "
-                                f"manual mode; got role={args.role!r}. Reviewer "
-                                f"should post verdict=ready_to_sign and wait."})
-    if not args.ref:
-        return _emit({"ok": False,
-                      "reason": f"sign requires evidence refs covering "
-                                f"{slot['requires_evidence']}"})
-
-    mem = _memory()
-    ref_kinds: list[str] = []
-    for rid in args.ref:
-        rec = mem.get(rid)
-        if rec is None:
-            return _emit({"ok": False, "reason": f"ref {rid!r} does not resolve"})
-        ref_kinds.append(rec.kind)
-    missing = [k for k in slot["requires_evidence"] if k not in ref_kinds]
-    if missing:
-        return _emit({"ok": False,
-                      "reason": f"slot {args.slot_id!r} requires evidence of kinds "
-                                f"{slot['requires_evidence']}; refs cover "
-                                f"{ref_kinds}; missing {missing}"})
-    folded_by_id = {s.id: s for s in folded}
-    unmet = [d for d in slot["depends_on"]
-             if folded_by_id.get(d) is None
-             or folded_by_id[d].state not in {"signed", "reopened"}]
-    if unmet:
-        return _emit({"ok": False,
-                      "reason": f"slot {args.slot_id!r} depends on {unmet} which "
-                                "are not yet signed"})
-
-    # Map reviewer/human/orchestrator_auto → signing-author role.
-    if args.role == "human":
-        signer_role, actor_label = "orchestrator_auto", "human:lead"
-    elif args.role == "orchestrator_auto":
-        signer_role, actor_label = "orchestrator_auto", "orchestrator"
-    elif args.role == "reviewer":
-        signer_role, actor_label = "reviewer", "reviewer"
-    else:
-        return _emit({"ok": False,
-                      "reason": f"--role must be one of human/reviewer/orchestrator_auto; "
-                                f"got {args.role!r}"})
-
-    body = json.dumps({
-        "checkpoint_id": args.slot_id, "event": "signoff",
-        "actor": actor_label, "note": args.note or "",
-    })
-    try:
-        rec = mem.write(
-            role=signer_role,
-            kind="checkpoint_event",
-            title=f"signoff {args.slot_id}",
-            body=body,
-            tags=(f"checkpoint:{args.slot_id}", "event:signoff",
-                  f"actor:{actor_label}"),
-            refs=tuple(args.ref),
-        )
-    except RecordValidationError as e:
-        return _emit({"ok": False, "reason": str(e)})
-    return _emit({"ok": True, "id": rec.id, "slot_id": args.slot_id,
-                  "actor": actor_label, "mode": mode})
 
 
 # ── mem ──────────────────────────────────────────────────────────────
@@ -729,7 +560,7 @@ def _build_parser() -> argparse.ArgumentParser:
     kstat.add_argument("--name-contains", default="aev-")
     kstat.set_defaults(func=_cmd_k8s_status)
 
-    # data — audit (reviewer) + curation (data_worker)
+    # data — audit (planner) + curation (data_worker)
     data = sub.add_parser("data").add_subparsers(dest="data_cmd", required=True)
     # audit
     dsamp = data.add_parser("sample")
@@ -831,7 +662,7 @@ def _build_parser() -> argparse.ArgumentParser:
     igen.add_argument("--max-tokens", type=int, default=None)
     igen.set_defaults(func=_cmd_infer_generate)
 
-    # eval (reviewer)
+    # eval (trainer)
     ev = sub.add_parser("eval").add_subparsers(dest="eval_cmd", required=True)
     erun = ev.add_parser("run")
     erun.add_argument("--ckpt", required=True)
@@ -839,7 +670,7 @@ def _build_parser() -> argparse.ArgumentParser:
     erun.add_argument("--limit", type=int, default=None)
     erun.set_defaults(func=_cmd_eval_run)
 
-    # kaggle (reviewer)
+    # kaggle (trainer)
     kg = sub.add_parser("kaggle").add_subparsers(dest="kaggle_cmd", required=True)
     ksub = kg.add_parser("submit")
     ksub.add_argument("--zip", required=True, help="path to submission.zip")
@@ -849,40 +680,6 @@ def _build_parser() -> argparse.ArgumentParser:
     kfet = kg.add_parser("fetch-score")
     kfet.add_argument("--submission-id", default=None)
     kfet.set_defaults(func=_cmd_kaggle_fetch_score)
-
-    # checkpoints (reviewer)
-    ck = sub.add_parser("checkpoints").add_subparsers(
-        dest="ckpt_cmd", required=True,
-    )
-    ckls = ck.add_parser("list")
-    ckls.set_defaults(func=_cmd_ckpt_list)
-
-    ckst = ck.add_parser("state")
-    ckst.add_argument("--slot-id", required=True)
-    ckst.set_defaults(func=_cmd_ckpt_state)
-
-    ckrv = ck.add_parser("review-suggest")
-    ckrv.add_argument("--slot-id", required=True)
-    ckrv.add_argument("--verdict", required=True,
-                      help="one of evidence_attached, ready_to_sign, "
-                           "insufficient, reject")
-    ckrv.add_argument("--reason", required=True,
-                      help="one-line reason shown in the cockpit")
-    ckrv.add_argument("--ref", action="append", required=True,
-                      help="evidence record id; repeatable")
-    ckrv.add_argument("--tag", action="append", default=None)
-    ckrv.set_defaults(func=_cmd_ckpt_review_suggest)
-
-    cksg = ck.add_parser("sign")
-    cksg.add_argument("--slot-id", required=True)
-    cksg.add_argument("--role", default="human",
-                      help="human (default, manual or auto), reviewer "
-                           "(auto only), orchestrator_auto (auto only)")
-    cksg.add_argument("--ref", action="append", required=True,
-                      help="evidence ref; repeatable; must cover all "
-                           "requires_evidence kinds for the slot")
-    cksg.add_argument("--note", default="")
-    cksg.set_defaults(func=_cmd_ckpt_sign)
 
     # mem
     mem = sub.add_parser("mem").add_subparsers(dest="mem_cmd", required=True)

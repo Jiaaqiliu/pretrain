@@ -65,7 +65,6 @@ inspect_evals/
 !/tests/model/__init__.py
 !/tests/model/conftest.py
 !/tests/model/test_nemo_mas_cycle_outcome.py
-!/tests/model/test_nemo_mas_signoff_agentteams.py
 !/tests/model/test_nemo_mas_mcp_server.py
 
 # Root-level artifacts
@@ -87,15 +86,13 @@ swe_results*/
 /.claude/*
 !/.claude/agents/
 /.claude/agents/*
-!/.claude/agents/nemo_mas_orchestrator.md
 !/.claude/agents/nemo_mas_planner.md
 !/.claude/agents/nemo_mas_data_worker.md
 !/.claude/agents/nemo_mas_trainer.md
 !/.claude/agents/nemo_mas_reviewer.md
 !/.claude/hooks/
 /.claude/hooks/*
-!/.claude/hooks/nemo_mas_task_created.py
-!/.claude/hooks/nemo_mas_kaggle_budget.py
+!/.claude/hooks/nemo_mas_agent_spawn.py
 !/.claude/settings.json
 !/.claude/mas_design/
 /.claude/mas_design/*
@@ -116,7 +113,13 @@ swe_results*/
 !/.claude/skills/planner-propose-recipe/
 !/.claude/skills/planner-hypothesis/
 !/.claude/skills/planner-mem/
+!/.claude/skills/planner-audit-jsonl/
+!/.claude/skills/trainer-kaggle-submit/
+!/.claude/skills/trainer-run-eval/
+!/.claude/skills/trainer-collect-results/
 !/.claude/skills/*/SKILL.md
+!/.claude/knowledge/
+!/.claude/knowledge/**
 
 # Local legacy compatibility package
 agent_evolve/algorithms/aevolve/
@@ -171,6 +174,9 @@ autoresearch/
 # Wandb
 wandb/
 
+# Unsloth's compiled-trainer cache (regenerated on first import; not source)
+unsloth_compiled_cache/
+
 # Entire
 .entire/
 
@@ -208,3 +214,6 @@ seed_workspaces/mle_automl*/data/*.csv
 
 # Local sqlite cache (transient artifact)
 cache/cache.db
+
+# Local k8s serving manifests
+agent_evolve/backends/nemo_reasoner/k8s/serving/
