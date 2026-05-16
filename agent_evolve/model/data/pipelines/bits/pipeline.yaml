@@ -1,0 +1,107 @@
+# Bits SFT-CoT distillation pipeline.
+#
+# Strategy: solver-as-hint. For each Kaggle bits row, the bits hint
+# provider runs the constrained family-F search to find a rule that fits
+# the examples AND produces the *Kaggle* stored answer (not the solver's
+# free-pick). The teacher (122B) then writes a coherent CoT around that
+# hint. This sidesteps the under-determinacy problem: the rule we hint
+# is guaranteed to land at the stored answer, so narrative and box agree.
+
+name: bits_solver_hinted_v1
+domain: bits
+description: |
+  Solver-as-hint distillation for the bits domain. Constrained family-F
+  search → 122B teacher CoT → boxed-check → opus audit → curate.
+  Generation-only — pair with `dw-curate-mix` to mix the curated JSONL
+  into the training set.
+
+source:
+  kaggle_csv: /fsx/zzsamshi/nemotron-auto-research/data/train.csv
+  domain_filter: bits
+
+stage_1_witness_search:
+  hint_provider: agent_evolve.model.data.pipelines.shared.hint_providers.bits
+  on_no_fit: drop                      # ~14/1602 Kaggle rows fall outside family F
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage1.jsonl
+
+stage_2_teacher_distill:
+  enabled: true
+  endpoint:
+    base_url: http://nemotron-super-120b-vllm.default.svc.cluster.local:8000/v1
+    model: nemotron-3-super-120b
+  sampling:
+    temperature: 1.0
+    max_tokens: 7680        # Match Kaggle inference contract verbatim
+                            # (eval/kaggle_eval.yaml: max_tokens=7680 / max_model_len=8192).
+                            # Trained model emits up to ~7680 tok at inference time, so allow
+                            # teacher CoTs the same headroom — anything longer is out-of-distribution.
+    top_p: 0.95
+  # pass@k: draw k samples per row.
+  k: 4
+  # keep_policy:
+  #   "all"           — write every accepted sample as a separate training row
+  #                     (max diversity; downstream curate dedups by (row_id, sample_k))
+  #   "first_correct" — sequential within a row, stop at first hit; one CoT per Kaggle id.
+  #                     Use this when budget matters and you don't want duplicate rows.
+  keep_policy: first_correct
+  parallelism: 8
+  timeout_seconds: 300
+  # User-message template (no hint, no answer leak). The hint enters the
+  # CoT via the assistant prefill so the trained 30B reproduces the rule
+  # naturally as part of its own reasoning, not as a back-rationalization.
+  prompt_template_key: teacher_v2
+  prefill_template_key: teacher_v2_prefill
+  reject_if_boxed_mismatch: true
+  expected_pass_rate: 0.85    # gate is now pass@k (≥1 hit per row)
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage2_teacher.jsonl
+
+stage_3_self_distill:
+  enabled: false                       # opt-in; flip on after Stage 2 lands
+  endpoint:
+    base_url: http://nemotron-30b-vllm.default.svc.cluster.local:8000/v1
+    model: nemotron-3-nano-30b
+  sampling:
+    temperature: 1.0
+    top_p: 0.95
+    max_tokens: 7680        # Match Kaggle inference contract; self-distill is rejection-sampled
+                            # against the trained model, so completions must live inside the
+                            # same output budget the trained model will use at eval time.
+  # pass@k for rejection sampling. "all" keeps every accepted CoT (multiple
+  # correct CoTs per row are useful for self-distill — they bring different
+  # paths to the same answer). Switch to first_correct to save 30B GPU time.
+  k: 4
+  keep_policy: all
+  parallelism: 8
+  timeout_seconds: 180
+  prompt_template_key: self_distill_v1
+  prefill_template_key: self_distill_v1_prefill
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage3_self.jsonl
+
+stage_4_opus_supervision:
+  enabled: true
+  # Audit every accepted row from BOTH stage 2 (teacher) and stage 3
+  # (self-distill). Each verdict is tagged with `source` so the planner
+  # / curate step can break down pass-rate per generator. Switch to
+  # `mode: sample` + `sample_size: N` if Bedrock cost becomes a concern;
+  # the sampler shuffles per source (so both are represented).
+  mode: full
+  sample_size: 200
+  sample_seed: 42
+  model: us.anthropic.claude-opus-4-6-v1
+  rubric_key: bits_cot_quality_v1
+  pass_threshold: 0.90
+  api:
+    timeout_seconds: 120
+    max_concurrency: 8
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage4_audit.jsonl
+
+stage_5_curate:
+  format_filters:
+    must_end_with_boxed: true
+    max_chars: 24000        # ~7680 tok × ~3 chars/tok safe upper bound, matching teacher max_tokens
+    min_chars: 100
+  dedup:
+    by: sample              # row_id+sample_k — keep every accepted multi-pass sample.
+                            # Set `by: row_id` to collapse multi-pass back to one row per Kaggle id.
+    keep: first
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/curated/${hash}/bits_distilled.jsonl

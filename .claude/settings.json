@@ -20,7 +20,22 @@
       "Bash(kubectl get *)",
       "Bash(kubectl describe *)",
       "Bash(kubectl top *)",
-      "Bash(kubectl config *)"
+      "Bash(kubectl config *)",
+      "Bash(/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python -c *)",
+      "Bash(curl -s --max-time 3 http://localhost:8000/v1/models)",
+      "Bash(kubectl auth *)",
+      "Bash(aws bedrock *)",
+      "Bash(kubectl port-forward *)",
+      "Bash(curl -s --max-time 5 http://localhost:18000/v1/models)",
+      "Bash(curl -s --max-time 5 http://localhost:18001/v1/models)",
+      "Bash(/fsx/zzsamshi/a-evolve/agent_evolve/backends/nemo_reasoner/k8s/serving/portforward.sh *)",
+      "Bash(/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python -m agent_evolve.model.data.pipelines.shared.run_pipeline *)",
+      "Bash(/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python -m agent_evolve.model.algorithms.nemo_mas.cli *)",
+      "Bash(tee /fsx/zzsamshi/a-evolve/evolution_workdir/**)",
+      "Bash(tee /tmp/**)",
+      "Bash(tmux *)",
+      "Bash(pgrep -af *)",
+      "Edit(/fsx/zzsamshi/a-evolve/.claude/skills/**)"
     ],
     "additionalDirectories": [
       "/fsx/zzsamshi/a-evolve/.claude"

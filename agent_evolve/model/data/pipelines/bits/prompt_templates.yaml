@@ -1,0 +1,121 @@
+# Bits-domain prompt templates + Opus rubric.
+#
+# Substitutions (driver passes these in):
+#   {prompt}         — the original Kaggle prompt (verbatim)
+#   {rule_summary}   — hint.rule_summary (one line)
+#   {per_component}  — newline-joined "  bit i: <rule>"
+#
+# IMPORTANT: {kaggle_answer} MUST NOT appear in user-facing templates —
+# leaking the gold answer turns the teacher into a back-rationalizer and
+# makes reject_if_boxed_mismatch a no-op. The hint enters the assistant
+# prefill (continue_final_message), not the user message.
+#
+# Two template families:
+#   teacher_v* / self_distill_v*           — user-message templates (no hint)
+#   *_prefill                              — assistant-prefill templates
+#                                            that weave the hint into the CoT
+# Stage 2/3 config picks one of each via prompt_template_key + prefill_template_key.
+
+templates:
+  # v1 — original verbose template (kept for reference; do not use).
+  teacher_v1: |-
+    {prompt}
+
+    A rule that fits every example AND produces the expected output is:
+    {per_component}
+
+    Write a clear step-by-step explanation that:
+      1. For each example, computes the output bits one at a time using the rule above and confirms the result.
+      2. Applies the same rule to the question input.
+      3. Ends with the answer in the form \boxed{ {kaggle_answer} }.
+
+    Write only the explanation. Do not restate the puzzle. Do not introduce a different rule.
+
+  # v2 — tight: pins bit-numbering convention up front (so the model
+  # doesn't trial-and-error it), limits example verification to 3 rows,
+  # asks for tabular output instead of per-bit arithmetic prose.
+  #
+  # NO HINT in the user message: the per-bit rule arrives via the assistant
+  # prefill (teacher_v2_prefill). We still pin the bit-numbering convention
+  # here because it's a property of the puzzle's notation, not the answer.
+  teacher_v2: |-
+    {prompt}
+
+    Bit-numbering convention (use exactly this — do not search for a different one):
+      The 8-bit input string is read left-to-right.
+      Position 0 is the LEFTMOST bit (the "1" in "10000000"), position 7 is the RIGHTMOST.
+      I_k denotes the k-th input bit; b_k denotes the k-th output bit; output is also written left-to-right.
+
+    Write a concise explanation in three short sections:
+
+      **1. State the rule and verify on 3 examples.**
+         Identify the per-bit rule that fits every example, then pick the FIRST 3 input → output pairs
+         and verify. For each, list the 8 input bits I_0…I_7 and present b_0…b_7 in one line per example.
+
+      **2. Apply the rule to the question input.**
+         List I_0…I_7 for the question's 8-bit input. Then list b_0…b_7 with the rule applied.
+         Combine them into the 8-character output string.
+
+      **3. Final answer.**
+         End with EXACTLY this single line, on its own:
+            \boxed{<your 8-bit answer>}
+
+    Hard rules: do not restate the puzzle. Keep the whole response under 1000 words.
+
+  # Assistant prefill paired with teacher_v2. The model resumes from the
+  # last character (no trailing newline) under continue_final_message=true.
+  # The prefill walks naturally into "verify on 3 examples", so the model
+  # picks up by writing the verification rather than restating the rule.
+  teacher_v2_prefill: |-
+    Looking at the worked examples, the pattern is a per-bit rule:
+    {per_component}
+
+    **1. State the rule and verify on 3 examples.**
+
+    Using the rule above, let me verify on the first three input → output pairs.
+
+  # Self-distill: terse user message, no hint, no answer. The 30B is small,
+  # so we keep instructions minimal. Hint flows in via the prefill below.
+  self_distill_v1: |-
+    {prompt}
+
+    Solve step-by-step. End with \boxed{<your answer>}.
+
+  # Assistant prefill paired with self_distill_v1. Same shape as the teacher
+  # prefill but shorter — the 30B has a smaller budget for structure.
+  self_distill_v1_prefill: |-
+    Looking at the examples, the pattern is a per-bit rule:
+    {per_component}
+
+    Applying this rule to the question input:
+
+# Opus process-supervision rubrics keyed by `rubric_key` in pipeline.yaml.
+blocks:
+  bits_cot_quality_v1: |-
+    You are auditing a chain-of-thought (CoT) trace for an 8-bit
+    bit-manipulation puzzle. The puzzle prompt is reproduced below,
+    followed by the model's CoT and its boxed answer. You also see the
+    Kaggle stored answer that the trace was supposed to derive.
+
+    Judge whether the trace is *internally consistent*: does the
+    narrative actually derive the boxed answer from the rule it claims?
+
+    Output STRICT JSON only, like this exact shape:
+    {{
+      "examples_check_correct": true|false,
+      "rule_application_correct": true|false,
+      "boxed_matches_derivation": true|false,
+      "any_logical_leap": true|false,
+      "overall_pass": true|false,
+      "notes": "<one sentence>"
+    }}
+
+    ===== Puzzle prompt =====
+    {examples_block}
+    ===== Boxed answer in trace =====
+    {boxed}
+    ===== Kaggle expected answer =====
+    {kaggle_answer}
+    ===== CoT trace =====
+    {cot}
+    ===== END =====

@@ -106,10 +106,8 @@ swe_results*/
 !/.claude/skills/reviewer-run-eval/
 !/.claude/skills/reviewer-qa-verdict/
 !/.claude/skills/reviewer-kaggle-submit/
-!/.claude/skills/dw-teacher-distill/
-!/.claude/skills/dw-self-distill/
-!/.claude/skills/dw-curate-mix/
-!/.claude/skills/dw-mem/
+!/.claude/skills/dw-pipeline-launch/
+!/.claude/skills/dw-pipeline-collect/
 !/.claude/skills/planner-propose-recipe/
 !/.claude/skills/planner-hypothesis/
 !/.claude/skills/planner-mem/
