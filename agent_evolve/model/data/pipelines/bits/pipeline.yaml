@@ -100,8 +100,20 @@ stage_5_curate:
     must_end_with_boxed: true
     max_chars: 24000        # ~7680 tok × ~3 chars/tok safe upper bound, matching teacher max_tokens
     min_chars: 100
+    # Intersect with Stage 4 verdicts: only keep rows where Opus marked the
+    # narrative as a coherent derivation of the boxed answer. Without this,
+    # boxed-correct-but-narratively-broken CoTs end up in the training set.
+    require_audit_pass: true
   dedup:
     by: sample              # row_id+sample_k — keep every accepted multi-pass sample.
                             # Set `by: row_id` to collapse multi-pass back to one row per Kaggle id.
     keep: first
+  # Emit rows in the legacy default_14718 schema so the curated set is
+  # mix-ready with the production training JSONL: chat-template-wrap the
+  # raw prompt into `prompt_rendered`, close `<think>` before `\boxed{…}`,
+  # tag with `type: <domain>`. Disable by removing this block to fall
+  # back to the {id, source, prompt, completion} smoke-test shape.
+  format_alignment:
+    tokenizer: /fsx/models/Nemotron-3-Nano-30B-A3B-unsloth
+    domain_tag: bits
   out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/curated/${hash}/bits_distilled.jsonl

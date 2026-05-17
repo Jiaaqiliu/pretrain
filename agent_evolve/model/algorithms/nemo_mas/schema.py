@@ -59,6 +59,11 @@ KIND_WHITELIST: dict[str, frozenset[str]] = {
         # Result of a kaggle_submit call — the trainer pipes the CLI's
         # submission_id + initial status into memory.
         "kaggle_submission_result",
+        # Per-category data-efficiency ablation: two training_run arms
+        # (baseline-<cat> vs curated-<cat>) evaluated on
+        # balanced_dev726, summarized as a single record. Body MUST
+        # carry tag "category:<cat>" for the leaderboard query.
+        "ablation_report",
     }) | _CROSS_CUTTING,
     "main": _MAIN_KINDS,
 }
@@ -127,6 +132,20 @@ def _require_refs_with_kinds(*required: str) -> RefRule:
     return rule
 
 
+def _require_n_refs_of_kind(n: int, kind: str) -> RefRule:
+    """At least ``n`` refs whose target kind is exactly ``kind`` (multiset)."""
+    def rule(rec: "MemoryRecord", lookup: RefLookup) -> str | None:
+        kinds = [lookup(r) for r in rec.refs]
+        matches = sum(1 for k in kinds if k == kind)
+        if matches < n:
+            return (
+                f"kind={rec.kind!r} requires at least {n} refs to "
+                f"{kind!r}; got {matches} (refs resolve to {kinds})."
+            )
+        return None
+    return rule
+
+
 def _chain(*rules: RefRule) -> RefRule:
     def rule(rec: "MemoryRecord", lookup: RefLookup) -> str | None:
         for r in rules:
@@ -142,12 +161,16 @@ REF_RULES: dict[str, RefRule] = {
     "recipe_proposal":     _require_ref_kind("eval_report", "data_gap"),
     "training_run":        _require_refs_with_kinds("recipe_proposal", "dataset_snapshot"),
     "cv_result":           _require_ref_kind("training_run"),
-    "eval_report":         _require_ref_kind("training_run"),
+    "eval_report":         _require_ref_kind("training_run", "profile_run"),
     # Packaged adapter zip must trace back to a training_run so reviewers
     # can audit which checkpoint shipped.
     "submission_artifact": _require_ref_kind("training_run"),
     # Kaggle submission result must trace back to the artifact we pushed.
     "kaggle_submission_result": _require_ref_kind("submission_artifact"),
+    # Per-category ablation: must reference both arms' training_runs.
+    # Additional refs (distill_batch, eval_report) are allowed but not
+    # constrained here.
+    "ablation_report":     _require_n_refs_of_kind(2, "training_run"),
     # All other kinds: no ref requirements (refs are optional but recommended).
 }
 

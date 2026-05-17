@@ -25,8 +25,15 @@ spec:
         recipe: default
     spec:
       restartPolicy: Never
-      # Pin to a single chosen node to bound impact.
-      nodeName: ${NODE_NAME}
+      # Soft pin via nodeSelector instead of nodeName: scheduler-driven, so
+      # if the chosen node is full the pod sits Pending until a slot frees,
+      # rather than getting kubelet-rejected with UnexpectedAdmissionError.
+      # NOTE: kubernetes.io/hostname on THIS cluster is the FQDN
+      # (e.g. "ip-172-31-90-7.ap-southeast-3.compute.internal") — pass the
+      # full DNS form to --node, not the short host. submit.sh strips this
+      # stanza when --node is omitted.
+      nodeSelector:
+        kubernetes.io/hostname: ${NODE_NAME}
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

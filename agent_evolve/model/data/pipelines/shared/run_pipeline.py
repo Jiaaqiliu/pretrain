@@ -192,7 +192,14 @@ def main(argv: list[str] | None = None) -> int:
 
             elif stage_key == "stage_5_curate":
                 inputs = [p for p in (s2_out, s3_out) if p is not None]
-                curate.run(sc, inputs, log)
+                # Pass the Stage 4 audit path so curate can intersect on
+                # `require_audit_pass`. On --from-stage 5 resumes, the
+                # earlier branch is skipped, so re-resolve from cfg.
+                s4_out = None
+                s4_cfg = cfg.get("stage_4_opus_supervision", {})
+                if s4_cfg.get("enabled", True) and "out_path" in s4_cfg:
+                    s4_out = Path(s4_cfg["out_path"])
+                curate.run(sc, inputs, log, audit_path=s4_out)
 
         except Exception as exc:
             log(f"FATAL in {stage_key}: {exc!r}")

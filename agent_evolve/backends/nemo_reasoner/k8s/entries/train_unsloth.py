@@ -233,9 +233,22 @@ with open(TRAIN_JSONL) as f:
         examples.append({"tokens": toks[:-1], "targets": toks[1:], "weights": mask[1:]})
 log(f"tokenized {len(examples)} examples in {time.time()-t1:.1f}s")
 
-max_steps = len(examples) // BATCH_SIZE
-num_steps = min(NUM_STEPS, max_steps)
-log(f"training: {num_steps} steps (clamped from NUM_STEPS={NUM_STEPS}, max={max_steps})")
+steps_per_epoch = len(examples) // BATCH_SIZE
+num_steps = NUM_STEPS
+# Outer-loop bound: enough epochs to reach num_steps, plus one cushion
+# so the inner break fires cleanly when num_steps lands mid-epoch.
+n_epochs_loop = math.ceil(num_steps / max(1, steps_per_epoch))
+# Human-readable epoch count for the log: how many full passes the run
+# completes (partial trailing epoch reported separately).
+full_epochs = num_steps // max(1, steps_per_epoch)
+trailing = num_steps - full_epochs * steps_per_epoch
+if trailing == 0:
+    log(f"training: {num_steps} steps "
+        f"(steps_per_epoch={steps_per_epoch}, epochs={full_epochs})")
+else:
+    log(f"training: {num_steps} steps "
+        f"(steps_per_epoch={steps_per_epoch}, "
+        f"epochs={full_epochs} full + {trailing}/{steps_per_epoch} steps)")
 
 # ── Training loop ────────────────────────────────────────────────────
 gc.collect(); torch.cuda.empty_cache()
@@ -243,59 +256,68 @@ device = next(model.parameters()).device
 optimizer = None
 step = 0
 t_train = time.time()
-for bstart in range(0, len(examples), BATCH_SIZE):
+import random as _random
+_epoch_rng = _random.Random(SEED)
+for epoch in range(n_epochs_loop):
     if step >= num_steps: break
-    batch = examples[bstart:bstart+BATCH_SIZE]
-    n = len(batch); n_accum = math.ceil(n/MICRO_BATCH_SIZE)
-    total_l = 0.0; total_w = 0.0
-    for mbs in range(0, n, MICRO_BATCH_SIZE):
-        mb = batch[mbs:mbs+MICRO_BATCH_SIZE]
-        nm = len(mb); ml = max(len(e["tokens"]) for e in mb)
-        pi = torch.zeros(nm, ml, dtype=torch.long, device=device)
-        pt = torch.zeros(nm, ml, dtype=torch.long, device=device)
-        pw = torch.zeros(nm, ml, dtype=torch.float32, device=device)
-        am = torch.zeros(nm, ml, dtype=torch.long, device=device)
-        for i, e in enumerate(mb):
-            sl = len(e["tokens"])
-            pi[i,:sl] = torch.tensor(e["tokens"])
-            pt[i,:sl] = torch.tensor(e["targets"])
-            pw[i,:sl] = torch.tensor(e["weights"], dtype=torch.float32)
-            am[i,:sl] = 1
-        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-            model(input_ids=pi, attention_mask=am, labels=pt, use_cache=False)
-            ce = model._cached_per_token_ce
-            ws = pw.sum(); ls = (ce*pw).sum()
-            loss = ls/ws if ws > 0 else ls*0.0
-        (loss/n_accum).backward()
-        total_l += ls.item(); total_w += ws.item()
-        del loss, ce
-    if optimizer is None:
-        optimizer = torch.optim.AdamW(
-            [p for p in model.parameters() if p.requires_grad],
-            lr=LR, betas=OPT_BETAS, eps=OPT_EPS, weight_decay=OPT_WD)
-    # scheduler
-    if SCHED_TYPE == "linear":
-        if step < WARMUP_STEPS:
-            lr = LR * (step + 1) / max(1, WARMUP_STEPS)
+    if epoch > 0:
+        # Re-shuffle each epoch so step boundaries change between passes;
+        # uses a derived seed so the order is deterministic per (run-seed, epoch).
+        _epoch_rng.shuffle(examples)
+        log(f"epoch {epoch+1}: re-shuffled examples")
+    for bstart in range(0, len(examples), BATCH_SIZE):
+        if step >= num_steps: break
+        batch = examples[bstart:bstart+BATCH_SIZE]
+        n = len(batch); n_accum = math.ceil(n/MICRO_BATCH_SIZE)
+        total_l = 0.0; total_w = 0.0
+        for mbs in range(0, n, MICRO_BATCH_SIZE):
+            mb = batch[mbs:mbs+MICRO_BATCH_SIZE]
+            nm = len(mb); ml = max(len(e["tokens"]) for e in mb)
+            pi = torch.zeros(nm, ml, dtype=torch.long, device=device)
+            pt = torch.zeros(nm, ml, dtype=torch.long, device=device)
+            pw = torch.zeros(nm, ml, dtype=torch.float32, device=device)
+            am = torch.zeros(nm, ml, dtype=torch.long, device=device)
+            for i, e in enumerate(mb):
+                sl = len(e["tokens"])
+                pi[i,:sl] = torch.tensor(e["tokens"])
+                pt[i,:sl] = torch.tensor(e["targets"])
+                pw[i,:sl] = torch.tensor(e["weights"], dtype=torch.float32)
+                am[i,:sl] = 1
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                model(input_ids=pi, attention_mask=am, labels=pt, use_cache=False)
+                ce = model._cached_per_token_ce
+                ws = pw.sum(); ls = (ce*pw).sum()
+                loss = ls/ws if ws > 0 else ls*0.0
+            (loss/n_accum).backward()
+            total_l += ls.item(); total_w += ws.item()
+            del loss, ce
+        if optimizer is None:
+            optimizer = torch.optim.AdamW(
+                [p for p in model.parameters() if p.requires_grad],
+                lr=LR, betas=OPT_BETAS, eps=OPT_EPS, weight_decay=OPT_WD)
+        # scheduler
+        if SCHED_TYPE == "linear":
+            if step < WARMUP_STEPS:
+                lr = LR * (step + 1) / max(1, WARMUP_STEPS)
+            else:
+                denom = max(1, num_steps - WARMUP_STEPS)
+                lr = LR * max(0.0, (num_steps - step) / denom)
         else:
-            denom = max(1, num_steps - WARMUP_STEPS)
-            lr = LR * max(0.0, (num_steps - step) / denom)
-    else:
-        lr = LR
-    for pg in optimizer.param_groups: pg["lr"] = lr
-    tie_grads()
-    gn = torch.nn.utils.clip_grad_norm_(
-        [p for p in model.parameters() if p.requires_grad], max_norm=GRAD_CLIP)
-    optimizer.step(); optimizer.zero_grad()
-    lm = total_l/total_w if total_w > 0 else 0
-    step += 1
-    log(f"step {step}/{num_steps} loss={lm:.6f} grad={gn:.4f} lr={lr:.2e} "
-        f"elapsed={(time.time()-t_train)/60:.1f}min")
-    if step % SAVE_EVERY == 0 or step == num_steps:
-        sd = os.path.join(OUTPUT_DIR, f"step_{step}")
-        os.makedirs(sd, exist_ok=True)
-        model.save_pretrained(sd); tokenizer.save_pretrained(sd)
-        log(f"saved {sd}")
+            lr = LR
+        for pg in optimizer.param_groups: pg["lr"] = lr
+        tie_grads()
+        gn = torch.nn.utils.clip_grad_norm_(
+            [p for p in model.parameters() if p.requires_grad], max_norm=GRAD_CLIP)
+        optimizer.step(); optimizer.zero_grad()
+        lm = total_l/total_w if total_w > 0 else 0
+        step += 1
+        log(f"step {step}/{num_steps} loss={lm:.6f} grad={gn:.4f} lr={lr:.2e} "
+            f"elapsed={(time.time()-t_train)/60:.1f}min")
+        if step % SAVE_EVERY == 0 or step == num_steps:
+            sd = os.path.join(OUTPUT_DIR, f"step_{step}")
+            os.makedirs(sd, exist_ok=True)
+            model.save_pretrained(sd); tokenizer.save_pretrained(sd)
+            log(f"saved {sd}")
 
 # ── Final adapter ────────────────────────────────────────────────────
 # Save a clean copy as `final/` alongside the periodic step_{N}/ dirs.

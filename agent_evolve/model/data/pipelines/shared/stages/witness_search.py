@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 
 # Domain → keyword used by the verifier's infer_domain heuristic.
-_DOMAIN_HEURISTIC = {
+DOMAIN_HEURISTIC = {
     "bits":      lambda p: "8-bit binary" in p or "determine the output for:" in p,
     "cipher":    lambda p: "decrypt the following text" in p,
     "equations": lambda p: ("transformation rules is applied to equations" in p
@@ -40,7 +40,7 @@ _DOMAIN_HEURISTIC = {
 
 
 def _domain_filter(prompt: str, domain: str) -> bool:
-    fn = _DOMAIN_HEURISTIC.get(domain)
+    fn = DOMAIN_HEURISTIC.get(domain)
     if fn is None:
         raise ValueError(f"unknown domain {domain!r}")
     return fn(prompt)

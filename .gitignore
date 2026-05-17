@@ -115,6 +115,8 @@ swe_results*/
 !/.claude/skills/trainer-kaggle-submit/
 !/.claude/skills/trainer-run-eval/
 !/.claude/skills/trainer-collect-results/
+!/.claude/skills/trainer-ablation-launch/
+!/.claude/skills/trainer-ablation-collect/
 !/.claude/skills/*/SKILL.md
 !/.claude/knowledge/
 !/.claude/knowledge/**

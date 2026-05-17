@@ -116,7 +116,11 @@ an exit-code sentinel on completion. The sentinel is what
 
 ```bash
 PY=/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python
-CMD="export AWS_REGION=us-west-2; \
+# `set -o pipefail` is critical — without it, `python … | tee log` returns
+# tee's exit code (always 0) and the sentinel lies about success. With
+# pipefail, $? reflects python's real exit so dw-pipeline-collect can
+# distinguish clean finish (exit=0) from threshold-halt (exit≠0).
+CMD="set -o pipefail; export AWS_REGION=us-west-2; \
 $PY -m agent_evolve.model.data.pipelines.shared.run_pipeline \
   --config '$CONFIG_PATH' --templates '$TEMPLATES_PATH' \
   --from-stage $FROM_STAGE --to-stage $TO_STAGE $LIMIT_FLAG \

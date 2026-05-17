@@ -34,7 +34,11 @@ Proposals either change YAML keys (for training regimes) or commission a distill
 
 **Option A — YAML edit.** Generate the diff against the current workspace YAML.
 
-Diffs MUST target the tunable child recipe (e.g. `recipes/train/default.yaml`), never the frozen anchor (`recipes/train/default_base.yaml`). The child exposes only the evolvable surface — `optimizer.{lr,weight_decay}`, `scheduler.*`, `batching.*` — and inherits every other field from the anchor at load time. If a proposal needs a change to adapter shape, target_modules, dtype discipline, model path, or any structural trick, STOP — that's a structural change requiring a separate fork of the base file, not a planner proposal.
+Diffs MUST target the tunable child recipe (e.g. `recipes/train/default.yaml`), never the frozen anchor (`recipes/train/default_base.yaml`). The child exposes only the evolvable surface — `adapter.alpha`, `optimizer.{lr,weight_decay}`, `scheduler.*`, `batching.*` — and inherits every other field from the anchor at load time. If a proposal needs a change to adapter rank / dropout / target_modules / use_rslora, dtype discipline, model path, or any structural trick, STOP — that's a structural change requiring a separate fork of the base file, not a planner proposal.
+
+When proposing `adapter.alpha`: rank is locked at 32 (Kaggle cap). Alpha controls the LoRA scaling factor `α/r`. Current α=32, so `α/r = 1`. KB doc says `α = r or 2r` is canonical. Mention the implied `α/r` ratio change in the rationale.
+
+**Kaggle scorer ceilings** (from `eval/kaggle_eval.yaml`): `max_lora_rank: 32`, `max_tokens: 7680`, `max_model_len: 8192`. Anything you propose must produce an adapter the scorer accepts. The frozen anchor's rank=32 already matches the rank ceiling — DO NOT propose rank changes.
 
 ```bash
 # Write the "after" YAML you want (child only). Then:

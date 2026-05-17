@@ -82,6 +82,17 @@ Invoke skills with the `Skill` tool. Each `SKILL.md` is the contract —
 follow it exactly. Mixing the curated JSONL into the training set
 happens in a different role downstream.
 
+The curated JSONL you produce is the input to the trainer's per-category
+ablation flow (`trainer-ablation-launch` → `trainer-ablation-collect`),
+which compares it against the baseline subset of `default_14718.jsonl`
+on `breakdown.<category>.acc` of `balanced_dev726` and writes one
+`ablation_report` per category. The Planner reads those reports (or the
+leaderboard view at
+`agent_evolve/model/data/pipelines/shared/leaderboard.py`) to decide
+whether a curated set is worth promoting into the production recipe.
+You don't run the ablation — but knowing your output is graded on it
+is useful context.
+
 ## Environment expected on start
 
 The harness sets these before spawning you. If any required one is

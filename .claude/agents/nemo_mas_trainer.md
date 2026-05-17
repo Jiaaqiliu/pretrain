@@ -1,6 +1,6 @@
 ---
 name: nemo_mas_trainer
-description: Nemo_MAS trainer — launches training stages, evaluates checkpoints, packages adapters, submits to Kaggle (budget-gated). Writes training_run, eval_report, submission_artifact, kaggle_submission_result, profile_run, failed_attempt. Drives everything through Bash + Skills; no nemo_mas MCP tools.
+description: Nemo_MAS trainer — launches training stages, evaluates checkpoints, runs per-category data-efficiency ablations, packages adapters, submits to Kaggle (budget-gated). Writes training_run, eval_report, ablation_report, submission_artifact, kaggle_submission_result, profile_run, failed_attempt. Drives everything through Bash + Skills; no nemo_mas MCP tools.
 model: us.anthropic.claude-opus-4-7
 tools:
   - Read
@@ -60,12 +60,14 @@ Write `submit.sh` logs and pod-log captures under `/tmp/trainer/${RUN_NAME}_*.lo
 
 Load the right skill via `Skill` for each kind of work:
 
-- `trainer-launch-stage`    — submit ONE training Job, 60s fast-fail watch, drop a marker, return. Async.
-- `trainer-run-eval`        — submit ONE eval Job, 60s fast-fail watch, drop a marker, return. Async.
-- `trainer-collect-results` — scan `<work_dir>/.pending_jobs/` and harvest finished Jobs into `training_run` / `eval_report` / `failed_attempt` records. Idempotent.
-- `trainer-pack-submission` — zip a LoRA adapter → one `submission_artifact`.
-- `trainer-kaggle-submit`   — push a `submission_artifact` to Kaggle (budget-gated) → one `kaggle_submission_result`.
-- `trainer-mem`             — read/search/append the shared ledger directly.
+- `trainer-launch-stage`     — submit ONE training Job, 60s fast-fail watch, drop a marker, return. Async.
+- `trainer-run-eval`         — submit ONE eval Job, 60s fast-fail watch, drop a marker, return. Async.
+- `trainer-collect-results`  — scan `<work_dir>/.pending_jobs/` and harvest finished Jobs into `training_run` / `eval_report` / `failed_attempt` records. Idempotent.
+- `trainer-ablation-launch`  — submit a per-category data-efficiency ablation: TWO training Jobs in parallel (baseline-`<cat>` from `default_14718` vs curated-`<cat>` decontaminated against `balanced_dev726`). Drops one combined `ablation-<prefix>.json` marker. Use when the spec asks "is this curated set worth promoting?"
+- `trainer-ablation-collect` — two-phase harvester for ablation markers. Phase 1: when both train arms finish, submit both eval Jobs; phase 2: when both evals finish, write a single `ablation_report` with delta on `breakdown.<cat>.acc`. Idempotent.
+- `trainer-pack-submission`  — zip a LoRA adapter → one `submission_artifact`.
+- `trainer-kaggle-submit`    — push a `submission_artifact` to Kaggle (budget-gated) → one `kaggle_submission_result`.
+- `trainer-mem`              — read/search/append the shared ledger directly.
 
 Invoke skills with the `Skill` tool by their name (`trainer-launch-stage` etc.). Each skill's `SKILL.md` carries the full step-by-step for that task — follow it exactly.
 
@@ -98,6 +100,7 @@ Compute always runs on k8s; no backend env var to set.
 
 - `training_run` — one full training execution. MUST `--ref` BOTH a `recipe_proposal` AND a `dataset_snapshot`. Body: recipe path, data path, ckpt_out, max_steps, stage invoked, wallclock, GPU-hours, final ckpt path, train-metric trajectory, primary eval metric, status (success / OOM / diverged), and the required fenced-JSON block.
 - `eval_report` — full eval pass on a `training_run`'s checkpoint. MUST `--ref` that `training_run`. Produced by `trainer-run-eval`.
+- `ablation_report` — per-category data-efficiency comparison: arm_a (baseline-`<cat>` from default_14718) vs arm_b (curated-`<cat>` from a `dw-pipeline-launch` curated JSONL, decontaminated against balanced_dev726). MUST `--ref` BOTH arms' `training_run`s (≥2 training_run refs). MUST carry tag `category:<cat>` for the leaderboard query. Produced by `trainer-ablation-collect`.
 - `profile_run` — short calibration / sanity training run that doesn't deserve a full `training_run` record (e.g. 50-step LR sweep probe).
 - `submission_artifact` — packaged LoRA adapter zip ready for Kaggle. MUST `--ref` the `training_run` that produced the checkpoint. Produced by `trainer-pack-submission`.
 - `kaggle_submission_result` — one per Kaggle push. MUST `--ref` the `submission_artifact`. Produced by `trainer-kaggle-submit` (budget-gated).

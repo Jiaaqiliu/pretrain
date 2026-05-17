@@ -121,7 +121,7 @@ case "$sub" in
     echo "[submit]   out=$OUTDIR  node=${NODE:-<scheduler>}"
     echo "[submit]   overrides: lr=${LR:-<recipe>} steps=${STEPS:-<recipe>} save_every=${SAVE_EVERY:-<recipe>} seed=${SEED:-<recipe>}"
     if [[ -n "$NODE" ]]; then envsubst < "$HERE/jobs/train_1gpu.yaml" | kubectl apply -f -
-    else envsubst < "$HERE/jobs/train_1gpu.yaml" | grep -v 'nodeName:' | kubectl apply -f -; fi
+    else envsubst < "$HERE/jobs/train_1gpu.yaml" | sed '/nodeSelector:/,/kubernetes.io\/hostname:/d' | kubectl apply -f -; fi
     echo "[submit] watch: kubectl logs -f job/$JOB_NAME"
     ;;
 
@@ -176,7 +176,7 @@ JSON
     export EVAL_CONFIG_PATH="$CFG" NODE_NAME="$NODE" GPU_COUNT="$TP"
     echo "[submit] eval $NAME  tp=$TP  adapter=$ADAPTER  out=$OUTDIR  node=${NODE:-<scheduler>}"
     if [[ -n "$NODE" ]]; then envsubst < "$HERE/jobs/eval_1gpu.yaml" | kubectl apply -f -
-    else envsubst < "$HERE/jobs/eval_1gpu.yaml" | grep -v 'nodeName:' | kubectl apply -f -; fi
+    else envsubst < "$HERE/jobs/eval_1gpu.yaml" | sed '/nodeSelector:/,/kubernetes.io\/hostname:/d' | kubectl apply -f -; fi
     echo "[submit] watch: kubectl logs -f job/$JOB_NAME"
     ;;
 
