@@ -6,7 +6,7 @@ prints a table grouped by category. Categories with no ablation yet
 are listed explicitly so the user can see what's missing.
 
 Usage:
-    python -m agent_evolve.model.data.pipelines.shared.leaderboard \
+    python -m agent_evolve.model.data.pipelines.legacy.shared.leaderboard \
         [--workspace <root>] [--category <cat>]
 
 Read-only — does NOT write to memory. Useful for the planner and for

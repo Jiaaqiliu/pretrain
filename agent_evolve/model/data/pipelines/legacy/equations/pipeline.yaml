@@ -1,0 +1,95 @@
+# Equations SFT-CoT distillation pipeline.
+#
+# Strategy: solver-as-hint, mirroring bits. For each Kaggle equations
+# row, the equations hint provider runs the constrained family-F search
+# (arithmetic z3 + symbolic S1–S6 cascade) to find a rule that fits the
+# examples AND produces the *Kaggle* stored answer. The teacher (122B)
+# then writes a coherent CoT around that hint. This sidesteps the
+# under-determinacy problem: the rule is guaranteed to land at the
+# stored answer, so narrative and box agree.
+#
+# Coverage caveat: bits' verifier hits ~99.1% (1602/1602 minus 14 drops
+# at on_no_fit). Equations is structurally harder (wider rule family,
+# operator-symbol prefix/suffix conventions, symbol→digit bijections);
+# expect higher drop rate. The smoke run (limit: 20) reports actual
+# coverage before we spend the full teacher budget.
+
+name: equations_solver_hinted_v1
+domain: equations
+description: |
+  Solver-as-hint distillation for the equations domain. Constrained
+  family-F search (arith z3 + S1–S6) → 122B teacher CoT → boxed-check
+  → opus audit → curate. Generation-only — pair with `dw-curate-mix`
+  to mix the curated JSONL into the training set.
+
+source:
+  kaggle_csv: /fsx/zzsamshi/nemotron-auto-research/data/train.csv
+  domain_filter: equations
+
+stage_1_witness_search:
+  hint_provider: agent_evolve.model.data.pipelines.legacy.shared.hint_providers.equations
+  on_no_fit: drop                      # rows the verifier can't explain → drop
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage1.jsonl
+
+stage_2_teacher_distill:
+  enabled: true
+  endpoint:
+    base_url: http://nemotron-super-120b-vllm.default.svc.cluster.local:8000/v1
+    model: nemotron-3-super-120b
+  sampling:
+    temperature: 1.0
+    max_tokens: 7680        # Match Kaggle inference contract verbatim.
+    top_p: 0.95
+  k: 4
+  keep_policy: first_correct
+  parallelism: 8
+  timeout_seconds: 300
+  prompt_template_key: teacher_v2
+  prefill_template_key: teacher_v2_prefill
+  reject_if_boxed_mismatch: true
+  expected_pass_rate: 0.85
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage2_teacher.jsonl
+
+stage_3_self_distill:
+  enabled: false                       # opt-in; flip on after Stage 2 lands
+  endpoint:
+    base_url: http://nemotron-30b-vllm.default.svc.cluster.local:8000/v1
+    model: nemotron-3-nano-30b
+  sampling:
+    temperature: 1.0
+    top_p: 0.95
+    max_tokens: 7680
+  k: 4
+  keep_policy: all
+  parallelism: 8
+  timeout_seconds: 180
+  prompt_template_key: self_distill_v1
+  prefill_template_key: self_distill_v1_prefill
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage3_self.jsonl
+
+stage_4_opus_supervision:
+  enabled: true
+  mode: full
+  sample_size: 200
+  sample_seed: 42
+  model: us.anthropic.claude-opus-4-6-v1
+  rubric_key: equations_cot_quality_v1
+  pass_threshold: 0.90
+  api:
+    timeout_seconds: 120
+    max_concurrency: 8
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage4_audit.jsonl
+
+stage_5_curate:
+  format_filters:
+    must_end_with_boxed: true
+    max_chars: 24000
+    min_chars: 100
+    require_audit_pass: true
+  dedup:
+    by: sample
+    keep: first
+  format_alignment:
+    tokenizer: /fsx/models/Nemotron-3-Nano-30B-A3B-unsloth
+    domain_tag: equations
+  out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/curated/${hash}/equations_distilled.jsonl

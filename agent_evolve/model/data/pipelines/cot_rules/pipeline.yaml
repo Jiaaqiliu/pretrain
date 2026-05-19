@@ -1,0 +1,82 @@
+# cot_rules — programmatic rule-based CoT data pipeline.
+#
+# Strategy: replicate huikang's three-step LLM-free pipeline that
+# produced the public 0.85-LB Kaggle adapter (the same recipe behind
+# default_14718.jsonl).
+#
+#   Step 1  reasoning      Run a deterministic Python solver per problem,
+#                          emit reasoning/<id>.txt — a programmatic CoT
+#                          trace ending in \boxed{<answer>}.
+#   Step 2  augmentation   Run 5 synthetic-task generators (concatenation,
+#                          splitting, matching, spelling, lstrip) and
+#                          write augmentations/<id>.txt.
+#   Step 3  corpus         Tokenize prompt + completion with the chat
+#                          template, emit corpus.jsonl + per-problem
+#                          segment files corpus/<id>/synthetic.jsonl.
+#
+# This pipeline is intentionally NOT shaped like the 5-stage
+# solver-as-hint pipelines under [bits/](../bits/) etc. — those use a
+# 122B teacher LLM to write natural-language CoT around solver hints.
+# cot_rules has zero LLM cost and produces table-heavy programmatic CoT.
+#
+# Coverage: ~85% of bits problems land in rule_found status, the rest
+# fall through to hypothesis_formed / rule_unknown and are excluded.
+
+name: cot_rules_huikang_v1
+description: |
+  Faithful port of huikang's nemotron data pipeline. Generates SFT
+  training data via deterministic Python solvers + synthetic-task
+  augmenters. No LLM teacher, no audit, no boxed-check at distill time
+  — the solver itself is the source of truth and skips problems where
+  it can't find a rule.
+
+# ─────────────────────────────────────────────────────────────────────
+# I/O paths. All inputs are read from work_dir, all outputs written
+# below it. The driver `run.py` cd's into work_dir before invoking the
+# three step modules so the existing relative-path conventions work.
+paths:
+  work_dir:           /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/cot_rules_huikang_v1
+  problems_index:     problems.jsonl                  # relative to work_dir
+  problems_dir:       problems                        # per-id payloads
+  train_csv:          /fsx/zzsamshi/nemotron-auto-research/data/train.csv
+  tokenizer_path:     /fsx/zzsamshi/a-evolve/agent_evolve/model/data/tokenizer.json
+  reasoning_dir:      reasoning                       # output of step 1
+  augmentations_dir:  augmentations                   # output of step 2
+  corpus_dir:         corpus                          # output of step 3
+  corpus_index:       corpus.jsonl                    # output of step 3
+
+# ─────────────────────────────────────────────────────────────────────
+# Step 1 — reasoning. Walks problems.jsonl, dispatches each entry to
+# its Kaggle-category solver under `agent_evolve.model.data.reasoners`.
+# `categories` is a subset filter; null = run every category huikang
+# supports (gravity, unit_conversion, cipher, bit_manipulation, numeral,
+# equation_numeric_*, cryptarithm_*).
+step_1_reasoning:
+  enabled: true
+  categories: null            # e.g. ["bit_manipulation", "cipher"] to run a subset
+  delete_investigations: false  # mirror huikang's --delete-investigations flag
+
+# ─────────────────────────────────────────────────────────────────────
+# Step 2 — augmentation. Each augmenter is independent; matching depends
+# on reasoning_dir being populated (it parses reasoning/*.txt).
+# n_problems overrides the module-level constant when set; null = use the
+# augmenter's default (huikang's original counts).
+step_2_augmentation:
+  enabled: true
+  augmenters:
+    spelling:       { enabled: true,  n_problems: null }   # default ~648
+    concatenation:  { enabled: true,  n_problems: 1500 }
+    splitting:      { enabled: true,  n_problems: 1500 }
+    matching:       { enabled: true,  n_problems: null }   # depends on reasoning/
+    lstrip:         { enabled: true,  n_problems: 300  }
+
+# ─────────────────────────────────────────────────────────────────────
+# Step 3 — corpus. Tokenize prompt+completion under the chat template
+# and emit segment files. token_limit truncates over-long sequences.
+step_3_corpus:
+  enabled: true
+  token_limit: 8192
+  chat_tokenizer: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  prompt_suffix: |-
+
+    Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`

@@ -79,7 +79,7 @@ Harness sets these; if any is missing, refuse and write a `failed_attempt`:
 1. `mem recent --kind breakthrough -k 5` — global priors.
 2. `mem recent --kind eval_report -k 5` — recent score trends.
 3. `mem recent --kind data_gap -k 3` — current gaps.
-4. `mem recent --kind ablation_report -k 5` — per-category data-efficiency signals from the trainer. The leaderboard view is `python -m agent_evolve.model.data.pipelines.shared.leaderboard` — one row per category with arm_a (baseline) vs arm_b (curated) accuracy delta and verdict. Use this to decide whether a curated `dw-pipeline-launch` set is worth promoting into the recipe.
+4. `mem recent --kind ablation_report -k 5` — per-category data-efficiency signals from the trainer. The leaderboard view is `python -m agent_evolve.model.data.pipelines.legacy.shared.leaderboard` — one row per category with arm_a (baseline) vs arm_b (curated) accuracy delta and verdict. Use this to decide whether a curated `dw-pipeline-launch` set is worth promoting into the recipe.
 5. `mem search --query "<topic of your task>" --kind recipe_proposal --top-k 8` — has anyone proposed this before? If yes, link your new proposal with `--ref` and tag `supersedes:<old_id>` if contradicting it.
 
 ## Recipe surface

@@ -20,7 +20,7 @@ source:
   domain_filter: bits
 
 stage_1_witness_search:
-  hint_provider: agent_evolve.model.data.pipelines.shared.hint_providers.bits
+  hint_provider: agent_evolve.model.data.pipelines.legacy.shared.hint_providers.bits
   on_no_fit: drop                      # ~14/1602 Kaggle rows fall outside family F
   out_path: /fsx/zzsamshi/a-evolve/evolution_workdir/w4_baseline/artifacts/generation/${name}/stage1.jsonl
 

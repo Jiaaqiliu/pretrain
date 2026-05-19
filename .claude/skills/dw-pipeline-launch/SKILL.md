@@ -64,7 +64,7 @@ must report `endpoint=ok`. If either is `unreachable`, run
 
 ```bash
 /fsx/zzsamshi/nemotron-auto-research/.venv/bin/python \
-  -m agent_evolve.model.data.pipelines.shared.run_pipeline \
+  -m agent_evolve.model.data.pipelines.legacy.shared.run_pipeline \
   --config "$CONFIG_PATH" --templates "$TEMPLATES_PATH" --dry-run
 ```
 
@@ -121,7 +121,7 @@ PY=/fsx/zzsamshi/nemotron-auto-research/.venv/bin/python
 # pipefail, $? reflects python's real exit so dw-pipeline-collect can
 # distinguish clean finish (exit=0) from threshold-halt (exit≠0).
 CMD="set -o pipefail; export AWS_REGION=us-west-2; \
-$PY -m agent_evolve.model.data.pipelines.shared.run_pipeline \
+$PY -m agent_evolve.model.data.pipelines.legacy.shared.run_pipeline \
   --config '$CONFIG_PATH' --templates '$TEMPLATES_PATH' \
   --from-stage $FROM_STAGE --to-stage $TO_STAGE $LIMIT_FLAG \
   2>&1 | tee '$LOG_PATH'; \

@@ -51,7 +51,7 @@ Every side effect goes through one of two CLIs:
 
 ```
 python -m agent_evolve.model.algorithms.nemo_mas.cli <subcommand> [args...]
-python -m agent_evolve.model.data.pipelines.shared.run_pipeline [args...]
+python -m agent_evolve.model.data.pipelines.legacy.shared.run_pipeline [args...]
 ```
 
 `nemo_mas.cli` enforces:
@@ -88,7 +88,7 @@ which compares it against the baseline subset of `default_14718.jsonl`
 on `breakdown.<category>.acc` of `balanced_dev726` and writes one
 `ablation_report` per category. The Planner reads those reports (or the
 leaderboard view at
-`agent_evolve/model/data/pipelines/shared/leaderboard.py`) to decide
+`agent_evolve/model/data/pipelines/legacy/shared/leaderboard.py`) to decide
 whether a curated set is worth promoting into the production recipe.
 You don't run the ablation — but knowing your output is graded on it
 is useful context.

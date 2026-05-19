@@ -23,7 +23,7 @@ For all other "train one config" requests, use `trainer-launch-stage`.
 - `category`           — one of: bits, cipher, equations, gravity,
                          numerals, units (the categories
                          `DOMAIN_HEURISTIC` covers in
-                         `agent_evolve/model/data/pipelines/shared/stages/witness_search.py`).
+                         `agent_evolve/model/data/pipelines/legacy/shared/stages/witness_search.py`).
 - `curated_jsonl_path` — abs path to the curated JSONL produced by
                          `dw-pipeline-launch`, e.g.
                          `<workspace>/artifacts/generation/<pipeline_name>/curated/<hash>/<cat>_distilled.jsonl`
@@ -95,14 +95,14 @@ DEV_CSV=/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/dev/balanced_dev
 DEFAULT_14718=/fsx/zzsamshi/nemotron-auto-research/data/nemo_reasoner/train/default_14718.jsonl
 
 # Arm A — baseline subset of default_14718 (no decontamination by user's call)
-ARM_A_JSON=$($PY -m agent_evolve.model.data.pipelines.shared.extract_subset baseline \
+ARM_A_JSON=$($PY -m agent_evolve.model.data.pipelines.legacy.shared.extract_subset baseline \
   --src "$DEFAULT_14718" \
   --domain "$CATEGORY" \
   --out-dir "$NEMO_MAS_WORKSPACE_ROOT/artifacts/data/baseline_${CATEGORY}")
 ARM_A_PATH=$(echo "$ARM_A_JSON" | $PY -c "import sys,json; print(json.loads(sys.stdin.read())['out'])")
 
 # Arm B — curated, decontaminated against the dev split
-ARM_B_JSON=$($PY -m agent_evolve.model.data.pipelines.shared.extract_subset decontaminate \
+ARM_B_JSON=$($PY -m agent_evolve.model.data.pipelines.legacy.shared.extract_subset decontaminate \
   --src "$CURATED_JSONL_PATH" \
   --dev "$DEV_CSV" \
   --out-dir "$NEMO_MAS_WORKSPACE_ROOT/artifacts/data/curated_clean_${CATEGORY}")

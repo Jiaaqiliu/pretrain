@@ -8,9 +8,9 @@ output into the training set is done separately by the data_worker's
 JSONL.
 
 Usage:
-    python -m agent_evolve.model.data.pipelines.shared.run_pipeline \\
-        --config   agent_evolve/model/data/pipelines/bits/pipeline.yaml \\
-        --templates agent_evolve/model/data/pipelines/bits/prompt_templates.yaml \\
+    python -m agent_evolve.model.data.pipelines.legacy.shared.run_pipeline \\
+        --config   agent_evolve/model/data/pipelines/legacy/bits/pipeline.yaml \\
+        --templates agent_evolve/model/data/pipelines/legacy/bits/prompt_templates.yaml \\
         [--from-stage 4]   # resume after a halt
         [--to-stage 2]     # stop early (e.g. for smoke testing)
         [--dry-run]        # validate config + endpoint reachability only
