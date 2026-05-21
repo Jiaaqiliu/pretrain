@@ -1,0 +1,10 @@
+# 预训练流水线
+# Chinchilla optimal: 3B 模型约需 60B tokens (20x params)
+# 按 1M tokens/step: 约 60000 步
+stages:
+  - name: pretrain_3b
+    type: pretrain
+    enabled: true
+    max_steps: 60000
+    checkpoint_interval: 2000
+    eval_interval: 1000

@@ -1,0 +1,2 @@
+# 预训练使用 full 模式（不使用 adapter）
+type: full

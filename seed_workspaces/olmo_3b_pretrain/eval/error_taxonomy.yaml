@@ -1,0 +1,9 @@
+buckets:
+  loss_spike:
+    description: Loss exceeds 3 standard deviations from rolling mean
+  nan_loss:
+    description: Loss became NaN or Inf
+  diverged:
+    description: Loss consistently increasing over 500 steps
+  gradient_explosion:
+    description: Gradient norm exceeds 10x normal

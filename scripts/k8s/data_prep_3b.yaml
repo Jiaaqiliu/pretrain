@@ -1,0 +1,70 @@
+# 数据准备 Job：下载 FineWeb-Edu + tokenize
+# 不需要 GPU，用 CPU 节点即可
+# 预计 2-4 小时完成
+#
+# 用法:
+#   kubectl apply -f data_prep_3b.yaml \
+#     -n default \
+#     --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jiaqi-data-prep-3b
+  namespace: default
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        job: jiaqi-data-prep-3b
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: data-prep
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -euxo pipefail
+
+          echo "======== Data Preparation: OLMo-3B ========"
+          echo "Time: $(date)"
+
+          # 安装依赖
+          pip install datasets transformers numpy 2>&1 | tail -3
+
+          # 创建工作目录
+          mkdir -p /fsx/dev/jiaqi/A-EVOLVE-V2
+
+          # 如果代码还不在 FSx 上，先 clone
+          if [ ! -d "/fsx/dev/jiaqi/A-EVOLVE-V2/scripts" ]; then
+            echo "Cloning A-EVOLVE-V2..."
+            cd /fsx/dev/jiaqi
+            git clone https://github.com/A-EVO-Lab/A-EVOLVE-V2.git || true
+            cd A-EVOLVE-V2
+            git checkout nemo-reasoning-single-cc-olmo-core || true
+          fi
+
+          # 运行数据准备脚本
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          python scripts/prepare_data_3b.py
+
+          echo "======== Data Preparation COMPLETE ========"
+          echo "Time: $(date)"
+        resources:
+          requests:
+            cpu: "16"
+            memory: "64Gi"
+          limits:
+            cpu: "32"
+            memory: "128Gi"
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx

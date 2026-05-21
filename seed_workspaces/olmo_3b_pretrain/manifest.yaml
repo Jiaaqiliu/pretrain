@@ -1,0 +1,21 @@
+name: olmo_3b_pretrain
+contract_version: train-1.0
+
+defaults:
+  benchmark: olmo_pretrain
+  algorithm: mcgs
+  backend: olmo_core
+
+evolvable_layers:
+  - train/optimizer.yaml
+  - data/mix.yaml
+
+protected_layers:
+  - model/base.yaml
+  - eval/local_splits.yaml
+
+artifact_layers:
+  - memory
+  - checkpoints
+  - evolution
+  - trials

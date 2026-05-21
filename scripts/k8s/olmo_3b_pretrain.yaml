@@ -1,0 +1,195 @@
+# PyTorchJob: OLMo-3B Pre-training on H200 cluster
+# 集群: ap-south-1 p5-llm
+# 节点: 2 nodes × 8 H200 GPUs = 16 GPUs total
+# 并行策略: FSDP (Fully Sharded Data Parallel)
+#
+# 用法:
+#   kubectl apply -f olmo_3b_pretrain.yaml \
+#     -n default \
+#     --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: jiaqi-olmo-3b-pretrain
+  namespace: default
+spec:
+  runPolicy:
+    backoffLimit: 0
+    cleanPodPolicy: None
+    ttlSecondsAfterFinished: 7200
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            role: master
+            job: jiaqi-olmo-3b-pretrain
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+
+              echo "======== OLMo-3B Pre-training ========"
+              echo "Nodes: ${WORLD_SIZE}, GPUs/node: ${GPUS_PER_NODE}"
+              echo "Total GPUs: $((WORLD_SIZE * GPUS_PER_NODE))"
+              env | grep -E '^(NCCL_|FI_|CUDA_|MASTER_)' | sort
+              echo "======================================"
+
+              # 安装 olmo-core（从 FSx 上的代码）
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+
+              # 启动训练
+              torchrun \
+                --nproc_per_node=$GPUS_PER_NODE \
+                --nnodes=${WORLD_SIZE} \
+                --rdzv_backend=c10d \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/train_olmo_3b.py
+
+              exitcode=$?
+              if [ $exitcode -ne 0 ]; then
+                echo "Job failed (exit code: $exitcode). Sleeping 3600s for debugging..."
+                sleep 3600
+              fi
+              exit 0
+            env:
+            - name: WANDB_PROJECT
+              value: "a-evolve-olmo-3b"
+            - name: WANDB_RUN_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: WANDB_API_KEY
+                  name: wandb-secret-jiaqi
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "NET"
+            - name: FI_PROVIDER
+              value: "efa"
+            - name: FI_EFA_USE_DEVICE_RDMA
+              value: "1"
+            - name: RDMAV_FORK_SAFE
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_TIMEOUT
+              value: "600"
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: GPUS_PER_NODE
+              value: "8"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+              requests:
+                cpu: "96"
+                memory: "1800Gi"
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+            - mountPath: /dev/shm
+              name: dshm
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "1000Gi"
+    Worker:
+      replicas: 1   # 1 worker + 1 master = 2 nodes × 8 GPUs = 16 GPUs
+      template:
+        metadata:
+          labels:
+            role: worker
+            job: jiaqi-olmo-3b-pretrain
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+
+              torchrun \
+                --nproc_per_node=$GPUS_PER_NODE \
+                --nnodes=${WORLD_SIZE} \
+                --rdzv_backend=c10d \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/train_olmo_3b.py
+
+              exitcode=$?
+              if [ $exitcode -ne 0 ]; then
+                echo "Job failed. Sleeping 3600s for debugging..."
+                sleep 3600
+              fi
+              exit 0
+            env:
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "NET"
+            - name: FI_PROVIDER
+              value: "efa"
+            - name: FI_EFA_USE_DEVICE_RDMA
+              value: "1"
+            - name: RDMAV_FORK_SAFE
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_TIMEOUT
+              value: "600"
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: GPUS_PER_NODE
+              value: "8"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+              requests:
+                cpu: "96"
+                memory: "1800Gi"
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+            - mountPath: /dev/shm
+              name: dshm
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "1000Gi"

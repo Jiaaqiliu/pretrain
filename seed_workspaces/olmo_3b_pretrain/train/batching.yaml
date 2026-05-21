@@ -1,0 +1,7 @@
+# 批次配置
+# 全局 batch size = per_device * gpus * grad_accum = 4 * 16 * 4 = 256 序列
+# 全局 batch tokens = 256 * 4096 = ~1M tokens/step
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+max_seq_len: 4096
+log_every: 10

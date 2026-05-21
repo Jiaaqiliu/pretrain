@@ -1,0 +1,3 @@
+dev:
+  path: /fsx/shared/data/eval/c4_validation.npy
+  n_samples: 5000

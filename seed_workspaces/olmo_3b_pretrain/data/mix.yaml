@@ -1,0 +1,8 @@
+# 数据配比（可被 MCGS 进化）
+# 初始配比参考 OLMo-2/Dolma 经验
+ratios:
+  web: 0.55
+  code: 0.20
+  math: 0.10
+  books: 0.08
+  academic: 0.07

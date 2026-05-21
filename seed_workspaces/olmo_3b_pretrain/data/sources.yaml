@@ -1,0 +1,24 @@
+# 数据源配置
+# 数据存放在 FSx 共享存储 /fsx/shared/data/ 下
+# 需要预先 tokenize 成 .npy 格式（olmo-core NumpyDataset 格式）
+sources:
+  - path: /fsx/shared/data/tokenized/dolma/web
+    split: train
+    format: numpy
+    domain: web
+  - path: /fsx/shared/data/tokenized/dolma/code
+    split: train
+    format: numpy
+    domain: code
+  - path: /fsx/shared/data/tokenized/dolma/math
+    split: train
+    format: numpy
+    domain: math
+  - path: /fsx/shared/data/tokenized/dolma/books
+    split: train
+    format: numpy
+    domain: books
+  - path: /fsx/shared/data/tokenized/dolma/academic
+    split: train
+    format: numpy
+    domain: academic
