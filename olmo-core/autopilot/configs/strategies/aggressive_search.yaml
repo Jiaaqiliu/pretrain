@@ -1,0 +1,47 @@
+# Aggressive HP Search Strategy
+# Use when compute budget is generous and you want thorough exploration
+
+proxy_search:
+  n_trials: 30
+  width_divisor: 4  # proxy is 1/4 width of target
+  proxy_tokens_multiplier: 20  # train proxy for 20x its params in tokens
+
+search_space:
+  learning_rate:
+    type: log_float
+    low: 1.0e-5
+    high: 1.0e-2
+  weight_decay:
+    type: float
+    low: 0.0
+    high: 0.3
+  warmup_steps:
+    type: int
+    low: 100
+    high: 5000
+  max_grad_norm:
+    type: float
+    low: 0.1
+    high: 5.0
+  scheduler:
+    type: categorical
+    choices: [cosine, wsd, linear]
+  beta1:
+    type: float
+    low: 0.85
+    high: 0.99
+  beta2:
+    type: float
+    low: 0.9
+    high: 0.999
+
+early_stopping:
+  patience: 2000
+  min_improvement: 0.001
+  asha_reduction_factor: 3
+
+data_mixing:
+  strategy: doremi  # or regmix
+  n_exploration_mixtures: 12
+  online_adjustment_interval: 1000
+  online_step_size: 0.05

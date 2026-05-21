@@ -1,0 +1,20 @@
+# AutoPilot Training Target: 1B Pre-training
+# Smaller model for faster iteration and experimentation
+
+model_size: medium
+phase: pretrain
+target_tokens: 200_000_000_000  # 200B tokens
+
+compute_budget:
+  num_nodes: 1
+  gpus_per_node: 8
+  gpu_type: A100-80GB
+
+data_domains:
+  - web
+  - code
+  - academic
+
+constraints:
+  max_seq_len: 4096
+  save_folder: /checkpoints/1b-pretrain

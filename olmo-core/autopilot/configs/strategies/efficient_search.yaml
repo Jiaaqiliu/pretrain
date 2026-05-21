@@ -1,0 +1,35 @@
+# Efficient HP Search Strategy
+# Use when compute budget is limited — minimize search overhead
+
+proxy_search:
+  n_trials: 10
+  width_divisor: 8  # smaller proxy for cheaper search
+  proxy_tokens_multiplier: 10  # shorter training per trial
+
+search_space:
+  learning_rate:
+    type: log_float
+    low: 1.0e-4
+    high: 3.0e-3
+  weight_decay:
+    type: float
+    low: 0.05
+    high: 0.2
+  warmup_steps:
+    type: int
+    low: 500
+    high: 3000
+  scheduler:
+    type: categorical
+    choices: [cosine, wsd]
+
+early_stopping:
+  patience: 1000
+  min_improvement: 0.005
+  asha_reduction_factor: 2
+
+data_mixing:
+  strategy: regmix  # faster than doremi
+  n_exploration_mixtures: 6
+  online_adjustment_interval: 5000
+  online_step_size: 0.02

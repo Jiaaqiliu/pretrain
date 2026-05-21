@@ -1,0 +1,23 @@
+# AutoPilot Training Target: 7B Pre-training
+# Use this as a starting point for training a 7B parameter model
+
+model_size: large
+phase: pretrain
+target_tokens: 2_000_000_000_000  # 2T tokens (Chinchilla optimal for 7B)
+
+compute_budget:
+  num_nodes: 8
+  gpus_per_node: 8
+  gpu_type: A100-80GB
+
+data_domains:
+  - web
+  - code
+  - books
+  - academic
+  - math
+  - wikipedia
+
+constraints:
+  max_seq_len: 4096
+  save_folder: /checkpoints/7b-pretrain
