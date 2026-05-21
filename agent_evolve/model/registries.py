@@ -32,6 +32,9 @@ TRAINING_JOB_RUNNERS: dict[str, str] = {
     # Non-LLM runner — implements ``TrainingJobRunner`` directly. See
     # ``INTEGRATION.md §1`` (sklearn / tabular AutoML).
     "sklearn_backend": "agent_evolve.backends.sklearn_backend.SklearnBackend",
+    # OLMo-core: pre-training and fine-tuning via OLMo-core's training engine.
+    # Generates training scripts, launches via torchrun/SLURM, collects metrics.
+    "olmo_core": "agent_evolve.backends.olmo_core.OLMoCoreBackend",
 }
 TRAINING_BACKENDS = TRAINING_JOB_RUNNERS  # deprecated alias; use TRAINING_JOB_RUNNERS
 

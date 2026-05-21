@@ -31,103 +31,126 @@ class OLMoCoreConfigGenerator:
         scheduler = config.scheduler_config
         trainer = config.trainer_config
 
-        script = f'''"""AutoPilot-generated training script: {config.name}"""
+        hidden_size = model['hidden_size']
+        num_layers = model['num_layers']
+        num_heads = model['num_heads']
+        vocab_size = model.get('vocab_size', 50304)
+        max_seq_len = model.get('max_sequence_length', 4096)
 
-from olmo_core.config import Config
+        lr = optim['lr']
+        weight_decay = optim['weight_decay']
+        betas = optim.get('betas', [0.9, 0.95])
+        max_grad_norm = optim.get('max_grad_norm', 1.0)
+
+        warmup_steps = scheduler.get('warmup_steps', 2000)
+
+        max_steps = trainer['max_steps']
+        checkpoint_interval = trainer.get('checkpoint_interval', 1000)
+        log_interval = trainer.get('log_interval', 10)
+        save_folder = trainer.get('save_folder', f'/checkpoints/{config.name}')
+        config_name = config.name
+
+        script = f'''"""AutoPilot-generated training script: {config_name}"""
+
 from olmo_core.nn.transformer import TransformerConfig
-from olmo_core.train import TrainerConfig
+from olmo_core.train import TrainerConfig, prepare_training_environment, teardown_training_environment
 from olmo_core.train.train_module import TransformerTrainModuleConfig
 from olmo_core.optim import AdamWConfig, CosWithWarmup
-from olmo_core.data import NumpyDataLoaderConfig, NumpyDatasetConfig
 from olmo_core.train.callbacks import (
     CheckpointerCallback,
     ConsoleLoggerCallback,
-    WandBCallback,
     SpeedMonitorCallback,
     GarbageCollectorCallback,
 )
-from olmo_core.launch.beaker import BeakerLaunchConfig
-from olmo_core.internal.experiment import SubCmd, build_config
+from olmo_core.train.common import Duration
 
 
 def build_model_config() -> TransformerConfig:
     return TransformerConfig(
-        d_model={model['hidden_size']},
-        n_layers={model['num_layers']},
-        n_heads={model['num_heads']},
-        vocab_size={model.get('vocab_size', 50304)},
-        max_sequence_length={model.get('max_sequence_length', 4096)},
+        d_model={hidden_size},
+        n_layers={num_layers},
+        n_heads={num_heads},
+        vocab_size={vocab_size},
+        max_sequence_length={max_seq_len},
     )
 
 
 def build_train_module_config(model_config: TransformerConfig) -> TransformerTrainModuleConfig:
     return TransformerTrainModuleConfig(
-        model=model_config,
+        rank_microbatch_size={max_seq_len},
+        max_sequence_length={max_seq_len},
         optim=AdamWConfig(
-            lr={optim['lr']},
-            weight_decay={optim['weight_decay']},
-            betas=tuple({optim.get('betas', [0.9, 0.95])}),
+            lr={lr},
+            weight_decay={weight_decay},
+            betas=tuple({betas}),
         ),
         scheduler=CosWithWarmup(
-            warmup_steps={scheduler.get('warmup_steps', 2000)},
+            warmup_steps={warmup_steps},
         ),
-        max_grad_norm={optim.get('max_grad_norm', 1.0)},
-        rank_microbatch_size={model.get('max_sequence_length', 4096)},
+        max_grad_norm={max_grad_norm},
     )
 
 
-def build_trainer_config(
-    train_module_config: TransformerTrainModuleConfig,
-) -> TrainerConfig:
+def build_trainer_config() -> TrainerConfig:
     return (
         TrainerConfig(
-            save_folder="{trainer.get('save_folder', '/checkpoints/' + config.name)}",
-            max_duration={trainer['max_steps']},
-            metrics_collect_interval={trainer.get('log_interval', 10)},
+            save_folder="{save_folder}",
+            max_duration=Duration.steps({max_steps}),
+            metrics_collect_interval={log_interval},
         )
         .with_callback(
             "checkpointer",
-            CheckpointerCallback(save_interval={trainer.get('checkpoint_interval', 1000)}),
+            CheckpointerCallback(save_interval={checkpoint_interval}),
         )
         .with_callback("console_logger", ConsoleLoggerCallback())
         .with_callback("speed_monitor", SpeedMonitorCallback())
         .with_callback("gc", GarbageCollectorCallback())
-        .with_callback(
-            "wandb",
-            WandBCallback(
-                project="autopilot",
-                name="{config.name}",
-            ),
-        )
     )
 
 
-if __name__ == "__main__":
+def main():
+    prepare_training_environment(seed=42)
+
     model_config = build_model_config()
     train_module_config = build_train_module_config(model_config)
-    trainer_config = build_trainer_config(train_module_config)
+    trainer_config = build_trainer_config()
 
-    trainer = trainer_config.build(train_module_config)
-    trainer.fit()
+    model = model_config.build(init_device="meta")
+    train_module = train_module_config.build(model)
+
+    # Data loader setup (requires dataset configuration)
+    # data_loader = build_data_loader(train_module)
+    # trainer = trainer_config.build(train_module, data_loader)
+    # trainer.fit()
+
+    teardown_training_environment()
+
+
+if __name__ == "__main__":
+    main()
 '''
         return script
 
     def generate_launch_config(self, config: GeneratedConfig) -> str:
         """Generate OLMo-core BeakerLaunchConfig code."""
         launch = config.launch_config
+        num_nodes = launch.get('num_nodes', 1)
+        gpus_per_node = launch.get('gpus_per_node', 8)
+        config_name = config.name
+
         return f'''
 from olmo_core.launch.beaker import BeakerLaunchConfig, OLMoCoreBeakerImage
 
 launch_config = BeakerLaunchConfig(
-    name="{config.name}",
-    num_nodes={launch.get('num_nodes', 1)},
-    num_gpus={launch.get('gpus_per_node', 8)},
+    name="{config_name}",
+    num_nodes={num_nodes},
+    num_gpus={gpus_per_node},
     beaker_image=OLMoCoreBeakerImage.stable,
     torchrun=True,
     cmd=[
-        "src/scripts/autopilot/{config.name}.py",
+        "src/scripts/autopilot/{config_name}.py",
         "train",
-        "{config.name}",
+        "{config_name}",
     ],
 )
 
@@ -136,25 +159,32 @@ launch_config.launch()
 
     def generate_callback_injection(self) -> str:
         """Generate code for AutoPilot's monitoring callback injected into OLMo-core."""
-        return '''
-"""AutoPilot monitoring callback for OLMo-core Trainer."""
+        return '''"""AutoPilot monitoring callback for OLMo-core Trainer."""
 
 import time
 import json
-import httpx
+from pathlib import Path
+
 from olmo_core.train.callbacks import Callback
 
 
 class AutoPilotMonitorCallback(Callback):
-    """Reports metrics to the AutoPilot agent for monitoring and decision-making."""
+    """Reports metrics to the AutoPilot agent for monitoring and decision-making.
 
-    def __init__(self, agent_url: str = "http://localhost:8765", experiment_id: str = ""):
+    Writes metrics to a JSONL file that the agent polls. Optionally
+    posts to an HTTP endpoint if agent_url is configured.
+    """
+
+    def __init__(self, metrics_dir: str = "./metrics", agent_url: str = "", experiment_id: str = ""):
+        self._metrics_dir = Path(metrics_dir)
+        self._metrics_dir.mkdir(parents=True, exist_ok=True)
         self._agent_url = agent_url
         self._experiment_id = experiment_id
+        self._metrics_file = self._metrics_dir / "metrics.jsonl"
         self._step = 0
 
-    def post_step(self):
-        self._step = self.trainer.global_step
+    def post_train_step(self):
+        self._step += 1
 
     def log_metrics(self, metrics: dict):
         payload = {
@@ -163,10 +193,16 @@ class AutoPilotMonitorCallback(Callback):
             "timestamp": time.time(),
             "metrics": {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))},
         }
-        try:
-            httpx.post(f"{self._agent_url}/metrics", json=payload, timeout=2.0)
-        except Exception:
-            pass  # non-blocking: agent might be temporarily unavailable
+
+        with open(self._metrics_file, "a") as f:
+            f.write(json.dumps(payload) + "\\n")
+
+        if self._agent_url:
+            try:
+                import httpx
+                httpx.post(f"{self._agent_url}/metrics", json=payload, timeout=2.0)
+            except Exception:
+                pass
 
     def on_error(self, exc: Exception):
         payload = {
@@ -174,11 +210,18 @@ class AutoPilotMonitorCallback(Callback):
             "step": self._step,
             "error": str(exc),
             "error_type": type(exc).__name__,
+            "timestamp": time.time(),
         }
-        try:
-            httpx.post(f"{self._agent_url}/error", json=payload, timeout=5.0)
-        except Exception:
-            pass
+
+        with open(self._metrics_dir / "errors.jsonl", "a") as f:
+            f.write(json.dumps(payload) + "\\n")
+
+        if self._agent_url:
+            try:
+                import httpx
+                httpx.post(f"{self._agent_url}/error", json=payload, timeout=5.0)
+            except Exception:
+                pass
 '''
 
 

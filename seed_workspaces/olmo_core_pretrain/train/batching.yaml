@@ -1,0 +1,4 @@
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 8
+max_seq_len: 4096
+log_every: 10

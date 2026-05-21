@@ -1,0 +1,5 @@
+stages:
+  - name: pretrain_190m
+    type: pretrain
+    enabled: true
+    max_steps: 10000

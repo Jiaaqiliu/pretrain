@@ -1,0 +1,10 @@
+sources:
+  - path: /data/tokenized/dolma17/web
+    split: train
+    format: numpy
+  - path: /data/tokenized/dolma17/code
+    split: train
+    format: numpy
+  - path: /data/tokenized/dolma17/books
+    split: train
+    format: numpy

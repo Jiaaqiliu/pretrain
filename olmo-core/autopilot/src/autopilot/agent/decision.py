@@ -36,10 +36,10 @@ class ActionType(enum.Enum):
     NO_ACTION = "no_action"
 
 
-class RiskLevel(enum.Enum):
-    LOW = "low"  # can execute immediately
-    MEDIUM = "medium"  # execute in semi-auto, confirm in advisory
-    HIGH = "high"  # always confirm unless full-auto
+class RiskLevel(enum.IntEnum):
+    LOW = 1  # can execute immediately
+    MEDIUM = 2  # execute in semi-auto, confirm in advisory
+    HIGH = 3  # always confirm unless full-auto
 
 
 @dataclass
@@ -249,7 +249,7 @@ class DecisionEngine:
         seen = {}
         for action in actions:
             key = (action.experiment_id, action.action_type)
-            if key not in seen or action.risk_level.value > seen[key].risk_level.value:
+            if key not in seen or action.risk_level > seen[key].risk_level:
                 seen[key] = action
         return list(seen.values())
 
