@@ -33,6 +33,7 @@ class OLMoCoreTrainingConfig:
     max_sequence_length: int = 4096
     rope_theta: float = 500000.0
     model_path: str | None = None
+    model_factory: str | None = None  # e.g. "olmo2_3B", "olmo2_190M"
 
     # Optimizer
     lr: float = 3e-4
@@ -106,6 +107,7 @@ class OLMoCoreConfigTranslator:
         if not model_cfg:
             return
         config.model_path = model_cfg.get("path")
+        config.model_factory = model_cfg.get("factory")
         arch = model_cfg.get("architecture", {})
         if arch:
             config.d_model = arch.get("hidden_size", config.d_model)
@@ -131,8 +133,10 @@ class OLMoCoreConfigTranslator:
             config.betas = tuple(betas)
         config.eps = optim_cfg.get("eps", config.eps)
         config.max_grad_norm = optim_cfg.get("max_grad_norm", config.max_grad_norm)
-        config.warmup_steps = optim_cfg.get("warmup_steps", config.warmup_steps)
-        config.warmup_steps = optim_cfg.get("warmup_ratio_steps", config.warmup_steps)
+        # warmup_ratio_steps takes priority if both present
+        config.warmup_steps = optim_cfg.get(
+            "warmup_ratio_steps", optim_cfg.get("warmup_steps", config.warmup_steps)
+        )
 
     def _apply_batching(self, config: OLMoCoreTrainingConfig, batch_cfg: dict) -> None:
         if not batch_cfg:
@@ -142,6 +146,9 @@ class OLMoCoreConfigTranslator:
         seq_len = batch_cfg.get("max_seq_len", config.max_sequence_length)
         config.rank_microbatch_size = per_device * seq_len
         config.max_sequence_length = seq_len
+        # global_batch_size in sequences: per_device × num_gpus × grad_accum
+        num_gpus = config.gpus_per_node * config.num_nodes
+        config.global_batch_size = per_device * num_gpus * grad_accum
         config.log_interval = batch_cfg.get("log_every", config.log_interval)
 
     def _apply_pipeline(self, config: OLMoCoreTrainingConfig, pipeline_cfg: dict) -> None:

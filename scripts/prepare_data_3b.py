@@ -1,31 +1,28 @@
-"""数据准备脚本：下载 FineWeb-Edu 子集并 tokenize 为 OLMo-core 格式。
+"""数据准备脚本：下载 FineWeb-Edu 子集并 tokenize 为 OLMo-core NumpyDataset 格式。
 
 目标：准备 ~70B tokens 的预训练数据（60B 训练 + 10B buffer）
-数据源：HuggingFace FineWeb-Edu (高质量 web 文本，已过滤)
+数据源：HuggingFace FineWeb-Edu / StarCoder / OpenWebMath
+Tokenizer: dolma2 (allenai/OLMo-2-0325-32B, vocab_size=100278)
+格式: numpy uint32 (olmo-core NumpyFSLDataset 所需)
 
-输出：/fsx/dev/jiaqi/data/olmo-3b-pretrain/ 下的 .npy 文件
+输出：/fsx/dev/jiaqi/data/olmo-3b-pretrain/{web,code,math,books,academic}/*.npy
 
 用法:
-    python prepare_data_3b.py
+    python scripts/prepare_data_3b.py
 
 预计耗时: 2-4 小时（取决于 HF 下载速度 + tokenize 速度）
-预计磁盘: ~150 GB tokenized 数据
+预计磁盘: ~280 GB tokenized 数据 (uint32)
 """
 
-import os
-import sys
 import time
-import struct
 import logging
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 log = logging.getLogger(__name__)
 
-# 输出目录
 OUTPUT_ROOT = Path("/fsx/dev/jiaqi/data/olmo-3b-pretrain")
 
 # 目标 tokens 数量（70B tokens，略多于训练需要的 60B）
@@ -84,7 +81,7 @@ def tokenize_and_save_shard(
     if n_tokens == 0:
         return 0
 
-    arr = np.array(all_tokens[:n_tokens], dtype=np.uint16)
+    arr = np.array(all_tokens[:n_tokens], dtype=np.uint32)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, arr)
     return n_tokens
@@ -181,7 +178,7 @@ def main():
         "total_tokens": total_all,
         "domains": {d: str(OUTPUT_ROOT / d) for d in DOMAIN_TARGETS},
         "tokenizer": "allenai/OLMo-2-0325-32B",
-        "format": "numpy_uint16",
+        "format": "numpy_uint32",
         "seq_length": 4096,
     }
     import json

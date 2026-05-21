@@ -71,7 +71,7 @@ class OLMoCoreBackend:
             self._olmo_core_path = Path(__file__).resolve().parents[3] / "olmo-core"
 
         self._translator = OLMoCoreConfigTranslator()
-        self._generator = OLMoCoreScriptGenerator()
+        self._generator = OLMoCoreScriptGenerator(olmo_core_path=self._olmo_core_path)
 
     def run_trial(
         self,
@@ -104,8 +104,15 @@ class OLMoCoreBackend:
 
         training_config.save_folder = str(trial_dir / "checkpoints")
         training_config.metric_report_url = str(trial_dir / "metrics")
+        # Scale global_batch_size proportionally when overriding node count
+        old_total_gpus = training_config.num_nodes * training_config.gpus_per_node
         training_config.num_nodes = self.num_nodes
         training_config.gpus_per_node = self.gpus_per_node
+        new_total_gpus = self.num_nodes * self.gpus_per_node
+        if old_total_gpus > 0 and new_total_gpus != old_total_gpus:
+            training_config.global_batch_size = int(
+                training_config.global_batch_size * new_total_gpus / old_total_gpus
+            )
 
         if budget.steps:
             training_config.max_steps = min(training_config.max_steps, budget.steps)

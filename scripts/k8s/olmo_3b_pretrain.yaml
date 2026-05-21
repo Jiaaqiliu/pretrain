@@ -1,7 +1,9 @@
-# PyTorchJob: OLMo-3B Pre-training on H200 cluster
+# PyTorchJob: OLMo2-3B Pre-training on H200 cluster
+# 模型: OLMo2-3B (d_model=3328, n_layers=16, n_heads=16, ~3B params)
 # 集群: ap-south-1 p5-llm
 # 节点: 2 nodes × 8 H200 GPUs = 16 GPUs total
 # 并行策略: FSDP (Fully Sharded Data Parallel)
+# 数据: /fsx/dev/jiaqi/data/olmo-3b-pretrain/ (由 prepare_data_3b.py 生成)
 #
 # 用法:
 #   kubectl apply -f olmo_3b_pretrain.yaml \

@@ -1,24 +1,25 @@
 # 数据源配置
-# 数据存放在 FSx 共享存储 /fsx/shared/data/ 下
-# 需要预先 tokenize 成 .npy 格式（olmo-core NumpyDataset 格式）
+# 由 scripts/prepare_data_3b.py 生成，存放在 FSx 下
+# 格式: numpy uint32 (olmo-core NumpyFSLDataset 格式)
+# Tokenizer: dolma2 (vocab_size=100278)
 sources:
-  - path: /fsx/shared/data/tokenized/dolma/web
+  - path: /fsx/dev/jiaqi/data/olmo-3b-pretrain/web
     split: train
-    format: numpy
+    format: numpy_uint32
     domain: web
-  - path: /fsx/shared/data/tokenized/dolma/code
+  - path: /fsx/dev/jiaqi/data/olmo-3b-pretrain/code
     split: train
-    format: numpy
+    format: numpy_uint32
     domain: code
-  - path: /fsx/shared/data/tokenized/dolma/math
+  - path: /fsx/dev/jiaqi/data/olmo-3b-pretrain/math
     split: train
-    format: numpy
+    format: numpy_uint32
     domain: math
-  - path: /fsx/shared/data/tokenized/dolma/books
+  - path: /fsx/dev/jiaqi/data/olmo-3b-pretrain/books
     split: train
-    format: numpy
+    format: numpy_uint32
     domain: books
-  - path: /fsx/shared/data/tokenized/dolma/academic
+  - path: /fsx/dev/jiaqi/data/olmo-3b-pretrain/academic
     split: train
-    format: numpy
+    format: numpy_uint32
     domain: academic

@@ -1,17 +1,16 @@
-# OLMo-3B 模型架构配置
-# 对应 OLMo-core TransformerConfig 参数
-name: OLMo-3B
+# OLMo2-3B 模型架构配置
+# 使用 TransformerConfig.olmo2_3B() 工厂方法构建
+# 实际参数: d_model=3328, n_layers=16, n_heads=16, block=reordered_norm, qk_norm=True
+name: OLMo2-3B
 path: null  # 从头预训练，不加载已有权重
+factory: olmo2_3B
 architecture:
-  hidden_size: 3072
-  num_layers: 28
-  num_heads: 24
-  num_kv_heads: 24        # GQA: 24 KV heads (MHA)
-  vocab_size: 100278      # OLMo-2 tokenizer
+  hidden_size: 3328
+  num_layers: 16
+  num_heads: 16
+  vocab_size: 100352      # dolma2 padded: ceil(100278/128)*128
   max_seq_len: 4096
-  intermediate_size: 8192  # SwiGLU FFN hidden
-  rope_theta: 500000.0
-  norm_type: rms_norm
-  activation: swiglu
-  tie_embeddings: false
+  rope_theta: 500000
+  block_type: reordered_norm
+  qk_norm: true
 dtype: bfloat16

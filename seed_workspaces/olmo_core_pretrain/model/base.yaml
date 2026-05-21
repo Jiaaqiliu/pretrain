@@ -1,10 +1,11 @@
 name: OLMo2-190M
 path: null
+factory: olmo2_190M
 architecture:
   hidden_size: 768
   num_layers: 12
   num_heads: 12
   vocab_size: 50304
   max_seq_len: 4096
-  rope_theta: 500000.0
+  rope_theta: 500000
 dtype: bfloat16
