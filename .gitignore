@@ -55,6 +55,7 @@ inspect_evals/
 !/docs/algorithms/
 !/docs/agent_team_structure.md
 !/docs/CLUSTER_OPS.md
+!/docs/EXPERIMENT_LOG.md
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py

@@ -54,6 +54,8 @@ from olmo_core.train.callbacks import (
 )
 from olmo_core.train.train_module import TransformerTrainModuleConfig
 from olmo_core.train.train_module.transformer import TransformerDataParallelConfig
+from olmo_core.distributed.parallel import DataParallelType
+from olmo_core.config import DType
 
 from experiments.thermodynamics.schedules import get_schedule
 
@@ -348,7 +350,8 @@ def build_train_module(model_size: str, schedule: str) -> TransformerTrainModule
         ),
         scheduler=scheduler,
         max_grad_norm=1.0,
-        dp_config=TransformerDataParallelConfig(),
+        dp_config=TransformerDataParallelConfig(name=DataParallelType.fsdp, param_dtype=DType.bfloat16),
+        autocast_precision=DType.bfloat16,
     )
 
 

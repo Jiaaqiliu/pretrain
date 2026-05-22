@@ -37,6 +37,8 @@ from olmo_core.train.callbacks import (
 )
 from olmo_core.train.train_module import TransformerTrainModuleConfig
 from olmo_core.train.train_module.transformer import TransformerDataParallelConfig
+from olmo_core.distributed.parallel import DataParallelType
+from olmo_core.config import DType
 
 from experiments.thermodynamics.schedules import wsd_linear_lr
 
@@ -109,7 +111,8 @@ def main():
         optim=AdamWConfig(lr=PEAK_LR, weight_decay=0.1, betas=(0.9, 0.95)),
         scheduler=CosWithWarmup(warmup=int(0.02 * MAX_STEPS)),
         max_grad_norm=1.0,
-        dp_config=TransformerDataParallelConfig(),
+        dp_config=TransformerDataParallelConfig(name=DataParallelType.fsdp, param_dtype=DType.bfloat16),
+        autocast_precision=DType.bfloat16,
     )
     train_module = train_module_config.build(model)
 

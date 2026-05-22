@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-preflight-v3
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: check
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+
+          echo "=== 1. Install olmo-core ==="
+          pip install -e "/fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all]" > /tmp/pip.log 2>&1 || true
+          pip install scipy > /dev/null 2>&1 || true
+          python -c "from olmo_core.nn.transformer import TransformerConfig; print('olmo_core import OK')"
+
+          echo "=== 2. Check experiments module ==="
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from experiments.thermodynamics.measures import spectral_entropy_layer
+          from experiments.thermodynamics.schedules import gaussian_lr, SCHEDULE_REGISTRY
+          print('Experiments module OK, schedules:', list(SCHEDULE_REGISTRY.keys()))
+          "
+
+          echo "=== 3. Check data paths ==="
+          for d in web code math; do
+            count=$(ls /fsx/dev/jiaqi/data/olmo-3b-pretrain/$d/*.npy 2>/dev/null | wc -l || echo 0)
+            size=$(du -sh /fsx/dev/jiaqi/data/olmo-3b-pretrain/$d/ 2>/dev/null | cut -f1 || echo "N/A")
+            echo "  $d: $count shards, $size"
+          done
+
+          echo "=== 4. Check thermo data paths (expected by train scripts) ==="
+          ls /fsx/dev/jiaqi/data/olmo-pretrain/ 2>/dev/null || echo "  /fsx/dev/jiaqi/data/olmo-pretrain/ NOT FOUND"
+
+          echo "=== 5. GPU info ==="
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | head -2
+
+          echo "=== PREFLIGHT COMPLETE ==="
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            cpu: "8"
+            memory: "64Gi"
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
