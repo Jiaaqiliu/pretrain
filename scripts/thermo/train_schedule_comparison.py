@@ -40,7 +40,13 @@ if _olmo_core_src.exists():
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from olmo_core.data import NumpyDataLoaderConfig, NumpyFSLDatasetConfig, TokenizerConfig
+from olmo_core.data.tokenizer import TokenizerConfig
+from olmo_core.data.composable import (
+    NumpyDocumentSource,
+    ConcatAndChunkInstanceSource,
+    ComposableDataLoaderConfig,
+)
+import numpy as np
 from olmo_core.nn.transformer import TransformerConfig
 from olmo_core.optim import AdamWConfig, CosWithWarmup
 from olmo_core.train import Duration, TrainerConfig, prepare_training_environment, teardown_training_environment
@@ -83,7 +89,12 @@ MODEL_CONFIGS = {
 }
 
 SEQUENCE_LENGTH = 4096
-TOKENIZER = TokenizerConfig.dolma2()
+TOKENIZER = TokenizerConfig(
+    identifier="allenai/OLMo-2-0325-32B",
+    vocab_size=100278,
+    eos_token_id=100257,
+    pad_token_id=100277,
+)
 
 DATA_PATHS_190M = [
     "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web",
@@ -330,7 +341,7 @@ def parse_args():
 def build_model(model_size: str) -> TransformerConfig:
     config = MODEL_CONFIGS[model_size]
     factory = getattr(TransformerConfig, config["factory"])
-    return factory(vocab_size=TOKENIZER.padded_vocab_size())
+    return factory(vocab_size=TOKENIZER.vocab_size)
 
 
 def build_train_module(model_size: str, schedule: str) -> TransformerTrainModuleConfig:
@@ -356,23 +367,44 @@ def build_train_module(model_size: str, schedule: str) -> TransformerTrainModule
 
 
 def build_data_loader(model_size: str, train_module):
+    import tempfile
+
     data_paths = DATA_PATHS_190M if model_size == "190M" else DATA_PATHS_1B
     existing_paths = [p for p in data_paths if Path(p).exists()]
     if not existing_paths:
         raise RuntimeError(f"No data paths found. Expected: {data_paths}")
 
     config = MODEL_CONFIGS[model_size]
-    dataset_config = NumpyFSLDatasetConfig(
-        paths=existing_paths,
-        sequence_length=SEQUENCE_LENGTH,
+    work_dir = Path(tempfile.mkdtemp(prefix="olmo_data_"))
+
+    all_npy_files = []
+    for data_dir in existing_paths:
+        npy_files = sorted(Path(data_dir).glob("*.npy"))
+        all_npy_files.extend([str(f) for f in npy_files])
+
+    if not all_npy_files:
+        raise RuntimeError(f"No .npy files found in: {existing_paths}")
+
+    token_source = NumpyDocumentSource(
+        source_paths=all_npy_files,
+        dtype=np.uint32,
+        work_dir=work_dir,
         tokenizer=TOKENIZER,
     )
-    loader_config = NumpyDataLoaderConfig(
+    instance_source = ConcatAndChunkInstanceSource(
+        token_source, sequence_length=SEQUENCE_LENGTH, work_dir=work_dir,
+    )
+    loader_config = ComposableDataLoaderConfig(
         global_batch_size=config["global_batch_size"],
         seed=42,
+        tokenizer=TOKENIZER,
+        display_source_visualization=False,
     )
-    dataset = dataset_config.build()
-    return loader_config.build(dataset, dp_process_group=train_module.dp_process_group)
+    return loader_config.build(
+        instance_source,
+        work_dir=work_dir,
+        dp_process_group=train_module.dp_process_group,
+    )
 
 
 def build_trainer(
