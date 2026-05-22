@@ -395,7 +395,6 @@ def build_trainer(
             "checkpointer",
             CheckpointerCallback(
                 save_interval=args.checkpoint_interval,
-                ephemeral_save_interval=args.checkpoint_interval,
             ),
         )
         .with_callback("console_logger", ConsoleLoggerCallback())

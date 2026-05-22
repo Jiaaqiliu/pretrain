@@ -134,7 +134,7 @@ def main():
             max_duration=Duration.steps(MAX_STEPS),
             metrics_collect_interval=10,
         )
-        .with_callback("checkpointer", CheckpointerCallback(save_interval=500, ephemeral_save_interval=500))
+        .with_callback("checkpointer", CheckpointerCallback(save_interval=500))
         .with_callback("console_logger", ConsoleLoggerCallback())
         .with_callback("speed_monitor", SpeedMonitorCallback())
         .with_callback("gc", GarbageCollectorCallback())

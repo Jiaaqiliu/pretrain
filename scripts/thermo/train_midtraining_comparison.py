@@ -225,7 +225,7 @@ def main():
                 max_duration=Duration.steps(total_steps),
                 metrics_collect_interval=10,
             )
-            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200))
             .with_callback("console_logger", ConsoleLoggerCallback())
             .with_callback("speed_monitor", SpeedMonitorCallback())
             .with_callback("gc", GarbageCollectorCallback())
@@ -255,7 +255,7 @@ def main():
                 max_duration=Duration.steps(cfg["stage1_steps"]),
                 metrics_collect_interval=10,
             )
-            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200))
             .with_callback("console_logger", ConsoleLoggerCallback())
             .with_callback("speed_monitor", SpeedMonitorCallback())
             .with_callback("gc", GarbageCollectorCallback())
@@ -283,7 +283,7 @@ def main():
                 max_duration=Duration.steps(cfg["stage2_steps"]),
                 metrics_collect_interval=10,
             )
-            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200))
             .with_callback("console_logger", ConsoleLoggerCallback())
             .with_callback("speed_monitor", SpeedMonitorCallback())
             .with_callback("gc", GarbageCollectorCallback())
