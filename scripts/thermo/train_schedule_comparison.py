@@ -86,6 +86,14 @@ MODEL_CONFIGS = {
         "rank_microbatch_size": 4 * 4096,
         "nodes": 2,
     },
+    "3B": {
+        "factory": "olmo2_3B",
+        "max_steps": 50_000,   # ~50B tokens
+        "peak_lr": 3e-4,
+        "global_batch_size": 256 * 4096,  # ~1M tokens/step
+        "rank_microbatch_size": 2 * 4096,  # smaller microbatch for 3B memory
+        "nodes": 2,  # 2 nodes × 8 H200 = 16 GPUs
+    },
 }
 
 SEQUENCE_LENGTH = 4096
@@ -108,6 +116,13 @@ DATA_PATHS_1B = [
     "/fsx/dev/jiaqi/data/olmo-pretrain/code",
     "/fsx/dev/jiaqi/data/olmo-pretrain/math",
     "/fsx/dev/jiaqi/data/olmo-pretrain/books",
+]
+
+DATA_PATHS_3B = [
+    "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web",
+    "/fsx/dev/jiaqi/data/olmo-pretrain/dolma_web",
+    "/fsx/dev/jiaqi/data/olmo-pretrain/code",
+    "/fsx/dev/jiaqi/data/olmo-pretrain/math",
 ]
 
 
@@ -353,7 +368,7 @@ class GradNoiseCallback(Callback):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Proxy training with LR schedule comparison")
-    parser.add_argument("--model-size", required=True, choices=["190M", "1B"])
+    parser.add_argument("--model-size", required=True, choices=["190M", "1B", "3B"])
     parser.add_argument("--schedule", required=True, choices=["cosine", "wsd_linear", "wsd_exponential", "gaussian"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", required=True, type=str)
@@ -397,7 +412,7 @@ def build_train_module(model_size: str, schedule: str) -> TransformerTrainModule
 def build_data_loader(model_size: str, train_module):
     import tempfile
 
-    data_paths = DATA_PATHS_190M if model_size == "190M" else DATA_PATHS_1B
+    data_paths = {"190M": DATA_PATHS_190M, "1B": DATA_PATHS_1B, "3B": DATA_PATHS_3B}[model_size]
     existing_paths = [p for p in data_paths if Path(p).exists()]
     if not existing_paths:
         raise RuntimeError(f"No data paths found. Expected: {data_paths}")
@@ -407,16 +422,18 @@ def build_data_loader(model_size: str, train_module):
     work_dir = Path(f"/fsx/dev/jiaqi/thermo_experiments/_data_cache/{model_size}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load .npy shards into memory as a single flat token array
+    # Load .npy shards into memory — cap based on model size
+    # 190M: 500M tokens (~2GB RAM), 1B/3B: 2B tokens (~8GB RAM)
+    max_tokens = 2_000_000_000 if model_size in ("1B", "3B") else 500_000_000
     all_tokens = []
     for data_dir in existing_paths:
         npy_files = sorted(Path(data_dir).glob("*.npy"))
         for f in npy_files:
             tokens = np.load(f)
             all_tokens.append(tokens)
-            if sum(len(t) for t in all_tokens) > 500_000_000:
+            if sum(len(t) for t in all_tokens) > max_tokens:
                 break
-        if sum(len(t) for t in all_tokens) > 500_000_000:
+        if sum(len(t) for t in all_tokens) > max_tokens:
             break
 
     if not all_tokens:
