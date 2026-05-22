@@ -6,15 +6,17 @@
 
 ## 时间线
 
-### 2026-05-22: 项目启动
+### 2026-05-22: 项目启动 + 9 次迭代调试
 
 **完成:**
 - [x] 代码审查完毕，修复 6 个关键 bug（SIGPIPE、import 路径、FSDP 测量等）
 - [x] 代码推送到 GitHub (`Jiaaqiliu/pretrain`)
 - [x] 代码同步到 FSx (`/fsx/dev/jiaqi/A-EVOLVE-V2/`)
-- [x] 数据下载进行中（3 个 job 并行）
-- [ ] Pre-flight 检查（olmo-core + experiments 模块 + 数据路径）
-- [ ] Phase 0 验证实验提交
+- [x] 数据下载完成: math 7B, code 14B (进行中), web 38.5B (进行中)
+- [x] Pre-flight 检查通过（olmo-core + experiments 模块 + 数据路径）
+- [x] 数据符号链接创建 (`/fsx/dev/jiaqi/data/olmo-pretrain/` → `olmo-3b-pretrain/`)
+- [x] 190M smoke test 成功 (100 步，无热力学测量, 174.7 TFLOPS/device)
+- [ ] 190M + 热力学测量验证 (200 步，正在运行)
 
 **数据下载状态 (01:50 UTC):**
 | Domain | 进度 | ETA |
@@ -43,7 +45,71 @@
 
 **修复**: 用 `from olmo_core.nn.transformer import TransformerConfig` 验证安装是否成功。
 
-### Bug #3: 数据路径不一致
+### Bug #3: pip install olmo-core/.[all] 编译 flash-attn 耗时 10+ 分钟
+
+**问题**: `pip install -e olmo-core/.[all]` 拉取 `flash-attn` 源码编译，极慢。
+
+**解决**: 改为 `pip install -e olmo-core/`（不带 extras）。PyTorch 2.8 的内置 SDPA 已经包含 FlashAttention kernel（日志显示 `Using attention backend 'torch'`）。
+
+**教训**: 如果镜像已有 PyTorch 2.8+，不需要单独安装 flash-attn。
+
+### Bug #4: OLMo-core Callback API 与预期不同
+
+**问题**: 假设 `pre_step(self, step, **kwargs)` 但实际 API 是 `pre_step(self, batch: Dict)`；假设 `post_step(self, step, **kwargs)` 但实际是 `post_step(self)`。
+
+**正确 API** (从 OLMo-core 源码确认):
+- `pre_step(self, batch: Dict[str, Any])` — 只接收 batch
+- `post_step(self)` — 无参数
+- `pre_optim_step(self)` — 在 forward-backward 后、optimizer step 前
+- 步数通过 `self.step` 或 `self.trainer.global_step` 获取
+- Trainer 通过 `self.trainer` 访问
+
+**教训**: 一定要看源码确认 API，不要凭记忆。
+
+### Bug #5: FSDP2 + torch.compile 下 SVD 报 DynamicOutputShapeException
+
+**问题**: 在 `post_step()` 中对模型参数做 SVD，触发 `DynamicOutputShapeException: aten.nonzero.default`。
+
+**原因**: FSDP2 使用 torch.compile，参数被 FakeTensor 包装，SVD 中的 `nonzero` 操作有动态 shape。
+
+**修复**: 
+1. 将测量移到 `pre_optim_step()` — 此时参数已在 forward-backward 后 unsharded
+2. 添加 `@torch._dynamo.disable()` 装饰器
+3. 使用 `get_local_tensor()` 获取本地 shard
+
+**模式**: 参考 OLMo-core 自带的 `GAPMonitorCallback`，它在 `pre_optim_step` 中监控参数。
+
+### Bug #6: NumpyFSLDatasetConfig 把每个 .npy 文件当作一个 instance
+
+**问题**: 数据有 350 个 `.npy` 文件 → `dataset_size=27`，每个 epoch 只有 27 个 instance，导致训练循环在 epoch 间疯狂切换。
+
+**原因**: `NumpyFSLDatasetConfig` 将每个文件视为一个"document"（一个 instance），而非将文件内的 token 切成多个 4096 序列。
+
+**修复**: 改用 `InMemoryTokenSource`（加载 `.npy` 到内存）→ `ConcatAndChunkInstanceSource`（切成 4096 序列）→ `ComposableDataLoaderConfig`。
+
+**教训**: OLMo-core 有两套数据 API:
+- `NumpyFSLDatasetConfig`: 期望每个文件是一个完整 document
+- `ComposableDataLoader (InMemoryTokenSource)`: 适合 flat token 数组
+
+### Bug #7: ComposableDataLoader 的 work_dir 必须跨 rank 共享
+
+**问题**: 用 `tempfile.mkdtemp()` 创建 work_dir，但每个 rank 生成不同的临时路径 → 非 rank-0 进程找不到 global indices 文件。
+
+**修复**: 使用 FSx 上的共享目录作为 work_dir。
+
+### Bug #8: CheckpointerCallback 的 ephemeral_save_interval 必须 < save_interval
+
+**问题**: `CheckpointerCallback(save_interval=200, ephemeral_save_interval=200)` → `OLMoConfigurationError`
+
+**修复**: 删除 `ephemeral_save_interval` 参数。
+
+### Bug #9: WandBCallback 在 WANDB_API_KEY 不存在时硬报错
+
+**问题**: 即使设置 `WANDB_MODE=disabled`，OLMo-core 的 WandBCallback 在初始化时检查环境变量。
+
+**修复**: 代码中判断 `os.environ.get("WANDB_API_KEY")` 存在时才添加 WandB callback。
+
+### Bug #10: 数据路径不一致
 
 **问题**: 
 - 数据下载到: `/fsx/dev/jiaqi/data/olmo-3b-pretrain/{web,code,math}/`
