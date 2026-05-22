@@ -400,14 +400,14 @@ def build_trainer(
         .with_callback("console_logger", ConsoleLoggerCallback())
         .with_callback("speed_monitor", SpeedMonitorCallback())
         .with_callback("gc", GarbageCollectorCallback())
-        .with_callback(
-            "wandb",
-            WandBCallback(
-                project=args.wandb_project,
-                name=run_name,
-            ),
-        )
     )
+
+    # Only add WandB callback if WANDB_API_KEY is available
+    if os.environ.get("WANDB_API_KEY") and os.environ.get("WANDB_MODE") != "disabled":
+        trainer_config = trainer_config.with_callback(
+            "wandb",
+            WandBCallback(project=args.wandb_project, name=run_name),
+        )
 
     # Custom LR schedule callback (overrides built-in scheduler for non-cosine)
     if args.schedule != "cosine":
