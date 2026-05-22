@@ -16,7 +16,16 @@
 - [x] Pre-flight 检查通过（olmo-core + experiments 模块 + 数据路径）
 - [x] 数据符号链接创建 (`/fsx/dev/jiaqi/data/olmo-pretrain/` → `olmo-3b-pretrain/`)
 - [x] 190M smoke test 成功 (100 步，无热力学测量, 174.7 TFLOPS/device)
-- [ ] 190M + 热力学测量验证 (200 步，正在运行)
+- [x] 190M + 热力学测量验证 (200 步完成，谱熵/序参数信号正确)
+- [x] **Phase 0 全面启动**: 4 schedule × 25000 步 × seed=42 (4 节点并行, ETA ~8h)
+
+**正在运行的实验 (04:45 UTC):**
+| Job | Schedule | Steps | ETA |
+|-----|----------|-------|-----|
+| luhanqin-thermo-190m-gaussian-s42 | gaussian | 25000 | ~8h |
+| luhanqin-thermo-190m-wsd-linear-s42 | wsd_linear | 25000 | ~8h |
+| luhanqin-thermo-190m-cosine-s42 | cosine | 25000 | ~8h |
+| luhanqin-thermo-190m-wsd-exponential-s42 | wsd_exp | 25000 | ~8h |
 
 **数据下载状态 (01:50 UTC):**
 | Domain | 进度 | ETA |
@@ -109,7 +118,29 @@
 
 **修复**: 代码中判断 `os.environ.get("WANDB_API_KEY")` 存在时才添加 WandB callback。
 
-### Bug #10: 数据路径不一致
+### Bug #11: WandB API Key 只有 20 字符，导致 OLMo-core WandBCallback 初始化失败
+
+**问题**: K8s secret `wandb-secret-jiaqi` 中的 key 只有 20 字符（正常 40 字符），WandBCallback 初始化时连接失败 → 所有带 WandB 的 job 在 ~3 分钟时 fail。
+
+**临时修复**: 设置 `WANDB_MODE=disabled`，热力学数据通过 JSONL 文件收集。
+
+**后续**: 需要更新 K8s secret 为正确的 WandB API key。
+
+**教训**: 
+- 如果一个功能不是核心必需的（如 WandB 日志），不要让它阻塞训练
+- 先用 WANDB_MODE=disabled 跑通训练，确认 stable 后再加 WandB
+
+### Bug #12: 多个 PyTorchJob 同时 `git pull` 导致 git lock 冲突
+
+**问题**: 4 个 job 同时启动，都执行 `git pull origin main`，git index.lock 冲突 → 第一个成功，后面的 fail。
+
+**修复**: 
+1. 把 `set -euxo pipefail` 改为 setup 阶段用 `set -uxo pipefail`（不退出），训练阶段再 `set -e`
+2. `git pull origin main || true` — git pull 失败不影响训练（代码已在 FSx 上）
+
+**教训**: 多 job 共享同一个 FSx git 仓库时，不要在启动脚本中做写操作（git pull 会写 .git/）。更好的方式是先用一个独立的 sync job 更新代码。
+
+### Bug #13: 数据路径不一致
 
 **问题**: 
 - 数据下载到: `/fsx/dev/jiaqi/data/olmo-3b-pretrain/{web,code,math}/`
