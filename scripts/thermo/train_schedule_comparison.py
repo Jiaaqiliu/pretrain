@@ -128,12 +128,11 @@ class LRScheduleCallback(Callback):
         self.peak_lr = peak_lr
         self.schedule_name = schedule_name
 
-    def pre_step(self, step: int, **kwargs):
+    def pre_step(self, batch):
+        step = self.trainer.global_step
         lr = self.schedule_fn(step, self.total_steps, self.peak_lr)
-        trainer = kwargs.get("trainer")
-        if trainer is not None and hasattr(trainer, "train_module"):
-            for param_group in trainer.train_module.optim.param_groups:
-                param_group["lr"] = lr
+        for param_group in self.trainer.train_module.optim.param_groups:
+            param_group["lr"] = lr
 
 
 # =============================================================================
@@ -162,12 +161,9 @@ class ThermoMeasurementCallback(Callback):
         self.batch_size = batch_size
         self._file = None
 
-    def post_step(self, step: int, **kwargs):
+    def post_step(self):
+        step = self.trainer.global_step
         if step % self.measure_interval != 0:
-            return
-
-        trainer = kwargs.get("trainer")
-        if trainer is None:
             return
 
         # Only measure on rank 0
@@ -185,17 +181,17 @@ class ThermoMeasurementCallback(Callback):
 
         # Get current LR
         lr = 0.0
-        for pg in trainer.train_module.optim.param_groups:
+        for pg in self.trainer.train_module.optim.param_groups:
             lr = pg["lr"]
             break
 
         # Get loss from trainer metrics
         loss = 0.0
-        if hasattr(trainer, "metrics") and "train/loss" in trainer.metrics:
-            loss = float(trainer.metrics["train/loss"])
+        if hasattr(self.trainer, "metrics") and "train/loss" in self.trainer.metrics:
+            loss = float(self.trainer.metrics["train/loss"])
 
         # FSDP: must summon full params for correct measurements
-        model = trainer.train_module.model
+        model = self.trainer.train_module.model
         try:
             from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
             ctx = FSDP.summon_full_params(model, writeback=False, recurse=True)
@@ -210,7 +206,7 @@ class ThermoMeasurementCallback(Callback):
             n_params = sum(p.numel() for p in model.parameters())
 
         # Gradient variance estimate (from optimizer state if available)
-        grad_var = self._estimate_grad_variance_from_optimizer(trainer.train_module.optim)
+        grad_var = self._estimate_grad_variance_from_optimizer(self.trainer.train_module.optim)
 
         # Temperature and free energy
         temp = (lr * grad_var) / (2 * self.batch_size) if self.batch_size > 0 else 0.0
@@ -286,7 +282,8 @@ class GradNoiseCallback(Callback):
         self.output_path = output_path
         self.estimate_interval = estimate_interval
 
-    def post_step(self, step: int, **kwargs):
+    def post_step(self):
+        step = self.trainer.global_step
         if step % self.estimate_interval != 0 or step == 0:
             return
 
@@ -294,12 +291,8 @@ class GradNoiseCallback(Callback):
         if rank != 0:
             return
 
-        trainer = kwargs.get("trainer")
-        if trainer is None:
-            return
-
         # Use optimizer's exp_avg_sq as a proxy for gradient variance
-        optimizer = trainer.train_module.optim
+        optimizer = self.trainer.train_module.optim
         grad_var = 0.0
         count = 0
         for group in optimizer.param_groups:

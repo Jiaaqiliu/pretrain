@@ -63,15 +63,14 @@ class AblationLRCallback(Callback):
         self.peak_lr = peak_lr
         self.total_steps = total_steps
 
-    def pre_step(self, step: int, **kwargs):
+    def pre_step(self, batch):
+        step = self.trainer.global_step
         lr = wsd_linear_lr(
             step, self.total_steps, self.peak_lr,
             warmup_frac=0.02, stable_frac=self.stable_frac,
         )
-        trainer = kwargs.get("trainer")
-        if trainer is not None and hasattr(trainer, "train_module"):
-            for pg in trainer.train_module.optim.param_groups:
-                pg["lr"] = lr
+        for pg in self.trainer.train_module.optim.param_groups:
+            pg["lr"] = lr
 
 
 def parse_args():

@@ -119,12 +119,11 @@ class MultiStageLRCallback(Callback):
         progress = (step - stable_end) / max(total - stable_end, 1)
         return peak * (1.0 - progress * (1.0 - min_ratio))
 
-    def pre_step(self, step: int, **kwargs):
+    def pre_step(self, batch):
+        step = self.trainer.global_step
         lr = self._get_lr(step)
-        trainer = kwargs.get("trainer")
-        if trainer is not None and hasattr(trainer, "train_module"):
-            for param_group in trainer.train_module.optim.param_groups:
-                param_group["lr"] = lr
+        for param_group in self.trainer.train_module.optim.param_groups:
+            param_group["lr"] = lr
 
 
 class DataSwitchCallback(Callback):
@@ -135,7 +134,8 @@ class DataSwitchCallback(Callback):
         self.stage2_data_paths = stage2_data_paths
         self.logged = False
 
-    def post_step(self, step: int, **kwargs):
+    def post_step(self):
+        step = self.trainer.global_step
         if step == self.switch_step and not self.logged:
             self.logged = True
             rank = int(os.environ.get("RANK", 0))
