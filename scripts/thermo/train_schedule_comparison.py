@@ -375,7 +375,9 @@ def build_data_loader(model_size: str, train_module):
         raise RuntimeError(f"No data paths found. Expected: {data_paths}")
 
     config = MODEL_CONFIGS[model_size]
-    work_dir = Path(tempfile.mkdtemp(prefix="olmo_data_"))
+    # work_dir must be shared across all ranks (FSx)
+    work_dir = Path(f"/fsx/dev/jiaqi/thermo_experiments/_data_cache/{model_size}")
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     # Load .npy shards into memory as a single flat token array
     all_tokens = []
