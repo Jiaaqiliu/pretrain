@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from olmo_core.data.tokenizer import TokenizerConfig
 from olmo_core.data.composable import (
-    NumpyDocumentSource,
+    InMemoryTokenSource,
     ConcatAndChunkInstanceSource,
     ComposableDataLoaderConfig,
 )
@@ -377,20 +377,27 @@ def build_data_loader(model_size: str, train_module):
     config = MODEL_CONFIGS[model_size]
     work_dir = Path(tempfile.mkdtemp(prefix="olmo_data_"))
 
-    all_npy_files = []
+    # Load .npy shards into memory as a single flat token array
+    all_tokens = []
     for data_dir in existing_paths:
         npy_files = sorted(Path(data_dir).glob("*.npy"))
-        all_npy_files.extend([str(f) for f in npy_files])
+        for f in npy_files:
+            tokens = np.load(f)
+            all_tokens.append(tokens)
+            if sum(len(t) for t in all_tokens) > 500_000_000:
+                break
+        if sum(len(t) for t in all_tokens) > 500_000_000:
+            break
 
-    if not all_npy_files:
+    if not all_tokens:
         raise RuntimeError(f"No .npy files found in: {existing_paths}")
 
-    token_source = NumpyDocumentSource(
-        source_paths=all_npy_files,
-        dtype=np.uint32,
-        work_dir=work_dir,
-        tokenizer=TOKENIZER,
-    )
+    flat_tokens = np.concatenate(all_tokens)
+    n = (len(flat_tokens) // SEQUENCE_LENGTH) * SEQUENCE_LENGTH
+    flat_tokens = flat_tokens[:n]
+    print(f"[Data] Loaded {len(flat_tokens)/1e6:.1f}M tokens from {len(all_tokens)} shards")
+
+    token_source = InMemoryTokenSource(flat_tokens, work_dir=work_dir)
     instance_source = ConcatAndChunkInstanceSource(
         token_source, sequence_length=SEQUENCE_LENGTH, work_dir=work_dir,
     )
