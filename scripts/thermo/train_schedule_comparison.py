@@ -137,15 +137,21 @@ class LRScheduleCallback(Callback):
     Manually sets the learning rate at each step according to the chosen schedule.
     """
 
-    def __init__(self, schedule_name: str, total_steps: int, peak_lr: float):
+    def __init__(self, schedule_name: str, total_steps: int, peak_lr: float,
+                 stable_frac: float = 0.58):
         self.schedule_fn = get_schedule(schedule_name)
         self.total_steps = total_steps
         self.peak_lr = peak_lr
         self.schedule_name = schedule_name
+        self.stable_frac = stable_frac
 
     def pre_step(self, batch):
         step = self.trainer.global_step
-        lr = self.schedule_fn(step, self.total_steps, self.peak_lr)
+        if self.schedule_name == "cosine":
+            lr = self.schedule_fn(step, self.total_steps, self.peak_lr)
+        else:
+            lr = self.schedule_fn(step, self.total_steps, self.peak_lr,
+                                  stable_frac=self.stable_frac)
         for param_group in self.trainer.train_module.optim.param_groups:
             param_group["lr"] = lr
 
@@ -378,6 +384,8 @@ def parse_args():
     parser.add_argument("--checkpoint-interval", type=int, default=200,
                         help="Steps between checkpoints (dense for thermo tracking)")
     parser.add_argument("--wandb-project", type=str, default="thermo-pretraining")
+    parser.add_argument("--stable-frac", type=float, default=0.58,
+                        help="Fraction of training in stable LR phase (default 0.58 = 40%% decay)")
     return parser.parse_args()
 
 
@@ -422,9 +430,10 @@ def build_data_loader(model_size: str, train_module):
     work_dir = Path(f"/fsx/dev/jiaqi/thermo_experiments/_data_cache/{model_size}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load .npy shards into memory — cap based on model size
-    # 190M: 500M tokens (~2GB RAM), 1B/3B: 2B tokens (~8GB RAM)
-    max_tokens = 2_000_000_000 if model_size in ("1B", "3B") else 500_000_000
+    # Load .npy shards into memory
+    # 190M: 25B tokens (~100GB RAM), 1B/3B: 25B tokens (~100GB RAM)
+    # H200 nodes have 512GB CPU RAM, so 100GB is fine
+    max_tokens = 25_000_000_000
     all_tokens = []
     for data_dir in existing_paths:
         npy_files = sorted(Path(data_dir).glob("*.npy"))
@@ -503,6 +512,7 @@ def build_trainer(
                 schedule_name=args.schedule,
                 total_steps=max_steps,
                 peak_lr=config["peak_lr"],
+                stable_frac=args.stable_frac,
             ),
         )
 
