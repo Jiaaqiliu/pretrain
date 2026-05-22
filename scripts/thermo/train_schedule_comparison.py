@@ -161,21 +161,18 @@ class ThermoMeasurementCallback(Callback):
         self.batch_size = batch_size
         self._file = None
 
-    def post_step(self):
+    @torch._dynamo.disable()
+    def pre_optim_step(self):
         step = self.trainer.global_step
         if step % self.measure_interval != 0:
             return
 
         # Only measure on rank 0
-        rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", 0)))
-        if rank != 0:
+        from olmo_core.distributed.utils import get_rank
+        if get_rank() != 0:
             return
 
-        from experiments.thermodynamics.measures import (
-            global_spectral_entropy,
-            weight_volume,
-            order_parameter_layer,
-        )
+        from olmo_core.distributed.utils import get_full_tensor
 
         t0 = time.time()
 
@@ -187,23 +184,13 @@ class ThermoMeasurementCallback(Callback):
 
         # Get loss from trainer metrics
         loss = 0.0
-        if hasattr(self.trainer, "metrics") and "train/loss" in self.trainer.metrics:
-            loss = float(self.trainer.metrics["train/loss"])
+        if hasattr(self.trainer, "_metrics") and "train/CE loss" in self.trainer._metrics:
+            loss = float(self.trainer._metrics["train/CE loss"].compute())
 
-        # FSDP: must summon full params for correct measurements
+        # Compute state variables from model parameters
+        # At pre_optim_step, FSDP params are unsharded after backward pass
         model = self.trainer.train_module.model
-        try:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-            ctx = FSDP.summon_full_params(model, writeback=False, recurse=True)
-        except (ImportError, TypeError, AttributeError):
-            from contextlib import nullcontext
-            ctx = nullcontext()
-
-        with ctx:
-            vol = weight_volume(model)
-            s_global, layer_info = global_spectral_entropy(model, k=self.svd_k)
-            psi = sum(lm.order_parameter for lm in layer_info) / max(len(layer_info), 1)
-            n_params = sum(p.numel() for p in model.parameters())
+        vol, s_global, psi, n_params = self._compute_thermo_vars(model)
 
         # Gradient variance estimate (from optimizer state if available)
         grad_var = self._estimate_grad_variance_from_optimizer(self.trainer.train_module.optim)
@@ -243,6 +230,54 @@ class ThermoMeasurementCallback(Callback):
 
         print(f"[Thermo] step={step} S={s_global:.4f} ψ={psi:.4f} "
               f"F={free_e:.4f} PV/NT={pv_over_nt:.4f} ({elapsed:.1f}s)")
+
+    @torch._dynamo.disable()
+    @torch.no_grad()
+    def _compute_thermo_vars(self, model) -> tuple:
+        """Compute thermodynamic state variables from model parameters.
+
+        Works with FSDP by getting local tensor and computing local stats.
+        """
+        from olmo_core.distributed.utils import get_local_tensor
+
+        total_params = 0
+        weighted_entropy = 0.0
+        psi_values = []
+        vol = 0.0
+
+        for name, param in model.named_parameters():
+            if param.ndim != 2:
+                local_p = get_local_tensor(param.data).float()
+                vol += local_p.pow(2).sum().item()
+                total_params += param.numel()
+                continue
+
+            local_p = get_local_tensor(param.data).float()
+            m, n = local_p.shape
+            n_elem = param.numel()
+            total_params += n_elem
+            vol += local_p.pow(2).sum().item()
+
+            # Spectral entropy (only on local shard)
+            if min(m, n) > 1:
+                sv = torch.linalg.svdvals(local_p)
+                sv_pos = sv[sv > 0]
+                if len(sv_pos) > 0:
+                    p_dist = sv_pos / sv_pos.sum()
+                    entropy = -(p_dist * torch.log(p_dist)).sum().item()
+                    weighted_entropy += n_elem * entropy
+
+                    # Order parameter from top-2 SVs
+                    if len(sv_pos) >= 2:
+                        s1, s2 = sv_pos[0].item(), sv_pos[1].item()
+                        denom = s1 + s2
+                        if denom > 1e-10:
+                            psi_values.append((s1 - s2) / denom)
+
+        s_global = weighted_entropy / max(total_params, 1)
+        psi = sum(psi_values) / max(len(psi_values), 1) if psi_values else 0.0
+
+        return vol, s_global, psi, total_params
 
     def _estimate_grad_variance_from_optimizer(self, optimizer) -> float:
         """Estimate gradient variance from AdamW's second moment estimates."""
