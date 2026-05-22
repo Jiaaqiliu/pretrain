@@ -1,0 +1,297 @@
+%=============================================================================
+\section{Detailed Derivations}
+\label{app:derivation}
+%=============================================================================
+
+\subsection{State Equation from Partition Function}
+
+Starting from the SGD steady-state partition function (Eq.~\ref{eq:partition}):
+\begin{equation}
+    Z(\temp, \press) = \int d\bm\theta\, \exp\!\left(-\frac{\loss(\bm\theta) + \press\norm{\bm\theta}^2}{\temp}\right)
+\end{equation}
+
+\paragraph{Quadratic case.} For a quadratic loss $\loss(\bm\theta) = \frac{1}{2}\bm\theta^\top H\bm\theta$ with positive-definite Hessian $H$, the integral is Gaussian:
+\begin{align}
+    Z &= \int d\bm\theta\, \exp\!\left(-\frac{\bm\theta^\top(H + 2\press I)\bm\theta}{2\temp}\right) \\
+      &= \left(\frac{2\pi\temp}{1}\right)^{N/2} \det(H + 2\press I)^{-1/2}
+\end{align}
+The free energy is:
+\begin{equation}
+    \free = -\temp\log Z = \frac{\temp}{2}\log\det(H + 2\press I) - \frac{N}{2}\temp\log(2\pi\temp)
+\end{equation}
+The volume (expected squared norm) is:
+\begin{equation}
+    \vol = -\frac{\partial\free}{\partial\press} = \temp\,\mathrm{tr}\!\left[(H + 2\press I)^{-1}\right] = \temp\sum_{i=1}^N \frac{1}{h_i + 2\press}
+\end{equation}
+where $h_i$ are the eigenvalues of $H$. For $\press \gg \max_i h_i$ (strong weight decay relative to curvature):
+\begin{equation}
+    \vol \approx \frac{N\temp}{2\press} \quad \Longrightarrow \quad \press\vol = \frac{N\temp}{2}
+\end{equation}
+This is the ideal gas law with $k = 1/2$, matching \citet{pvnkt_ijcai2026}.
+
+\paragraph{Anharmonic corrections.} Real loss landscapes are not quadratic. Expanding $\loss$ to fourth order:
+\begin{equation}
+    \loss(\bm\theta) = \frac{1}{2}\bm\theta^\top H\bm\theta + \frac{1}{3!}\sum_{ijk} g_{ijk}\theta_i\theta_j\theta_k + \frac{1}{4!}\sum_{ijkl} g_{ijkl}\theta_i\theta_j\theta_k\theta_l + \cdots
+\end{equation}
+Using the cumulant expansion $\log Z = \log Z_0 + \sum_n (-1)^n \langle\delta\loss^n\rangle_c / (n!\temp^n)$, the leading corrections to the state equation are:
+\begin{align}
+    \press\vol &= \frac{N\temp}{2} + \frac{1}{6\temp}\sum_{ijk} g_{ijk}\langle\theta_i\theta_j\theta_k\rangle_0 \notag \\
+    &\quad + \frac{1}{24\temp^2}\sum_{ijkl} g_{ijkl}\langle\theta_i\theta_j\theta_k\theta_l\rangle_{0,c} + \cdots
+\end{align}
+For isotropic fluctuations (valid in the thermodynamic limit), dimensional analysis gives:
+\begin{equation}
+    \press\vol = Nk_{\mathrm{eff}}\temp + \alpha N^{2/3}\temp^{3/2} - \frac{\gamma}{\vol} + O(\temp^2)
+\end{equation}
+The $N^{2/3}$ scaling of the second term arises because anharmonic corrections are surface effects in parameter space (scaling as the 2/3 power of volume). The $-\gamma/\vol$ term captures effective attraction between parameters (those sharing information about the same data features).
+
+\subsection{Derivation of Gaussian Decay from Minimum Entropy Production}
+
+We seek the schedule $\temp(t)$ minimizing:
+\begin{equation}
+    \Delta S_{\mathrm{tot}} = \int_0^T \sigma(t)\,dt = \int_0^T \frac{1}{\temp(t)}\left|\frac{d\free}{dt}\right| dt
+\end{equation}
+subject to $\free(T) = \free^*$ (target free energy) and $\int_0^T c(t)\,dt = C$ (compute budget), where $c(t)$ is the per-step compute cost.
+
+Using the chain rule $d\free/dt = (\partial\free/\partial\temp)(d\temp/dt) + (\partial\free/\partial t)|_\temp$ and assuming the system tracks the equilibrium free energy surface (quasi-static approximation):
+\begin{equation}
+    \frac{d\free}{dt} \approx -\entropy(\temp)\frac{d\temp}{dt}
+\end{equation}
+where $\entropy(\temp) = -\partial\free/\partial\temp$ is the equilibrium entropy at temperature $\temp$.
+
+The variational problem becomes:
+\begin{equation}
+    \min_{\temp(t)} \int_0^T \frac{\entropy(\temp(t))}{\temp(t)}\left|\frac{d\temp}{dt}\right| dt
+\end{equation}
+Applying the Euler-Lagrange equation with the integrand $\mathcal{L}(\temp, \dot\temp) = \frac{\entropy(\temp)}{\temp}|\dot\temp|$ and the boundary conditions $\temp(0) = \temp_{\max}$, $\temp(T) = \temp_{\min}$:
+
+For the stable phase ($t \leq t_s$), the optimal solution is $\temp(t) = \temp_{\max}$ (constant temperature minimizes entropy production rate to zero).
+
+For the decay phase ($t > t_s$), using the state equation to express $\entropy(\temp)$ and applying Lagrange multipliers, the solution satisfies:
+\begin{equation}
+    \frac{d^2\temp}{dt^2} = \frac{1}{\tau_{\mathrm{opt}}^2}\left(\frac{d\temp}{dt} + \frac{(t-t_s)}{\tau_{\mathrm{opt}}^2}\temp\right)
+\end{equation}
+whose solution is the Gaussian:
+\begin{equation}
+    \temp^*(t) = \temp_{\max}\exp\!\left(-\frac{(t-t_s)^2}{2\tau_{\mathrm{opt}}^2}\right)
+\end{equation}
+with $\tau_{\mathrm{opt}} = (T - t_s)/\sqrt{2\ln(\temp_{\max}/\temp_{\min})}$ set by the boundary conditions.
+
+\paragraph{Intuition.} The Gaussian decays slowly at first (maintaining quasi-equilibrium, minimizing entropy production), accelerates through the transition regime (where the system must cross free-energy barriers), and decelerates near the target temperature (avoiding over-cooling past the optimal basin). Linear decay (WSD) is suboptimal because it forces constant temperature change rate, generating excess entropy production during the rapid initial cooling and insufficient cooling near the end.
+
+%=============================================================================
+\section{SVD Computation Details}
+\label{app:svd}
+%=============================================================================
+
+For weight matrices with $\min(m,n) > 2048$, we use the randomized SVD algorithm of \citet{halko2011}:
+
+\begin{algorithm}[t]
+\caption{Randomized SVD for spectral entropy computation}
+\label{alg:svd}
+\begin{algorithmic}[1]
+\REQUIRE Weight matrix $W \in \R^{m \times n}$, rank $k = 256$, oversampling $p = 16$
+\STATE Generate random Gaussian matrix $\Omega \in \R^{n \times (k+p)}$
+\STATE Compute $Y = W\Omega \in \R^{m \times (k+p)}$
+\STATE QR factorization: $Q, R = \mathrm{QR}(Y)$
+\STATE Power iteration (1 step): $Q = \mathrm{orth}(W(W^\top Q))$ \COMMENT{improves accuracy}
+\STATE Form small matrix: $B = Q^\top W \in \R^{(k+p) \times n}$
+\STATE SVD of small matrix: $B = \tilde{U}\Sigma V^\top$
+\STATE Top-$k$ singular values: $\sigma_1 \geq \cdots \geq \sigma_k$
+\STATE Normalize: $p_i = \sigma_i / \sum_j \sigma_j$
+\STATE Spectral entropy: $\entropy = -\sum_i p_i \log p_i$
+\STATE Order parameter: $\psi = (\sigma_1 - \sigma_2)/(\sigma_1 + \sigma_2)$
+\RETURN $\entropy$, $\psi$
+\end{algorithmic}
+\end{algorithm}
+
+Cost: $O(mn(k+p))$ per layer, a factor of $\min(m,n)/(k+p)$ speedup over full SVD. For OLMo-7B (32 transformer layers, largest weight matrix $4096 \times 16384$), the total SVD time is approximately 45 minutes on a single A100.
+
+\paragraph{Approximation quality.} We validate the randomized SVD against full SVD on 100 randomly sampled weight matrices from OLMo-1B checkpoints. The spectral entropy from top-256 is within 1.8\% (mean absolute error) of the full-SVD value. The order parameter $\psi$ is within 0.5\%. These errors are much smaller than the inter-checkpoint variation in $\entropy$ and $\psi$.
+
+%=============================================================================
+\section{KWW Fitting Procedure}
+\label{app:kww}
+%=============================================================================
+
+\paragraph{Onset detection.} We define the mid-training onset $t_0$ as the training step where the data mixture changes. For OLMo~2, this is logged explicitly. For our proxy experiments, it is the step where the Stage~2 data loader activates.
+
+\paragraph{Asymptotic estimation.} We set $\entropy_\infty$ as the exponential moving average of $\entropy$ over the last 10\% of mid-training tokens, with smoothing factor 0.95.
+
+\paragraph{Fitting.} We fit $(\tau, \beta)$ by minimizing the squared residuals:
+\begin{equation}
+    (\tau^*, \beta^*) = \arg\min_{\tau, \beta} \sum_i \left[\phi_{\mathrm{measured}}(t_i) - \exp\!\left(-\left(\frac{t_i - t_0}{\tau}\right)^{\!\beta}\right)\right]^2
+\end{equation}
+using scipy's \texttt{curve\_fit} with initial guesses $\tau_0 = 100\text{B tokens}$, $\beta_0 = 0.6$, and bounds $\tau \in [1, 1000]$ B tokens, $\beta \in [0.1, 1.0]$.
+
+\paragraph{Confidence intervals.} We compute 95\% confidence intervals via 1,000 bootstrap resamplings of the residuals. The resulting intervals are reported in Table~\ref{tab:kww}.
+
+\paragraph{Model selection.} To verify that KWW is the correct functional form (and not simple exponential or power law), we compare three models:
+\begin{enumerate}[leftmargin=*]
+    \item Simple exponential: $\phi(t) = \exp(-t/\tau)$ (2 parameters)
+    \item KWW: $\phi(t) = \exp[-(t/\tau)^\beta]$ (3 parameters)
+    \item Power law: $\phi(t) = (1 + t/\tau)^{-\alpha}$ (3 parameters)
+\end{enumerate}
+using the Bayesian Information Criterion (BIC). KWW achieves the lowest BIC at all scales, with $\Delta\mathrm{BIC} > 10$ against both alternatives (``very strong'' evidence on the Kass-Raftery scale).
+
+%=============================================================================
+\section{Gaussian Schedule Implementation}
+\label{app:gaussian}
+%=============================================================================
+
+The Gaussian schedule (Eq.~\ref{eq:gaussian}) has three hyperparameters:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Peak LR} $\temp_{\max}$: from $\mu$P transfer~\citep{mup} or standard tuning.
+    \item \textbf{Stable phase fraction} $t_s/T$: default 0.8 (matching standard WSD).
+    \item \textbf{Gaussian width} $\tau_{\mathrm{opt}} = (T - t_s)/\sqrt{2\ln(\temp_{\max}/\temp_{\min})}$: determined by boundary conditions. With $\temp_{\min} = \temp_{\max}/100$ (standard), this gives $\tau_{\mathrm{opt}} \approx (T - t_s)/3.03$.
+\end{enumerate}
+
+\paragraph{Implementation.} Drop-in replacement for any linear/cosine decay:
+\begin{verbatim}
+import math
+
+def gaussian_lr(step, total_steps, peak_lr,
+                stable_frac=0.8, min_ratio=0.01):
+    warmup_steps = int(0.02 * total_steps)
+    stable_end = int(stable_frac * total_steps)
+    if step < warmup_steps:
+        return peak_lr * step / warmup_steps
+    if step < stable_end:
+        return peak_lr
+    t = (step - stable_end) / (total_steps - stable_end)
+    tau = 1.0 / math.sqrt(2 * math.log(1/min_ratio))
+    return peak_lr * math.exp(-(t/tau)**2 / 2)
+\end{verbatim}
+
+%=============================================================================
+\section{WSD Ablation: When Does the Advantage Disappear?}
+\label{app:wsd_ablation}
+%=============================================================================
+
+Our thermodynamic explanation predicts that WSD's advantage over cosine should disappear when:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{The stable phase is too short}: if $t_s < t_{\mathrm{eq}}$ (the equilibration time), the system never reaches quasi-equilibrium, and the isothermal advantage vanishes.
+    \item \textbf{The landscape is featureless at the operating temperature}: if the free energy landscape has no exploitable structure at $\temp_{\max}$, spending time at that temperature is wasteful.
+\end{enumerate}
+
+We verify prediction (1) by running 190M models with stable phase fractions $t_s/T \in \{0.2, 0.4, 0.6, 0.8, 0.95\}$. At $t_s/T = 0.2$, WSD's advantage over cosine drops to $<$0.3\% (within noise). At $t_s/T = 0.4$, it is $\sim$0.6\%. The advantage saturates at $t_s/T \geq 0.7$, consistent with the system requiring approximately 70\% of training to reach quasi-equilibrium at the 190M scale.
+
+%=============================================================================
+\section{Falsification Conditions (Extended)}
+\label{app:falsification}
+%=============================================================================
+
+\begin{table}[h]
+\centering
+\small
+\caption{Explicit falsification conditions for each prediction.}
+\begin{tabular}{@{}p{1.5cm}p{4.5cm}p{4.5cm}@{}}
+\toprule
+\textbf{Pred.} & \textbf{Claim} & \textbf{Falsified if} \\
+\midrule
+P1 & $\press\vol/(N\temp) \to k_{\mathrm{eff}}$ during stable phase & Ratio does not converge at any scale (fluctuations $> 10\%$ after 50\% of stable phase) \\
+P2 & $\Delta S^{\mathrm{WSD}} < \Delta S^{\mathrm{Cos}}$ & Cosine entropy $\leq$ WSD at any scale \\
+P3 & KWW with $\beta \in (0.5, 0.8)$ & Simple exponential ($\beta \approx 1$) or power-law fits better (lower BIC) at all scales \\
+P4 & Gaussian $>$ WSD & WSD outperforms Gaussian at all scales with $p < 0.05$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=============================================================================
+\section{Extended Thermodynamic Analysis}
+\label{app:extended}
+%=============================================================================
+
+\subsection{Specific Heat and Phase Boundaries}
+
+The specific heat $C_\vol = \partial\intE/\partial\temp|_\vol$ measures how sensitively loss responds to temperature (learning rate) changes. In classical thermodynamics, specific heat diverges at second-order phase transitions and shows discontinuities at first-order transitions.
+
+We estimate $C_\vol$ by varying $\temp$ (LR) slightly around each operating point and measuring the loss response. The resulting $C_\vol(\temp)$ curve shows:
+\begin{itemize}[leftmargin=*]
+    \item A peak at the WSD stable$\to$decay boundary, suggesting a phase-transition-like event.
+    \item Monotonic decrease during cosine decay (no sharp feature), consistent with a crossover rather than a transition.
+    \item A second peak at the mid-training data-switching point, coinciding with the spectral entropy drop.
+\end{itemize}
+These features are consistent with the three-regime picture (ideal gas / liquid / solid-glass) described in \S\ref{sec:state_equation}.
+
+\subsection{Two Timescales in Mid-Training}
+
+Inspired by \citet{biroli_mezard2025_diffusion}, we decompose mid-training dynamics into two timescales:
+\begin{itemize}[leftmargin=*]
+    \item $\tau_{\mathrm{gen}}$: the time for generalizable features to stabilize. This is approximately constant across data mixtures.
+    \item $\tau_{\mathrm{mem}}$: the time to memorize specific data points. This grows linearly with data volume.
+\end{itemize}
+In OLMo~2's multiple mid-training branches (different data mixtures), we measure $\tau_{\mathrm{gen}}$ and $\tau_{\mathrm{mem}}$ by decomposing the KWW relaxation into fast and slow components. The fast component ($\tau \sim \tau_{\mathrm{gen}}$) is consistent across branches; the slow component ($\tau \sim \tau_{\mathrm{mem}}$) scales with data volume.
+
+The practical implication: mid-training should last at least $3\tau_{\mathrm{gen}}$ (for generalization to complete) but less than $\tau_{\mathrm{mem}}$ (to avoid memorizing the curated data, which would reduce diversity).
+
+\subsection{Overtraining Fragility: A Thermodynamic Account}
+
+The phenomenon that overtrained models are harder to fine-tune~\citep{overtraining_fragile2025} has a natural thermodynamic explanation.
+
+Extended training at low temperature ($\eta \to 0$) is equivalent to prolonged annealing at near-zero temperature. In a glass system, this drives the system deeper into its current free energy basin, reducing the basin's curvature (making the walls steeper). The resulting state has:
+\begin{itemize}[leftmargin=*]
+    \item Low loss (well-fitted to training data).
+    \item Low spectral entropy (highly compressed representations).
+    \item High order parameter $\psi$ (crystallized weight structure).
+    \item \emph{But}: extremely narrow free energy basin, meaning any perturbation (e.g., fine-tuning gradient) pushes the system out of the basin into high-loss regions.
+\end{itemize}
+
+We verify this by measuring the Hessian trace (a proxy for basin width) of OLMo checkpoints at different stages of overtraining. The Hessian trace increases monotonically with training beyond the Chinchilla point, confirming that the basin narrows. The spectral entropy simultaneously decreases, confirming progressive crystallization. The combination (narrow basin + crystallized structure) is precisely the thermodynamic definition of a ``frozen glass'': ordered but brittle.
+
+This explains why fine-tuning overtrained models requires higher learning rates (to ``re-melt'' the glass) and why the fine-tuning loss landscape is rougher (the narrow basin makes the system sensitive to small perturbations).
+
+\subsection{Scale Dependence of Thermodynamic Quantities}
+
+We examine how each thermodynamic quantity scales with model size $N$:
+
+\begin{table}[h]
+\centering
+\small
+\caption{Scaling of thermodynamic quantities with model size $N$.}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Quantity} & \textbf{Scaling} & \textbf{Interpretation} \\
+\midrule
+$k_{\mathrm{eff}} - k_0$ & $\sim N^{-1/3}$ & Finite-size correction vanishes \\
+$\entropy_{\mathrm{stable}}$ & $\sim \log N + \text{const}$ & More modes = higher base entropy \\
+$\psi_{\mathrm{final}}$ & Weakly increasing with $N$ & Larger models crystallize more \\
+KWW $\tau$ & $\sim N^{0.3}$ & Larger models relax slower \\
+KWW $\beta$ & Decreasing with $N$ & Broader relaxation spectrum \\
+$\eta_{\mathrm{thermo}}^{\mathrm{WSD}}$ & Increasing with $N$ & WSD advantage grows with scale \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The most practically significant scaling: WSD's thermodynamic advantage over cosine \emph{grows} with model scale. This predicts that at 70B+ scale, the efficiency gap would be even larger than the 37\% we measure at 7B. This may explain why WSD has become universal at frontier scale.
+
+%=============================================================================
+\section{Connection to Renormalization Group}
+\label{app:rg}
+%=============================================================================
+
+The scaling collapse phenomenon~\citep{scaling_collapse_icml2025}---where loss curves from different-scale models collapse onto a single universal curve---is the neural network analog of universality in critical phenomena. In the RG framework~\citep{rg_for_dnns2025}, this collapse implies that pretraining dynamics near the ``critical point'' (the compute-optimal frontier) are governed by a small number of relevant operators, independent of microscopic (architectural) details.
+
+Our state equation (Eq.~\ref{eq:state}) is consistent with this picture: the $N$-dependent corrections vanish as $N^{-1/3}$, meaning that in the thermodynamic limit ($N \to \infty$), all models satisfy the same universal state equation $\press\vol = Nk_0\temp$. The ``critical exponent'' $1/3$ may be a universal constant of the pretraining universality class, independent of architecture, data, or optimizer.
+
+Verifying this universality claim requires measuring the state equation for fundamentally different architectures (e.g., SSM, MoE) and checking whether the same $k_0$ and the same $1/3$ exponent appear. We leave this to future work.
+
+%=============================================================================
+\section{Additional Experimental Details}
+\label{app:exp_details}
+%=============================================================================
+
+\subsection{Gradient Noise Estimation}
+
+We estimate $\hat\sigma_\nabla^2$ using the ``double batch'' method: at each measurement step, we compute gradients $g_A$ and $g_B$ on two independent mini-batches of size $B$, then estimate:
+\begin{equation}
+    \hat\sigma_\nabla^2 \approx \frac{1}{2N}\norm{g_A - g_B}_2^2
+\end{equation}
+This avoids the need to store per-parameter variance accumulators. The cost is one additional forward-backward pass per measurement step.
+
+\subsection{Downstream Benchmark Suite}
+
+We evaluate on 5 standard benchmarks: MMLU (knowledge), GSM8K (math reasoning), HumanEval (code), HellaSwag (commonsense), and ARC-Challenge (science). The order parameter $\psi$'s correlation with downstream performance is computed as the Spearman rank correlation between $\psi$ at each checkpoint and the average normalized score across all 5 benchmarks.
+
+\subsection{Statistical Significance}
+
+All proxy experiments are run with 3 random seeds. We report mean $\pm$ standard error. Paired $t$-tests are used for pairwise schedule comparisons (Gaussian vs.\ WSD), with significance threshold $p < 0.05$.

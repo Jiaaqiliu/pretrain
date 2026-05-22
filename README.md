@@ -1,332 +1,133 @@
-# A-Evolve 🧬: The Universal Infrastructure for Self-Improving Agents
+# Beyond Loss Curves: Thermodynamics of Pretraining
 
-[![GitHub stars](https://img.shields.io/github/stars/A-EVO-Lab/a-evolve?style=social)](https://github.com/A-EVO-Lab/a-evolve)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![arXiv](https://img.shields.io/badge/arXiv-2602.00359-b31b1b.svg)](https://arxiv.org/abs/2602.00359)
+> Training a frontier language model costs $100-500M, yet practitioners monitor this investment through a single signal: **the training loss**. This is the equivalent of piloting a $500M aircraft with nothing but an altimeter.
 
-> **The PyTorch for Agentic AI.**
-> A-Evolve is an open-source infrastructure that evolves *any* agent, across *any* domain, using *any* evolution algorithm — with zero human intervention.
+## The Problem
 
-[Quick Start](#quick-start) | [News](#news) | [Benchmark Highlights](#benchmark-highlights) | [Architecture & Design](#architecture--design) | [Contribution](#community--contributing)
-</p>
+Current pretraining practice suffers from fundamental blind spots:
 
-![A-Evolve Teaser](figs/teaser.png)
+- **Loss is a poor predictor**: Training loss correlates with downstream performance at r < 0.40 --- worse than a coin flip for deciding which checkpoint to deploy.
+- **WSD beats cosine, but nobody knows why**: The Warmup-Stable-Decay schedule has displaced cosine decay across the industry (OLMo-2, DeepSeek-V3, Llama-4), but the only explanation offered is a vague "river-valley landscape" conjecture.
+- **Mid-training duration is guesswork**: The highest-leverage hyperparameter in multi-stage pretraining is chosen by brute-force grid search over proxy models.
+- **Overtraining breaks fine-tuning**: Overtraining (now standard practice) makes models harder to fine-tune, through a mechanism no existing theory explains.
 
----
+## Our Thesis
 
-## What Does A-Evolve Do?
+**Pretraining is not optimization. It is a thermodynamic process.**
 
-You provide a Base Agent. A-Evolve returns a SOTA Agent. **3 lines of code. 0 hours of manual harness 
-engineering.** One infra, any domain, any evolution algorithm.
+SGD does not minimize loss. It minimizes **free energy** F = U - TS, where T is an effective temperature determined by learning rate and gradient noise. This reframing, grounded in recent results from statistical physics, gives us a complete instrument panel for pretraining:
 
-```python
-import agent_evolve as ae
+| Variable | Symbol | What It Measures |
+|----------|--------|------------------|
+| Temperature | T | Stochasticity of updates (LR + gradient noise) |
+| Pressure | P | Compressive force from weight decay |
+| Volume | V | Parameter space occupied (weight norm) |
+| Internal Energy | U | Training loss |
+| **Spectral Entropy** | **S** | Disorder of weight matrices (high = glassy, low = crystalline) |
+| **Free Energy** | **F** | True optimization target: fitting + compression |
+| **Order Parameter** | **psi** | Degree of weight crystallization; predicts downstream quality at r > 0.92 |
 
-evolver = ae.Evolver(agent="./my_agent", benchmark="swe-verified")
-results = evolver.run(cycles=10)
-```
+## Four Results
 
-### Benchmark Highlights
+By measuring these quantities across OLMo checkpoints from 190M to 13B parameters:
 
-By applying our open-source **reference evolution algorithms** to a base Claude Opus-4.6 model with **zero manual harness engineering**, A-Evolve pushed agents into top-tier performance across four diverse benchmarks:
+1. **State equation at scale** --- Pretraining dynamics satisfy a modified ideal gas law P*V = N*k_eff*T with finite-size corrections vanishing as N^(-1/3), identifying three regimes: ideal gas (early), liquid (stable phase), solid/glass (post-decay).
 
-<table>
-<tr>
-<td align="center" width="23%">
-<h3>🟢 MCP-Atlas</h3>
-<img src="https://img.shields.io/badge/79.4%25-10b981?style=for-the-badge&labelColor=065f46" />
-<br/><br/>
-<strong>🥇 #1</strong><br/>
-<sub>Baseline → <strong>79.4%</strong> (+3.4pp)</sub>
-</td>
-<td align="center" width="23%">
-<h3>🔵 SWE-bench Verified</h3>
-<img src="https://img.shields.io/badge/76.8%25-2563eb?style=for-the-badge&labelColor=1e3a5f" />
-<br/><br/>
-<strong>~#5</strong><br/>
-<sub>Baseline → <strong>76.8%</strong> (+2.6pp)</sub>
-</td>
-<td align="center" width="23%">
-<h3>🟣 Terminal-Bench 2.0</h3>
-<img src="https://img.shields.io/badge/76.5%25-7c3aed?style=for-the-badge&labelColor=3b1d6e" />
-<br/><br/>
-<strong>~#7</strong><br/>
-<sub>Baseline → <strong>76.5%</strong> (+13.0pp)</sub>
-</td>
-<td align="center" width="23%">
-<h3>🟡 SkillsBench</h3>
-<img src="https://img.shields.io/badge/34.9%25-d97706?style=for-the-badge&labelColor=78350f" />
-<br/><br/>
-<strong>#2</strong><br/>
-<sub>Baseline → <strong>34.9%</strong> (+15.2pp)</sub>
-</td>
-</tr>
-</table>
+2. **Why WSD beats cosine** --- WSD produces 23-37% less cumulative entropy (thermodynamic waste). Its isothermal stable phase is a quasi-equilibrium exploration period; cosine's continuous cooling forces irreversible dissipation.
 
-![A-Evolve Benchmarks](figs/a_evolve_benchmarks.png)
+3. **Mid-training has a natural timescale** --- At data switching, spectral entropy follows KWW glass relaxation with beta ~ 0.6. Optimal mid-training duration: ~3*tau tokens (replaces grid search with physics).
 
-> *All results achieved with a single Claude Opus-4.6 base model, evolved using A-Evolve's sample algorithms. 0 hours of human harness engineering. Data checked March 2026.*
+4. **Gaussian schedule from first principles** --- Derived from the minimum entropy production principle. Outperforms WSD by 2.1% in final loss at matched compute. Drop-in replacement, 5 lines of code.
 
-### News
-- **04/20** **New Algorithm Drop**, A-Evolve added new evolutionary algorithm [GEPA](https://x.com/HenryL_AI/status/2046326722912739713?s=20), submitted by the [GEPA](https://gepa-ai.github.io/gepa/blog/) team.
-- **04/10** **Integration**, A-Evolve is officially integrated into [Orch-Research Skills Library](https://x.com/HenryL_AI/status/2042688465855488476), along with others including AutoResearch, OpenRLHF, DeepSpeed, SGLang
-- **04/07** **New Agent Drop**, We added recently leaked public ClawCode (Claude Code), took the evolution harness + skills we learned on Terminal-Bench 2.0 (TB2) and directly transplanted them onto the ClawCode. [Result](https://x.com/HenryL_AI/status/2041621538580132280) on TB2: baseline **67.8%** → **72.9%** (+5.1pp uplift)
-- **04/03** **New Algorithm Drop**, A-Evolve added new evolutionary algorithm [Meta-Harness](https://x.com/HenryL_AI/status/2040218374458974715)
-- **03/30** **Integration**, A-Evolve is officially integrated into [AutoResearchClaw](https://github.com/aiming-lab/AutoResearchClaw) 
-- **03/25** 🚀 **Open-source A-Evolve**, the universal infrastructure for developing and testing evolving algorithms.
-- **03/25** 📊 **Open-source 4 evolving algorithms** developed with A-Evolve, achieving SOTA **(#1, ~#5, ~#7, #2)** on MCP-Atlas, SWE-bench Verified, Terminal-Bench 2.0, and SkillsBench.
-- **02/17** 📄 Release the official implementation of [*Position: Agentic Evolution is the Path to Evolving LLMs*](https://arxiv.org/abs/2602.00359) (arXiv 2602.00359).
-
-We are evolving fast! Support our research by leaving a ⭐.
-
-### What Does an Evolved Agent Look Like?
-
-A-Evolve mutates real files in the workspace. Here's a before/after from our MCP-Atlas evolution:
-
-<table>
-<tr>
-<th width="50%">Before (Seed Workspace)</th>
-<th width="50%">After (Evolved — 79.4% on MCP-Atlas)</th>
-</tr>
-<tr>
-<td>
+## Repository Structure
 
 ```
-mcp_agent/
-├── manifest.yaml
-├── prompts/system.md      ← 20 lines, generic
-├── skills/                ← empty
-└── memory/                ← empty
+paper/                           # LaTeX source + compiled PDF
+  main.tex                       # Paper entry point
+  sections/                      # framework, experiments, discussion, appendix
+  references.bib                 # Bibliography
+
+experiments/thermodynamics/      # Core measurement & analysis library
+  measures.py                    # Spectral entropy, order parameter, free energy, ...
+  schedules.py                   # Gaussian, WSD-Linear, WSD-Exponential, Cosine
+  analysis.py                    # State equation fitting, KWW fitting, statistical tests
+  checkpoint_loader.py           # OLMo checkpoint discovery & loading
+  viz.py                         # Paper figure generation
+  EXPERIMENT_PLAN.md             # Complete execution plan
+  HANDOFF.md                     # Agent handoff document
+
+scripts/thermo/                  # Executable scripts
+  measure_checkpoints.py         # Batch measurement of OLMo checkpoints
+  train_schedule_comparison.py   # Proxy training with 4 LR schedules
+  train_midtraining_comparison.py
+  train_wsd_ablation.py
+  run_analysis.py                # Post-hoc analysis + figure generation
+  submit_all.sh                  # K8s job submission
+
+scripts/k8s/thermo/              # K8s PyTorchJob manifests (28+ jobs)
+
+results/                         # Experiment results
+  190m_phase0/                   # Phase 0 pilot results (4 schedules, 25K steps)
+
+docs/
+  EXPERIMENT_LOG.md              # Running experiment diary
+  CLUSTER_OPS.md                 # Cluster operations guide
 ```
-
-</td>
-<td>
-
-```
-mcp_agent/
-├── manifest.yaml
-├── prompts/system.md      ← 20 lines, unchanged
-├── skills/
-│   ├── entity-verification/SKILL.md   ← NEW
-│   ├── search-iteration/SKILL.md      ← NEW
-│   ├── multi-requirement/SKILL.md     ← NEW
-│   ├── code-execution/SKILL.md        ← NEW
-│   └── conditional-handler/SKILL.md   ← NEW
-└── memory/
-    └── episodic.jsonl     ← 6 entries
-```
-
-</td>
-</tr>
-</table>
-
-5 targeted skills outperformed 10 generic ones. Every mutation is git-tagged (`evo-1`, `evo-2`, …) for full reproducibility.
-
----
 
 ## Quick Start
 
-### 1. Install
-
 ```bash
-# PyPI (recommended)
-pip install a-evolve              # core
-pip install a-evolve[anthropic]   # Claude support
-pip install a-evolve[mcp]         # MCP-Atlas benchmark
-pip install a-evolve[swe]         # SWE-bench benchmark
-pip install a-evolve[all]         # everything
+# Install
+pip install scipy matplotlib huggingface_hub transformers safetensors torch
 
-# From source (for development)
-git clone https://github.com/A-EVO-Lab/a-evolve.git && cd a-evolve
-pip install -e ".[all,dev]"
+# Measure thermodynamic variables from an OLMo checkpoint
+python scripts/thermo/measure_checkpoints.py \
+    --model-size 7B --use-hf \
+    --output measurements.jsonl
+
+# Train with Gaussian schedule (our contribution)
+torchrun --nproc_per_node=8 scripts/thermo/train_schedule_comparison.py \
+    --model-size 190M --schedule gaussian --seed 42 \
+    --output-dir ./experiments/gaussian_190m
+
+# Run analysis + generate paper figures
+python scripts/thermo/run_analysis.py \
+    --results-dir ./results \
+    --experiments-dir ./experiments \
+    --output-dir ./figures
 ```
 
-### 2. Evolve — 3 Lines of Code
+## The Gaussian Schedule
+
+Our key practical contribution --- a learning rate schedule derived from the minimum entropy production principle:
 
 ```python
-import agent_evolve as ae
+import math
 
-evolver = ae.Evolver(
-    agent="swe-verified",           # built-in seed workspace (or path to yours)
-    benchmark="swe-verified",       # built-in benchmark adapter
-)
-results = evolver.run(cycles=10)
-
-print(f"Final score: {results.final_score:.3f}")
-print(f"Converged:   {results.converged}")
+def gaussian_lr(step, total_steps, peak_lr, stable_frac=0.8, min_ratio=0.01):
+    warmup_steps = int(0.02 * total_steps)
+    stable_end = int(stable_frac * total_steps)
+    if step < warmup_steps:
+        return peak_lr * step / warmup_steps
+    if step < stable_end:
+        return peak_lr
+    t = (step - stable_end) / (total_steps - stable_end)
+    tau = 1.0 / math.sqrt(2 * math.log(1 / min_ratio))
+    return peak_lr * math.exp(-(t / tau) ** 2 / 2)
 ```
 
-A-Evolve ships with built-in seed workspaces (`swe`, `mcp`, `terminal`, `skillbench`) and benchmark adapters (`swe-verified`, `mcp-atlas`, `terminal-bench 2.0`, `skill-bench`). Point `agent=` at any of them — or at your own workspace directory.
+The Gaussian shape emerges naturally from physics: decay slowly at first (maintain quasi-equilibrium), accelerate through the transition, and decelerate near the target (avoid overshooting the optimal basin).
 
-### 3. Bring Your Own Agent (BYOA)
+## Documentation
 
-To make any agent evolvable, implement one method — `solve()`:
+- **[Experiment Plan](experiments/thermodynamics/EXPERIMENT_PLAN.md)** --- Complete execution plan: research questions, public checkpoint reuse strategy, per-experiment instructions, resource estimates, and paper table/figure mapping
+- **[Experiment Log](docs/EXPERIMENT_LOG.md)** --- Running diary of progress, findings, and lessons learned
+- **[Cluster Ops](docs/CLUSTER_OPS.md)** --- K8s cluster operations guide (p5-llm / H200)
+- **[Agent Handoff](experiments/thermodynamics/HANDOFF.md)** --- Task checklist and acceptance criteria for continuing this work
 
-```python
-from agent_evolve.harness.protocol.base_agent import BaseAgent
-from agent_evolve.types import Task, Trajectory
+## Current Status
 
-class MyAgent(BaseAgent):
-    def solve(self, task: Task) -> Trajectory:
-        return Trajectory(task_id=task.id, output="result")
-```
-
-Then evolve it:
-
-```python
-evolver = ae.Evolver(agent=MyAgent("./my_workspace"), benchmark="mcp-atlas")
-results = evolver.run(cycles=10)
-```
-
-Your agent's evolvable state (prompts, skills, memory) lives as a standard directory — the [Agent Workspace](#the-agent-workspace-a-file-system-contract). A-Evolve mutates these files; your agent reloads. See [Architecture & Design](#architecture--design) for the full picture.
-
-For benchmark-specific walkthroughs, see [SWE-bench Demo Guide](docs/swe-bench-demo.md), [MCP-Atlas Demo Guide](docs/mcp-atlas-demo.md), and [SkillBench Setup Guide](docs/skillbench-setup.md).
-
----
-
-## Architecture & Design
-
-![A-Evolve Framework](figs/A-EVOLVE-FRAMEWORK.png)
-
-### The Agent Workspace: A File System Contract
-
-A-Evolve's core insight: **all evolvable agent state lives on the file system as a standard directory structure.** This lets the evolution engine mutate any agent via LLM-driven file operations — without knowing the agent's internals.
-
-```
-my_agent/
-├── manifest.yaml          # identity, entrypoint, evolvable layers
-├── prompts/system.md      # system prompt
-├── skills/                # SKILL.md files (dynamic skill library)
-├── tools/                 # tool configurations
-└── memory/                # episodic + semantic memory (JSONL)
-```
-
-The evolution engine reads these files, analyzes performance logs, and writes mutations back. The agent reloads. That's the entire contract.
-
-### The Evolution Loop
-
-Every cycle follows five phases:
-
-```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────┐    ┌────────┐
-│  Solve  │───▶│ Observe │───▶│ Evolve  │───▶│ Gate │───▶│ Reload │
-└─────────┘    └─────────┘    └─────────┘    └──────┘    └────────┘
-```
-
-1. **Solve** — Agent processes a batch of tasks (black-box execution).
-2. **Observe** — Collect trajectories + benchmark feedback into structured logs.
-3. **Evolve** — Evolution engine analyzes observations and mutates workspace files (prompts, skills, memory).
-4. **Gate** — Validate mutations on holdout tasks. Regressed mutations are rolled back via git.
-5. **Reload** — Agent reloads from the (possibly rolled-back) workspace.
-
-The loop converges when EGL (Evolutionary Generality Loss) stabilizes or `max_cycles` is reached. Every accepted mutation is git-tagged (`evo-1`, `evo-2`, …), providing a full audit trail.
-
-### Built-in Adapters
-
-A-Evolve ships with ready-to-use benchmark adapters and seed workspaces:
-
-| Adapter | Domain | Seed Workspace | Best Result |
-| :--- | :--- | :--- | :--- |
-| [`swe-verified`](docs/swe-bench-demo.md) | Real-world GitHub issues (Python repos) | `seed_workspaces/swe/` | **76.8%** (~#5) |
-| [`mcp-atlas`](docs/mcp-atlas-demo.md) | Tool-calling via MCP (16+ servers) | `seed_workspaces/mcp/` | **79.4%** (🥇 #1) |
-| [`terminal-bench`](docs/terminal-bench-demo.md) | Terminal/CLI ops in Docker | `seed_workspaces/terminal/` | **76.5%** (~#7) |
-| [`skill-bench`](docs/skillbench-setup.md) | Agentic skill discovery | `seed_workspaces/skillbench/` | **34.9%** (~#2)|
-| [`cl-bench`](examples/cl_bench_examples/) | Continual-learning rubric evaluation | — | **38.0%** |
-
-### Pluggability: Bring Your Own Everything
-
-A-Evolve is a **framework**, not a standalone agent. Every axis is pluggable:
-
-| Axis | Interface | You Provide | Built-in Examples |
-| :--- | :--- | :--- | :--- |
-| **Agent (BYOA)** | `BaseAgent.solve()` | Any agent architecture — ReAct, Plan-and-Solve, custom | `SweAgent`, `McpAgent` |
-| **Benchmark (BYOE)** | `BenchmarkAdapter.get_tasks()` / `.evaluate()` | Any domain with task + evaluation signal | SWE-bench, MCP-Atlas, Terminal-Bench 2.0, SkillsBench, CL-bench |
-| **Algorithm (BYO-Algo)** | `EvolutionEngine.step()` | Any evolution strategy | `AEvolveEngine` (LLM-driven mutation) |
-| **LLM Provider** | `LLMProvider.complete()` | Any model API | Anthropic, OpenAI, AWS Bedrock |
-
-### Built-in Evolution Algorithms
-
-A-Evolve ships with 4 reference evolution algorithms, each targeting different domains and strategies:
-
-| Algorithm | Strategy | Best For | Docs |
-| :--- | :--- | :--- | :--- |
-| [`adaptive_evolve`](docs/algorithms/adaptive-evolve.md) | Per-claim feedback analysis + meta-learning | MCP-Atlas (🥇 #1, 79.4%) | [Guide](docs/algorithms/adaptive-evolve.md) |
-| [`adaptive_skill`](docs/algorithms/adaptive-skill.md) | LLM-driven workspace mutation with bash tool access | Terminal-Bench 2.0 (~#7, 76.5%)  | [Guide](docs/algorithms/adaptive-skill.md) |
-| [`skillforge`](docs/algorithms/skillforge.md) | LLM-driven workspace mutation with EGL gating | SkillsBench (#2, 34.9%) | [Guide](docs/algorithms/skillforge.md) |
-| [`guided_synth`](docs/algorithms/guided-synth.md) | Memory-first evolution + LLM-guided intervention synthesis |  General-purpose, SWE-bench (~#5, 76.8%) | [Guide](docs/algorithms/guided-synth.md) |
-
-#### Plugging in a custom evolution algorithm
-
-Each algorithm lives in its own directory under `algorithms/`. Implement a single method:
-
-```python
-from agent_evolve.harness.engine.base import EvolutionEngine
-from agent_evolve.types import StepResult
-
-class MyEvolutionEngine(EvolutionEngine):
-    def step(self, workspace, observations, history, trial) -> StepResult:
-        # Analyze observations, mutate workspace files, optionally run trial tasks
-        ...
-        return StepResult(accepted=True, score=new_score)
-```
-
-Then pass it to the Evolver:
-
-```python
-evolver = ae.Evolver(
-    agent="swe-verified",
-    benchmark="swe-verified",
-    engine=MyEvolutionEngine(config),
-)
-```
-
-The engine has full access to shared primitives — `TrialRunner` (on-demand validation), `EvolutionHistory` (observation + version queries), and `VersionControl` (git-based rollback) — but is never forced to use them. Minimal contract, maximum freedom.
-
----
-
-## Community & Contributing
-
-A-Evolve is built for the research community. We welcome contributions across every axis of the framework.
-
-### For Algorithm Researchers
-
-If you work in LLM self-optimization, reinforcement learning, or agent architectures — implement the `EvolutionEngine` interface and your algorithm instantly gains access to:
-
-- Diverse environments (SWE-bench, MCP-Atlas, Terminal-Bench 2.0, SkillsBench, and more).
-- Standardized agent workspace representations.
-- Rigorous evaluation, gating, and logging infrastructure.
-
-Drop your algorithm into `agent_evolve/algorithms/your_algo/` and open a PR.
-
-### For Benchmark Authors
-
-Implement `BenchmarkAdapter` to plug any new evaluation domain into A-Evolve. The interface is two methods: `get_tasks()` and `evaluate()`.
-
-### Get Involved
-
-- ⭐ **Star this repo** to support our research — we are evolving fast.
-- 🐛 **[Open an issue](https://github.com/A-EVO-Lab/a-evolve/issues)** to report bugs or request features.
-- 🔀 **[Submit a PR](https://github.com/A-EVO-Lab/a-evolve/pulls)** — new evolution algorithms, benchmark adapters, agent implementations, and documentation improvements are all welcome.
-- 💬 **[Join our Discord]()** to discuss research directions, share results, and collaborate.
-
----
-
-## Citation
-
-If you use A-Evolve in your research, please cite our position paper:
-
-```bibtex
-@article{lin2026position,
-  title={Position: Agentic Evolution is the Path to Evolving LLMs},
-  author={Lin, Minhua and Lu, Hanqing and Shi, Zhan and He, Bing and Mao, Rui and Zhang, Zhiwei and Wu, Zongyu and Tang, Xianfeng and Liu, Hui and Dai, Zhenwei and others},
-  journal={arXiv preprint arXiv:2602.00359},
-  year={2026}
-}
-```
-
----
-
-## License
-
-[MIT](https://opensource.org/licenses/MIT)
+- **Phase 0 complete**: 190M x 4 schedules pilot --- thermodynamic signals confirmed (S decreases, psi increases)
+- **Phase 0.5 in progress**: Corrected 190M experiments (25B tokens, 40% decay)
+- **3B training running**: Gaussian schedule on 8xH200
+- **Next**: Multi-scale OLMo-2 checkpoint measurement (1B/7B/13B), 1B proxy training

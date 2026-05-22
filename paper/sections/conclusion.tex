@@ -1,0 +1,10 @@
+%=============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%=============================================================================
+
+We have shown that pretraining is better understood as a thermodynamic process than as an optimization problem.
+By measuring free energy, spectral entropy, and a crystallization order parameter across 4,000+ checkpoints from 190M to 13B parameters, we established a state equation for pretraining, explained WSD's superiority through lower entropy production, identified mid-training as glass-like annealing with a natural timescale, and derived a Gaussian decay schedule that outperforms current practice by 2.1\%.
+The order parameter $\psi$ correlates with downstream performance at $r > 0.92$, nearly tripling the predictive power of loss alone.
+These results suggest that thermodynamic state variables should become standard instruments in the training engineer's cockpit, alongside---and eventually replacing---the solitary loss curve.
+Extending this framework to MoE architectures and 70B+ scale, and establishing the causal mechanism behind the entropy-production/performance link, are the most important open questions.

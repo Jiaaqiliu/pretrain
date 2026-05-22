@@ -1,0 +1,127 @@
+%=============================================================================
+\section{Thermodynamic Framework for Pretraining}
+\label{sec:framework}
+%=============================================================================
+
+In this section, we develop the thermodynamic framework for pretraining.
+We first define operationally measurable state variables (\S\ref{sec:state_vars}), then establish the theoretical basis for each identification (\S\ref{sec:theory}), derive four testable predictions (\S\ref{sec:predictions}), and introduce the thermodynamic efficiency metric (\S\ref{sec:efficiency}).
+
+\subsection{State Variable Definitions}
+\label{sec:state_vars}
+
+For a language model with $N$ parameters $\bm\theta \in \R^N$, organized into $L$ weight matrices $\{W_l\}_{l=1}^L$ with $W_l \in \R^{m_l \times n_l}$, we define the following thermodynamic state variables:
+
+\begin{table}[t]
+\centering
+\small
+\caption{Thermodynamic state variables for pretraining. Each is computable from a single checkpoint plus training logs. The ``physical meaning'' column describes what the variable tracks about the training process, beyond its formal definition.}
+\label{tab:vars}
+\begin{tabular}{@{}lllp{4.5cm}@{}}
+\toprule
+\textbf{Variable} & \textbf{Sym.} & \textbf{Definition} & \textbf{Physical meaning} \\
+\midrule
+Temperature & $\temp$ & $\frac{\eta\,\hat\sigma_\nabla^2}{2B}$ & Stochasticity of parameter updates; controls exploration vs.\ exploitation \\[4pt]
+Pressure & $\press$ & $\lambda$ (weight decay) & Compressive force on parameter space; penalizes large weights \\[4pt]
+Volume & $\vol$ & $\norm{\bm\theta}_F^2$ & Size of occupied region in parameter space \\[4pt]
+Internal energy & $\intE$ & $\loss(\bm\theta)$ & Quality of data fit (lower = better) \\[4pt]
+Spectral entropy & $\entropy$ & Eq.~\eqref{eq:spectral_entropy} & Disorder of weight matrices; high = ``glassy'', low = ``crystalline'' \\[4pt]
+Free energy & $\free$ & $\intE - \temp\,\entropy$ & Net learning signal: balance of fitting and compression \\[4pt]
+Order parameter & $\psi$ & Eq.~\eqref{eq:order_param} & Degree of weight crystallization; proxy for downstream quality \\[4pt]
+Specific heat & $C_\vol$ & $\frac{\partial \intE}{\partial \temp}\big|_\vol$ & Sensitivity of loss to learning rate changes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Spectral entropy.} For each weight matrix $W_l$, we compute the singular value decomposition $W_l = U_l \Sigma_l V_l^\top$ and define the per-layer spectral entropy as:
+\begin{equation}
+    \entropy_l = -\sum_{i=1}^{\min(m_l, n_l)} p_i^{(l)} \log p_i^{(l)}, \quad \text{where } p_i^{(l)} = \frac{\sigma_i^{(l)}}{\sum_j \sigma_j^{(l)}}.
+    \label{eq:spectral_entropy}
+\end{equation}
+The global spectral entropy is the parameter-weighted average: $\entropy = \sum_l (N_l / N)\, \entropy_l$, where $N_l = m_l \cdot n_l$.
+A weight matrix with a single dominant singular value (rank-1, maximally structured) has $\entropy \to 0$; a matrix with uniform singular values (random, maximally disordered) has $\entropy \to \log(\min(m,n))$.
+The spectral entropy thus measures how ``compressed'' the learned representations are: lower entropy means fewer effective degrees of freedom, analogous to a crystal having fewer independent modes than a liquid.
+
+\paragraph{Order parameter.} We define the crystallization order parameter as the spectral gap ratio:
+\begin{equation}
+    \psi_l = \frac{\sigma_1^{(l)} - \sigma_2^{(l)}}{\sigma_1^{(l)} + \sigma_2^{(l)}}, \quad \psi = \frac{1}{L}\sum_{l=1}^{L} \psi_l.
+    \label{eq:order_param}
+\end{equation}
+Here $\sigma_1^{(l)} \geq \sigma_2^{(l)}$ are the two largest singular values of layer $l$. This measures the emergence of dominant structure: $\psi \to 0$ for random (isotropic) matrices, $\psi \to 1$ for rank-1 (maximally anisotropic) matrices. In physical terms, $\psi$ plays the role of a magnetization in spin systems: it is zero in the disordered (paramagnetic/glassy) phase and nonzero in the ordered (ferromagnetic/crystalline) phase.
+
+\paragraph{Why free energy, not loss.}
+The central insight from \citet{sadrtdinov2025} is that SGD with finite learning rate does not minimize loss $\intE$. It minimizes \emph{free energy}:
+\begin{equation}
+    \free = \intE - \temp\,\entropy.
+    \label{eq:free_energy}
+\end{equation}
+This has a profound interpretation. The $\intE$ term rewards fitting the data. The $\temp\entropy$ term rewards \emph{compressing} the weight matrices (lower entropy = more compressed). At high temperature (high LR), the entropy term dominates: the system explores broadly, favoring compressed representations over precise fits. At low temperature (low LR), the energy term dominates: the system fine-tunes its fit to data, potentially at the cost of representational compression.
+This connects directly to the compression-as-understanding thesis~\citep{freedman2026, wilson_compression_icml2025}: learning is the process of finding representations that simultaneously fit the data \emph{and} can be described with few effective degrees of freedom.
+
+\subsection{Theoretical Basis}
+\label{sec:theory}
+
+\paragraph{Effective temperature.}
+The identification of learning rate with temperature is not metaphorical. The fluctuation-dissipation theorem applied to SGD~\citep{liu_tegmark2025, liu_ziyin_neurips2025} yields:
+\begin{equation}
+    \temp_{\mathrm{eff}} = \frac{\eta}{2B} \cdot \mathrm{tr}(\Sigma_\nabla) \approx \frac{\eta}{2B} \cdot N \cdot \hat\sigma_\nabla^2,
+    \label{eq:temp}
+\end{equation}
+where $\eta$ is the learning rate, $B$ the batch size, $\Sigma_\nabla$ the gradient noise covariance, and $\hat\sigma_\nabla^2 = \frac{1}{N}\mathrm{tr}(\Sigma_\nabla)$ the per-parameter gradient variance. In practice, we estimate $\hat\sigma_\nabla^2$ from mini-batch gradient statistics computed every 1,000 steps.
+The key implication: changing the learning rate is physically equivalent to changing the temperature of a thermodynamic system. A ``warmup'' is literally a heating process; a ``decay'' is a cooling (quenching) process.
+
+\paragraph{State equation from the partition function.}
+Starting from the partition function of the SGD steady-state distribution~\citep{sadrtdinov2025}:
+\begin{equation}
+    Z(\temp, \press) = \int d\bm\theta\, \exp\!\left(-\frac{\loss(\bm\theta) + \press\norm{\bm\theta}^2}{\temp}\right),
+    \label{eq:partition}
+\end{equation}
+standard thermodynamic relations give $\free = -\temp \log Z$ and:
+\begin{equation}
+    \vol = \langle\norm{\bm\theta}^2\rangle = -\frac{\partial \free}{\partial \press}, \quad \entropy = -\frac{\partial \free}{\partial \temp}, \quad \intE = \free + \temp\entropy.
+\end{equation}
+For a quadratic loss landscape $\loss(\bm\theta) = \frac{1}{2}\bm\theta^\top H \bm\theta$, the partition function is Gaussian and yields \emph{exactly} $\press\vol = \frac{N}{2}\temp$~\citep{pvnkt_ijcai2026}. Non-quadratic (anharmonic) corrections in the real loss landscape produce the deviations we measure in \S\ref{sec:state_equation}.
+
+\paragraph{Entropy production and irreversibility.}
+The second law of thermodynamics requires that the total entropy production is non-negative in any process. For training, the entropy production rate is:
+\begin{equation}
+    \sigma(t) = -\frac{1}{\temp(t)}\frac{d\free}{dt} \geq 0.
+    \label{eq:entropy_prod}
+\end{equation}
+This quantity measures the degree of \emph{irreversibility}: a quasi-static (infinitely slow) process has $\sigma \to 0$; a violent quench has large $\sigma$. The cumulative entropy production $\Delta S_{\mathrm{tot}} = \int_0^T \sigma(t)\,dt$ is the total ``thermodynamic waste'' of a training run. A more efficient schedule achieves the same final state with lower $\Delta S_{\mathrm{tot}}$.
+
+\paragraph{Connection to Okanohara's Epistemic Speed Limit.}
+\citet{okanohara2026} proved that any learning algorithm taking a system from prior distribution $p_0$ to posterior $p_T$ in finite time $T$ must produce at least:
+\begin{equation}
+    \Delta S_{\mathrm{tot}} \geq \frac{D_{\mathrm{KL}}(p_T \| p_0)^2}{2T \cdot I_F},
+    \label{eq:esl}
+\end{equation}
+where $I_F$ is the Fisher information of the trajectory. This is the training analog of Landauer's principle: \emph{learning is inherently irreversible when performed in finite time}. Our thermodynamic efficiency (\S\ref{sec:efficiency}) measures how close a given schedule comes to this fundamental bound.
+
+\subsection{Thermodynamic Efficiency}
+\label{sec:efficiency}
+
+We define the \emph{thermodynamic efficiency} of a training schedule as:
+\begin{equation}
+    \eta_{\mathrm{thermo}} = \frac{|\Delta\free|}{|\Delta\free| + \bar\temp \cdot \Delta S_{\mathrm{irr}}},
+    \label{eq:efficiency}
+\end{equation}
+where $\Delta\free = \free(T) - \free(0)$ is the total free energy change (useful work), $\Delta S_{\mathrm{irr}} = \Delta S_{\mathrm{tot}} - \Delta S_{\mathrm{rev}}$ is the irreversible entropy production (thermodynamic waste), and $\bar\temp$ is the time-averaged temperature. This is bounded: $0 \leq \eta_{\mathrm{thermo}} \leq 1$, with $\eta = 1$ for a perfectly reversible (quasi-static) process.
+
+Intuitively, $\eta_{\mathrm{thermo}}$ measures what fraction of the total compute budget goes toward ``useful learning'' versus ``irreversible dissipation.'' A schedule that achieves the same final free energy with less entropy production is more efficient. This single dimensionless number provides a universal quality metric for comparing training schedules across scales and configurations.
+
+\subsection{Testable Predictions}
+\label{sec:predictions}
+
+The framework yields four predictions, each with an explicit falsification condition:
+
+\noindent\textbf{P1 (State equation).} During the WSD stable phase, $\press\vol/(N\temp)$ converges to a scale-dependent constant $k_{\mathrm{eff}}(N) = k_0 + \alpha N^{-1/3}$.
+\emph{Falsified if}: the ratio does not converge at any scale tested.
+
+\noindent\textbf{P2 (WSD efficiency).} $\Delta S_{\mathrm{tot}}^{\mathrm{WSD}} < \Delta S_{\mathrm{tot}}^{\mathrm{Cosine}}$ at matched compute.
+\emph{Falsified if}: cosine entropy production $\leq$ WSD at any scale.
+
+\noindent\textbf{P3 (KWW relaxation).} Mid-training spectral entropy follows $\phi(t) = \exp[-(t/\tau)^\beta]$ with $0.5 < \beta < 0.8$.
+\emph{Falsified if}: relaxation is simple exponential ($\beta \approx 1$) or power-law at all scales.
+
+\noindent\textbf{P4 (Optimal schedule).} A Gaussian decay schedule derived from minimum entropy production outperforms WSD at matched compute.
+\emph{Falsified if}: WSD outperforms Gaussian decay at all scales tested.

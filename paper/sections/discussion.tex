@@ -1,0 +1,61 @@
+%=============================================================================
+\section{Discussion}
+\label{sec:discussion}
+%=============================================================================
+
+\subsection{Why Training Is Not Optimization}
+
+The optimization view of pretraining says: SGD finds the minimum of the loss function; lower loss means a better model; training should continue until loss converges.
+
+The thermodynamic view says something fundamentally different: SGD minimizes \emph{free energy} $\free = \intE - \temp\entropy$, simultaneously fitting the data ($\intE$) and compressing the representation ($\temp\entropy$). A model can have low loss but high spectral entropy---a \emph{glass}: locally well-fitted but globally disordered. The order parameter $\psi$ distinguishes glasses from crystals; loss does not.
+
+This distinction is not semantic. It changes what you measure (loss $\to$ free energy, order parameter), what you consider success (low loss $\to$ crystalline state), and what you consider failure (high loss $\to$ glass state, where the system is frozen without useful structure). A model that ``converges'' in loss but plateaus in $\psi$ is a glass: continuing training wastes compute without improving the model's actual quality. This is precisely the overtraining fragility phenomenon reported by \citet{overtraining_fragile2025}: the model reaches low loss but is thermodynamically frozen, unable to reorganize for fine-tuning.
+
+\subsection{Connection to Compression Theory}
+
+Our thermodynamic framework connects directly to the information-theoretic view of learning as compression~\citep{freedman2026, wilson_compression_icml2025}.
+The free energy $\free = \intE - \temp\entropy$ decomposes learning into two drives: $\intE$ measures how well the model fits the data (the ``accuracy'' of the compressed representation); $\temp\entropy$ measures how compressed the representation itself is (the ``cost'' of encoding the learned structure). Minimizing $\free$ is equivalent to optimizing the rate-distortion tradeoff: the best model is one that achieves the lowest loss \emph{per bit of representational complexity}.
+
+The spectral entropy $\entropy$ is a direct measure of representational complexity: it counts the effective number of independent modes (singular values) needed to describe each weight matrix. The glass-to-crystal transition during mid-training is, in this language, a \emph{compression phase transition}: the system discovers a shorter description of the data, requiring fewer effective parameters to achieve the same or lower loss.
+
+This connects to Freedman's result~\citep{freedman2026} that human mathematics lives in a compressible subspace of formal mathematics, characterized by $O(\log n)$ ``macros'' that provide exponential expressiveness. Pretraining, viewed through the compression lens, is the process of discovering these macros. The spectral entropy measures how many effective macros the network has found; the order parameter measures how well-organized they are.
+
+\subsection{Connection to Active Inference}
+
+The thermodynamic free energy $\free = \intE - \temp\entropy$ is structurally identical to the variational free energy of Friston's Free Energy Principle~\citep{friston_fep}: $F_{\mathrm{var}} = \E_q[\log q - \log p]$, which decomposes into an ``energy'' (expected log-likelihood) and an ``entropy'' (KL divergence from prior) term. In both frameworks, the system minimizes a quantity that balances fitting observations against maintaining compressed internal representations.
+
+This is not coincidence. Both frameworks describe adaptive systems that learn by reducing surprise (prediction error / loss) while maintaining efficient internal models (low entropy / compressed representations). Mid-training, in the Active Inference view, corresponds to changing the ``sensory input'' (data distribution): the system must reorganize its internal model to reduce surprise under the new data, which manifests thermodynamically as glass-to-crystal annealing.
+
+\subsection{Practical Recommendations}
+
+Based on our findings, we recommend the following changes to pretraining practice:
+
+\begin{table}[t]
+\centering
+\small
+\caption{Summary of practical recommendations from the thermodynamic framework.}
+\label{tab:recommendations}
+\begin{tabular}{@{}p{3.5cm}p{5cm}@{}}
+\toprule
+\textbf{Current practice} & \textbf{Thermodynamic recommendation} \\
+\midrule
+Monitor loss only & Monitor $\psi$ (primary), $\sigma(t)$, $\free$ \\
+WSD with default params & Use Gaussian decay (5-line replacement) \\
+Mid-training: grid search & Compute $\tau$ from KWW fit; run $3\tau$ tokens \\
+``More training = better'' & Check $\psi$: if plateaued, stop (glass freeze) \\
+Schedule design: copy recipes & Derive from state equation + min entropy prod. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Limitations}
+
+\paragraph{Scale ceiling.} Our measurements extend to 13B parameters. Whether the state equation extrapolates to 70B+ remains unverified. We expect the ideal gas approximation to \emph{improve} at larger $N$ (smaller finite-size corrections), but the non-equilibrium corrections may behave differently at scales where pipeline parallelism introduces gradient staleness.
+
+\paragraph{MoE architectures.} Our framework is developed for dense transformers. Mixture-of-Experts models introduce a combinatorial routing structure that is not captured by our continuous state variables. Extending the framework to MoE is an important direction; the routing entropy of expert selection may play the role of an additional order parameter.
+
+\paragraph{Glass analogy precision.} As \citet{winter_janssen2025} showed, DNN training is not a perfect structural glass: there are no diverging relaxation times or caging effects. Our KWW fits are \emph{functional} descriptions, not claims of identical physical mechanism. The predictive power of the KWW form is empirical.
+
+\paragraph{Gradient noise estimation.} The effective temperature (Eq.~\ref{eq:temp}) requires gradient variance estimates, which are noisy and add uncertainty to all derived quantities. We report confidence intervals throughout and note that better gradient noise estimators~\citep{spectral_alignment2025} would sharpen all our measurements.
+
+\paragraph{Causal interpretation.} The correlation between thermodynamic efficiency and schedule quality ($r = 0.98$) is strongly suggestive but does not prove causation. Our proxy experiments (controlled schedule comparisons) provide interventional evidence, but the mechanism by which entropy production \emph{causes} worse final performance deserves further theoretical analysis.

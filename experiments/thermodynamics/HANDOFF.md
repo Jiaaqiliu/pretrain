@@ -7,7 +7,7 @@
 ## 总体状态
 
 ### ✅ 已完成
-- [x] 论文初稿 (compiles, NeurIPS format)
+- [x] 论文初稿 (compiles)
 - [x] 理论框架 (状态变量定义, 可验证预测)
 - [x] 实验设计 (5 个研究问题, 量化指标)
 - [x] 核心测量库 (`experiments/thermodynamics/`)

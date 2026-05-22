@@ -1,0 +1,244 @@
+\begin{thebibliography}{38}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Aksenov et~al.(2026)Aksenov, Bodnia, Freedman, and
+  Mulligan]{freedman2026}
+V.~Aksenov, E.~Bodnia, M.~H. Freedman, and M.~Mulligan.
+\newblock Compression is all you need: Modeling mathematics.
+\newblock \emph{arXiv preprint arXiv:2603.20396}, 2026.
+
+\bibitem[Barney et~al.(2024)Barney, Winer, and Galitski]{barney_spin_glass2024}
+R.~Barney, M.~Winer, and V.~Galitski.
+\newblock Neural networks as spin models: From glass to hidden order through
+  training.
+\newblock \emph{arXiv preprint arXiv:2408.06421}, 2024.
+
+\bibitem[Bonnaire et~al.(2025)Bonnaire, Urfin, Biroli, and
+  M{\'e}zard]{biroli_mezard2025_diffusion}
+T.~Bonnaire, R.~Urfin, G.~Biroli, and M.~M{\'e}zard.
+\newblock Why diffusion models don't memorize: The role of implicit dynamical
+  regularization in training.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2025.
+\newblock Best Paper.
+
+\bibitem[Bordelon and Mori(2026)]{bordelon_schedules2026}
+B.~Bordelon and F.~Mori.
+\newblock Theory of optimal learning rate schedules and scaling laws for a
+  random feature model.
+\newblock \emph{arXiv preprint arXiv:2602.04774}, 2026.
+
+\bibitem[Callister and Rethwisch(2020)]{callister_materials}
+W.~D. Callister and D.~G. Rethwisch.
+\newblock \emph{Materials Science and Engineering: An Introduction}.
+\newblock Wiley, 10th edition, 2020.
+
+\bibitem[{DeepSeek-AI}(2024)]{deepseekv3}
+{DeepSeek-AI}.
+\newblock {DeepSeek-V3} technical report.
+\newblock \emph{arXiv preprint arXiv:2412.19437}, 2024.
+
+\bibitem[Doshi et~al.(2025)Doshi, Liao, and Garg]{grokking_pretraining2025}
+A.~Doshi, T.~Liao, and A.~Garg.
+\newblock Grokking at the edge of numerical stability.
+\newblock \emph{arXiv preprint}, 2025.
+
+\bibitem[Engel and Van~den Broeck(2001)]{engel_van_den_broek_2001}
+A.~Engel and C.~Van~den Broeck.
+\newblock \emph{Statistical Mechanics of Learning}.
+\newblock Cambridge University Press, 2001.
+
+\bibitem[Friston(2010)]{friston_fep}
+K.~Friston.
+\newblock The free-energy principle: A unified brain theory?
+\newblock \emph{Nature Reviews Neuroscience}, 11\penalty0 (2):\penalty0
+  127--138, 2010.
+
+\bibitem[Gadre et~al.(2024)Gadre, Smola, et~al.]{gadre2024}
+S.~Y. Gadre, A.~Smola, et~al.
+\newblock Language models scale reliably with over-training and on downstream
+  tasks.
+\newblock \emph{arXiv preprint arXiv:2403.08540}, 2024.
+
+\bibitem[Grattafiori et~al.(2024)Grattafiori, Dubey, Jauhri, et~al.]{llama3}
+A.~Grattafiori, A.~Dubey, A.~Jauhri, et~al.
+\newblock The {Llama 3} herd of models.
+\newblock \emph{arXiv preprint arXiv:2407.21783}, 2024.
+
+\bibitem[Halko et~al.(2011)Halko, Martinsson, and Tropp]{halko2011}
+N.~Halko, P.-G. Martinsson, and J.~A. Tropp.
+\newblock Finding structure with randomness: Probabilistic algorithms for
+  constructing approximate matrix decompositions.
+\newblock \emph{SIAM Review}, 53\penalty0 (2):\penalty0 217--288, 2011.
+
+\bibitem[Jiang et~al.(2025)]{spectral_alignment2025}
+Z.~Jiang et~al.
+\newblock Spectral alignment as an early predictor of failure in neural network
+  training.
+\newblock \emph{arXiv preprint arXiv:2510.04202}, 2025.
+
+\bibitem[Kalra et~al.(2026)Kalra, Gagnon-Audet, Gromov,
+  et~al.]{kalra_curvature2026}
+D.~S. Kalra, J.-C. Gagnon-Audet, A.~Gromov, et~al.
+\newblock A scalable measure of loss landscape curvature for analyzing the
+  training dynamics of {LLMs}.
+\newblock \emph{arXiv preprint arXiv:2601.16979}, 2026.
+
+\bibitem[Li et~al.(2026)Li, Wang, Chen, Zhao, Zheng, and Wu]{li_schedules2026}
+B.~Li, Z.~Wang, F.~Chen, S.~Zhao, R.~Zheng, and L.~Wu.
+\newblock Optimal learning-rate schedules under functional scaling laws: Power
+  decay and warmup-stable-decay.
+\newblock \emph{arXiv preprint arXiv:2602.06797}, 2026.
+
+\bibitem[Liu and Hu(2025)]{mpemba_llm}
+S.~Liu and Z.~Hu.
+\newblock Mpemba effect in large-language model training dynamics: A minimal
+  analysis of the valley-river model.
+\newblock \emph{arXiv preprint arXiv:2507.04206}, 2025.
+
+\bibitem[Liu et~al.(2025{\natexlab{a}})Liu, Liu, Gore, and
+  Tegmark]{liu_tegmark2025}
+Z.~Liu, Y.~Liu, J.~Gore, and M.~Tegmark.
+\newblock Neural thermodynamic laws for large language model training.
+\newblock \emph{arXiv preprint arXiv:2505.10559}, 2025{\natexlab{a}}.
+
+\bibitem[Liu et~al.(2025{\natexlab{b}})Liu, Xu, and
+  Chuang]{liu_ziyin_neurips2025}
+Z.~Liu, Y.~Xu, and I.~Chuang.
+\newblock Neural thermodynamics {I}: Entropic forces in deep and universal
+  representation learning.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2025{\natexlab{b}}.
+
+\bibitem[{Meta AI}(2025)]{llama4}
+{Meta AI}.
+\newblock {Llama 4}: Maverick and scout.
+\newblock \emph{arXiv preprint}, 2025.
+
+\bibitem[Okanohara(2026)]{okanohara2026}
+D.~Okanohara.
+\newblock A thermodynamic theory of learning {I}: Irreversible ensemble
+  transport and epistemic costs.
+\newblock \emph{arXiv preprint arXiv:2601.17607}, 2026.
+
+\bibitem[{OLMo Team} et~al.(2025){OLMo Team}, Bhagia, Blunsom, Groeneveld,
+  Hajishirzi, et~al.]{olmo2}
+{OLMo Team}, A.~Bhagia, P.~Blunsom, D.~Groeneveld, H.~Hajishirzi, et~al.
+\newblock {OLMo} 2: Furious.
+\newblock \emph{arXiv preprint arXiv:2501.00656}, 2025.
+
+\bibitem[Peraza~Coppola et~al.(2025)Peraza~Coppola, Helias, and
+  Ringel]{rg_for_dnns2025}
+G.~Peraza~Coppola, M.~Helias, and Z.~Ringel.
+\newblock Renormalization group for deep neural networks: Universality of
+  learning and scaling laws.
+\newblock \emph{arXiv preprint arXiv:2510.25553}, 2025.
+
+\bibitem[Qiu et~al.(2025)Qiu, Xiao, Wilson, Pennington, and
+  Agarwala]{scaling_collapse_icml2025}
+S.~Qiu, L.~Xiao, A.~G. Wilson, J.~Pennington, and A.~Agarwala.
+\newblock Scaling collapse reveals universal dynamics in compute-optimally
+  trained neural networks.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock Oral.
+
+\bibitem[Sadrtdinov et~al.(2025{\natexlab{a}})Sadrtdinov, Klimov, Lobacheva,
+  and Vetrov]{sadrtdinov2025}
+I.~Sadrtdinov, I.~Klimov, E.~Lobacheva, and D.~Vetrov.
+\newblock {SGD} as free energy minimization: A thermodynamic view on neural
+  network training.
+\newblock \emph{arXiv preprint arXiv:2505.23489}, 2025{\natexlab{a}}.
+
+\bibitem[Sadrtdinov et~al.(2025{\natexlab{b}})Sadrtdinov, Lobacheva, Klimov,
+  Katsnelson, and Vetrov]{pvnkt_ijcai2026}
+I.~Sadrtdinov, E.~Lobacheva, I.~Klimov, M.~I. Katsnelson, and D.~Vetrov.
+\newblock Can training dynamics of scale-invariant neural networks be explained
+  by the thermodynamics of an ideal gas?
+\newblock \emph{arXiv preprint arXiv:2511.07308}, 2025{\natexlab{b}}.
+
+\bibitem[Seroussi et~al.(2023)Seroussi, Alemi, Helias, and
+  Ringel]{seroussi2023speed}
+I.~Seroussi, A.~A. Alemi, M.~Helias, and Z.~Ringel.
+\newblock Speed limits for deep learning.
+\newblock \emph{arXiv preprint arXiv:2307.14653}, 2023.
+
+\bibitem[Shi et~al.(2025)Shi, Pan, and Dokmanovi{\'c}]{spring_block_prl2025}
+C.~Shi, L.~Pan, and I.~Dokmanovi{\'c}.
+\newblock Spring-block theory of feature learning in deep neural networks.
+\newblock \emph{Physical Review Letters}, 134:\penalty0 257301, 2025.
+
+\bibitem[Springer et~al.(2025)Springer, Kotha, Fried, Neubig, and
+  Raghunathan]{overtraining_fragile2025}
+J.~M. Springer, S.~Kotha, D.~Fried, G.~Neubig, and A.~Raghunathan.
+\newblock Overtrained language models are harder to fine-tune.
+\newblock \emph{arXiv preprint arXiv:2503.19206}, 2025.
+
+\bibitem[Sun and Haghighat(2025)]{phase_transitions_on_model}
+Y.~Sun and B.~Haghighat.
+\newblock Phase transitions in large language models and the {O(N)} model.
+\newblock \emph{arXiv preprint arXiv:2501.16241}, 2025.
+
+\bibitem[Tissue et~al.(2024)Tissue, Wang, and Wang]{annealing_scaling_law2024}
+H.~Tissue, V.~Wang, and L.~Wang.
+\newblock Scaling law with learning rate annealing.
+\newblock \emph{arXiv preprint arXiv:2408.11029}, 2024.
+
+\bibitem[Wang et~al.(2026)]{annealing_scaling_aaai2026}
+S.~Wang et~al.
+\newblock Scaling and transferability of annealing strategies in large language
+  model training.
+\newblock In \emph{AAAI Conference on Artificial Intelligence}, 2026.
+
+\bibitem[Wang et~al.(2025)Wang, Tissue, Wang, Li, and Zeng]{cpt_dynamics2025}
+X.~Wang, H.~Tissue, L.~Wang, L.~Li, and D.~D. Zeng.
+\newblock Learning dynamics in continual pre-training for large language
+  models.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock Oral.
+
+\bibitem[Wen et~al.(2025)Wen, Li, Wang, Hall, Liang, and Ma]{wsd_schedule}
+K.~Wen, Z.~Li, J.~Wang, D.~Hall, P.~Liang, and T.~Ma.
+\newblock Understanding warmup-stable-decay learning rates: A river valley loss
+  landscape perspective.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+
+\bibitem[Williams and Watts(1970)]{kww_williams}
+G.~Williams and D.~C. Watts.
+\newblock Non-symmetrical dielectric relaxation behaviour arising from a simple
+  empirical decay function.
+\newblock \emph{Transactions of the Faraday Society}, 66:\penalty0 80--85,
+  1970.
+
+\bibitem[Wilson(2025)]{wilson_compression_icml2025}
+A.~G. Wilson.
+\newblock Deep learning is not so mysterious or different.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock Position Paper.
+
+\bibitem[Winter and Janssen(2025)]{winter_janssen2025}
+M.~K. Winter and L.~M.~C. Janssen.
+\newblock Glassy dynamics in deep neural networks: A structural comparison.
+\newblock \emph{Physical Review Research}, 7:\penalty0 023010, 2025.
+
+\bibitem[Yang et~al.(2022)Yang, Hu, Babuschkin, Sidor, Liu, Farhi, Ryder,
+  Pachocki, Chen, and Gao]{mup}
+G.~Yang, E.~J. Hu, I.~Babuschkin, S.~Sidor, X.~Liu, D.~Farhi, N.~Ryder,
+  J.~Pachocki, W.~Chen, and J.~Gao.
+\newblock Tensor programs {V}: Tuning large neural networks via zero-shot
+  hyperparameter transfer.
+\newblock \emph{arXiv preprint arXiv:2203.03466}, 2022.
+
+\bibitem[Zhang et~al.(2025)Zhang, Shang, Yang, and
+  Zhang]{grokking_glass_neurips2025}
+X.~Zhang, Y.~Shang, E.~Yang, and G.~Zhang.
+\newblock Is grokking a computational glass relaxation?
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2025.
+\newblock Spotlight.
+
+\end{thebibliography}

@@ -1,6 +1,6 @@
 # Thermodynamics of Pretraining — 实验代码
 
-> 论文: "Beyond Loss Curves: Thermodynamics of Pretraining" (NeurIPS 2026)
+> 论文: "Beyond Loss Curves: Thermodynamics of Pretraining"
 
 ## 快速开始
 

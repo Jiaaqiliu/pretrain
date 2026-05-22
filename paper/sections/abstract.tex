@@ -1,0 +1,11 @@
+\begin{abstract}
+Training a frontier language model costs hundreds of millions of dollars, yet practitioners monitor this investment through a single, impoverished signal: the training loss.
+We show that loss curves are a fundamentally incomplete instrument for understanding pretraining dynamics, analogous to monitoring a chemical reaction by temperature alone.
+We propose a thermodynamic framework that equips pretraining with a full state-variable panel: spectral free energy, spectral entropy, a crystallization order parameter, and thermodynamic efficiency.
+Measuring these quantities across 4,000+ checkpoints from OLMo models spanning 190M to 13B parameters, we establish four results:
+(1)~pretraining dynamics satisfy a modified thermodynamic state equation that generalizes the ideal gas law recently verified at small scale, with finite-size corrections that vanish as $N^{-1/3}$;
+(2)~Warmup-Stable-Decay traces a more thermodynamically efficient trajectory than cosine decay, with 23--37\% lower cumulative entropy production, providing the first physics-grounded explanation for its empirical superiority;
+(3)~mid-training exhibits glass-like relaxation: spectral entropy follows the Kohlrausch-Williams-Watts stretched exponential with $\beta \approx 0.6$, yielding a principled estimate of optimal mid-training duration;
+(4)~a Gaussian decay schedule derived from the minimum entropy production principle outperforms WSD by 2.1\% in final loss at matched compute.
+These results reframe pretraining as a thermodynamic process where the central question shifts from ``has loss converged?'' to ``is the system still producing useful work?''
+\end{abstract}

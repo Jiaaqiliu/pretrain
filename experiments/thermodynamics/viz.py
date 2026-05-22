@@ -1,6 +1,6 @@
 """Visualization for thermodynamics of pretraining paper figures.
 
-Generates publication-quality figures for NeurIPS 2026:
+Generates publication-quality figures:
   - Phase diagrams (T-S plane)
   - State equation convergence plots
   - KWW relaxation fits

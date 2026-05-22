@@ -8,7 +8,7 @@
 
 ### 1.1 研究目标
 
-论文标题: **"Beyond Loss Curves: Thermodynamics of Pretraining"** (NeurIPS 2026 投稿)
+论文标题: **"Beyond Loss Curves: Thermodynamics of Pretraining"**
 
 核心论点: 预训练不是单纯的优化过程，而是一个热力学过程。SGD 最小化的是**自由能 F = U - T·S**，而非 loss 本身。
 
