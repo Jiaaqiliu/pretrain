@@ -37,8 +37,10 @@ spec:
               set -euxo pipefail
               echo "======== Thermo Training: 190M / wsd_exponential / seed=123 ========"
 
-              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
-              pip install scipy matplotlib 2>&1 | tail -3
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] > /tmp/pip_olmo.log 2>&1 || true
+              tail -5 /tmp/pip_olmo.log
+              pip install scipy matplotlib > /tmp/pip_deps.log 2>&1 || true
+              tail -3 /tmp/pip_deps.log
 
               torchrun \
                 --nproc_per_node=$GPUS_PER_NODE \

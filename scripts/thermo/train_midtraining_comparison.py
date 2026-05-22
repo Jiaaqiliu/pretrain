@@ -126,20 +126,21 @@ class MultiStageLRCallback(Callback):
 
 
 class DataSwitchCallback(Callback):
-    """Switch data source at stage boundary (for mid-training mode)."""
+    """Log data switch boundary (actual switching handled by two-phase training)."""
 
     def __init__(self, switch_step: int, stage2_data_paths: list[str]):
         self.switch_step = switch_step
         self.stage2_data_paths = stage2_data_paths
-        self.switched = False
+        self.logged = False
 
     def post_step(self, step: int, **kwargs):
-        if step == self.switch_step and not self.switched:
-            self.switched = True
+        if step == self.switch_step and not self.logged:
+            self.logged = True
             rank = int(os.environ.get("RANK", 0))
             if rank == 0:
-                print(f"\n[DataSwitch] Switching to Stage 2 data at step {step}")
-                print(f"  New data: {self.stage2_data_paths}")
+                print(f"\n[DataSwitch] Reached Stage 2 boundary at step {step}")
+                print(f"  Stage 2 data: {self.stage2_data_paths}")
+                print(f"  NOTE: Data switching is handled by two-phase training loop")
 
 
 def parse_args():
@@ -151,6 +152,19 @@ def parse_args():
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--wandb-project", type=str, default="thermo-pretraining")
     return parser.parse_args()
+
+
+def _build_data_loader(data_paths, cfg, seed, train_module):
+    """Build data loader from a list of paths."""
+    existing_paths = [p for p in data_paths if Path(p).exists()]
+    if not existing_paths:
+        raise RuntimeError(f"No data paths found: {data_paths}")
+    dataset = NumpyFSLDatasetConfig(
+        paths=existing_paths, sequence_length=SEQUENCE_LENGTH, tokenizer=TOKENIZER,
+    ).build()
+    return NumpyDataLoaderConfig(
+        global_batch_size=cfg["global_batch_size"], seed=seed,
+    ).build(dataset, dp_process_group=train_module.dp_process_group)
 
 
 def main():
@@ -193,58 +207,93 @@ def main():
     )
     train_module = train_module_config.build(model)
 
-    # Build data loader (start with Stage 1 data)
-    data_paths = STAGE1_DATA if args.mode == "midtrain" else STAGE1_DATA
-    existing_paths = [p for p in data_paths if Path(p).exists()]
-    if not existing_paths:
-        raise RuntimeError(f"No data paths found: {data_paths}")
+    # Thermo measurement callback
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from train_schedule_comparison import ThermoMeasurementCallback
 
-    dataset = NumpyFSLDatasetConfig(
-        paths=existing_paths, sequence_length=SEQUENCE_LENGTH, tokenizer=TOKENIZER,
-    ).build()
-    data_loader = NumpyDataLoaderConfig(
-        global_batch_size=cfg["global_batch_size"], seed=args.seed,
-    ).build(dataset, dp_process_group=train_module.dp_process_group)
-
-    # Build trainer with callbacks
     run_name = f"thermo-midtrain-{args.model_size}-{args.mode}-s{args.seed}"
-    trainer_config = (
-        TrainerConfig(
-            save_folder=str(output_dir / "checkpoints"),
-            max_duration=Duration.steps(total_steps),
-            metrics_collect_interval=10,
+
+    if args.mode == "direct":
+        # Direct mode: single-phase WSD on Stage 1 data for all steps
+        data_loader = _build_data_loader(STAGE1_DATA, cfg, args.seed, train_module)
+        trainer_config = (
+            TrainerConfig(
+                save_folder=str(output_dir / "checkpoints"),
+                max_duration=Duration.steps(total_steps),
+                metrics_collect_interval=10,
+            )
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("console_logger", ConsoleLoggerCallback())
+            .with_callback("speed_monitor", SpeedMonitorCallback())
+            .with_callback("gc", GarbageCollectorCallback())
+            .with_callback("wandb", WandBCallback(project=args.wandb_project, name=run_name))
+            .with_callback("lr_schedule", MultiStageLRCallback(
+                mode="direct", peak_lr=cfg["peak_lr"],
+                stage1_steps=cfg["stage1_steps"], stage2_steps=cfg["stage2_steps"],
+            ))
+            .with_callback("thermo_measure", ThermoMeasurementCallback(
+                output_path=str(output_dir / "thermo_measurements.jsonl"),
+                measure_interval=200, weight_decay=0.1,
+                batch_size=cfg["global_batch_size"] // SEQUENCE_LENGTH,
+            ))
         )
-        .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
-        .with_callback("console_logger", ConsoleLoggerCallback())
-        .with_callback("speed_monitor", SpeedMonitorCallback())
-        .with_callback("gc", GarbageCollectorCallback())
-        .with_callback("wandb", WandBCallback(project=args.wandb_project, name=run_name))
-        .with_callback("lr_schedule", MultiStageLRCallback(
-            mode=args.mode, peak_lr=cfg["peak_lr"],
-            stage1_steps=cfg["stage1_steps"], stage2_steps=cfg["stage2_steps"],
-        ))
-    )
+        trainer = trainer_config.build(train_module, data_loader)
+        trainer.fit()
 
-    if args.mode == "midtrain":
-        trainer_config = trainer_config.with_callback(
-            "data_switch",
-            DataSwitchCallback(switch_step=cfg["stage1_steps"], stage2_data_paths=STAGE2_DATA),
+    else:
+        # Midtrain mode: Phase 1 on Stage 1 data, then Phase 2 on Stage 2 data
+        # Phase 1
+        if rank == 0:
+            print(f"\n{'='*60}\nPhase 1: Stage 1 data, {cfg['stage1_steps']} steps\n{'='*60}")
+        data_loader_1 = _build_data_loader(STAGE1_DATA, cfg, args.seed, train_module)
+        trainer_config_1 = (
+            TrainerConfig(
+                save_folder=str(output_dir / "checkpoints"),
+                max_duration=Duration.steps(cfg["stage1_steps"]),
+                metrics_collect_interval=10,
+            )
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("console_logger", ConsoleLoggerCallback())
+            .with_callback("speed_monitor", SpeedMonitorCallback())
+            .with_callback("gc", GarbageCollectorCallback())
+            .with_callback("wandb", WandBCallback(project=args.wandb_project, name=f"{run_name}-stage1"))
+            .with_callback("lr_schedule", MultiStageLRCallback(
+                mode="midtrain", peak_lr=cfg["peak_lr"],
+                stage1_steps=cfg["stage1_steps"], stage2_steps=cfg["stage2_steps"],
+            ))
+            .with_callback("thermo_measure", ThermoMeasurementCallback(
+                output_path=str(output_dir / "thermo_measurements.jsonl"),
+                measure_interval=200, weight_decay=0.1,
+                batch_size=cfg["global_batch_size"] // SEQUENCE_LENGTH,
+            ))
         )
+        trainer_1 = trainer_config_1.build(train_module, data_loader_1)
+        trainer_1.fit()
 
-    # Add thermo measurement callback
-    from scripts.thermo.train_schedule_comparison import ThermoMeasurementCallback
-    trainer_config = trainer_config.with_callback(
-        "thermo_measure",
-        ThermoMeasurementCallback(
-            output_path=str(output_dir / "thermo_measurements.jsonl"),
-            measure_interval=200,
-            weight_decay=0.1,
-            batch_size=cfg["global_batch_size"] // SEQUENCE_LENGTH,
-        ),
-    )
+        # Phase 2: switch to Stage 2 data
+        if rank == 0:
+            print(f"\n{'='*60}\nPhase 2: Stage 2 data, {cfg['stage2_steps']} steps\n{'='*60}")
+        data_loader_2 = _build_data_loader(STAGE2_DATA, cfg, args.seed, train_module)
+        trainer_config_2 = (
+            TrainerConfig(
+                save_folder=str(output_dir / "checkpoints_stage2"),
+                max_duration=Duration.steps(cfg["stage2_steps"]),
+                metrics_collect_interval=10,
+            )
+            .with_callback("checkpointer", CheckpointerCallback(save_interval=200, ephemeral_save_interval=200))
+            .with_callback("console_logger", ConsoleLoggerCallback())
+            .with_callback("speed_monitor", SpeedMonitorCallback())
+            .with_callback("gc", GarbageCollectorCallback())
+            .with_callback("wandb", WandBCallback(project=args.wandb_project, name=f"{run_name}-stage2"))
+            .with_callback("thermo_measure", ThermoMeasurementCallback(
+                output_path=str(output_dir / "thermo_measurements.jsonl"),
+                measure_interval=200, weight_decay=0.1,
+                batch_size=cfg["global_batch_size"] // SEQUENCE_LENGTH,
+            ))
+        )
+        trainer_2 = trainer_config_2.build(train_module, data_loader_2)
+        trainer_2.fit()
 
-    trainer = trainer_config.build(train_module, data_loader)
-    trainer.fit()
     teardown_training_environment()
 
     if rank == 0:

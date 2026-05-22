@@ -141,8 +141,9 @@ def main():
         ))
     )
 
-    # Thermo measurement
-    from scripts.thermo.train_schedule_comparison import ThermoMeasurementCallback
+    # Thermo measurement (inline import to avoid scripts/__init__.py dependency)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from train_schedule_comparison import ThermoMeasurementCallback
     trainer_config = trainer_config.with_callback(
         "thermo_measure",
         ThermoMeasurementCallback(

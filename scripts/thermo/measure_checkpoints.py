@@ -167,7 +167,7 @@ def main():
 
             finally:
                 # Free GPU memory
-                if "model" in dir():
+                if "model" in locals():
                     del model
                 torch.cuda.empty_cache()
 

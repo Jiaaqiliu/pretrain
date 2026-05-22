@@ -162,8 +162,6 @@ class ThermoMeasurementCallback(Callback):
         if rank != 0:
             return
 
-        model = trainer.train_module.model
-
         from experiments.thermodynamics.measures import (
             global_spectral_entropy,
             weight_volume,
@@ -183,10 +181,20 @@ class ThermoMeasurementCallback(Callback):
         if hasattr(trainer, "metrics") and "train/loss" in trainer.metrics:
             loss = float(trainer.metrics["train/loss"])
 
-        # Compute state variables
-        vol = weight_volume(model)
-        s_global, layer_info = global_spectral_entropy(model, k=self.svd_k)
-        psi = sum(lm.order_parameter for lm in layer_info) / max(len(layer_info), 1)
+        # FSDP: must summon full params for correct measurements
+        model = trainer.train_module.model
+        try:
+            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+            ctx = FSDP.summon_full_params(model, writeback=False, recurse=True)
+        except (ImportError, TypeError, AttributeError):
+            from contextlib import nullcontext
+            ctx = nullcontext()
+
+        with ctx:
+            vol = weight_volume(model)
+            s_global, layer_info = global_spectral_entropy(model, k=self.svd_k)
+            psi = sum(lm.order_parameter for lm in layer_info) / max(len(layer_info), 1)
+            n_params = sum(p.numel() for p in model.parameters())
 
         # Gradient variance estimate (from optimizer state if available)
         grad_var = self._estimate_grad_variance_from_optimizer(trainer.train_module.optim)
@@ -196,7 +204,6 @@ class ThermoMeasurementCallback(Callback):
         free_e = loss - temp * s_global
 
         # P·V / (N·T)
-        n_params = sum(p.numel() for p in model.parameters())
         pv_over_nt = (self.weight_decay * vol) / (n_params * temp) if temp > 1e-15 else 0.0
 
         elapsed = time.time() - t0

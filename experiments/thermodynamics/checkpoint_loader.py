@@ -56,7 +56,7 @@ OLMO_CONFIGS = {
         "seq_len": 4096,
     },
     "7B": {
-        "hf_repo": "allenai/OLMo-2-0425-7B",
+        "hf_repo": "allenai/OLMo-2-1124-7B",
         "num_params": 7_000_000_000,
         "hidden_size": 4096,
         "num_layers": 32,
@@ -66,7 +66,7 @@ OLMO_CONFIGS = {
         "seq_len": 4096,
     },
     "13B": {
-        "hf_repo": "allenai/OLMo-2-0425-13B",
+        "hf_repo": "allenai/OLMo-2-1124-13B",
         "num_params": 13_000_000_000,
         "hidden_size": 5120,
         "num_layers": 40,
@@ -163,10 +163,10 @@ def discover_hf_checkpoints(
     refs = list_repo_refs(repo_id)
     checkpoints = []
 
-    step_pattern = re.compile(r"step(\d+)(?:-tokens.*)?")
+    step_pattern = re.compile(r"(?:stage\d+-)?step(\d+)(?:-tokens.*)?")
 
     for branch in refs.branches:
-        match = step_pattern.match(branch.name)
+        match = step_pattern.search(branch.name)
         if not match:
             continue
 
