@@ -1,0 +1,69 @@
+# PyTorchJob: Thermodynamic measurement — OLMo-1B checkpoints
+# 单节点 1 GPU: ~1 GPU-hour/checkpoint × ~1000 checkpoints
+#
+# kubectl apply -f thermo_measure_1b.yaml -n default \
+#   --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: jiaqi-thermo-measure-1b
+  namespace: default
+spec:
+  runPolicy:
+    backoffLimit: 0
+    cleanPodPolicy: None
+    ttlSecondsAfterFinished: 7200
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            role: master
+            job: jiaqi-thermo-measure-1b
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+              echo "======== Thermo Measurement: OLMo-1B ========"
+
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+              pip install scipy matplotlib 2>&1 | tail -3
+
+              python /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/thermo/measure_checkpoints.py \
+                --model-size 1B \
+                --checkpoint-dir /fsx/dev/jiaqi/checkpoints/olmo-1b \
+                --training-log /fsx/dev/jiaqi/checkpoints/olmo-1b/training_log.jsonl \
+                --output /fsx/dev/jiaqi/thermo_results/measurements_1b.jsonl \
+                --svd-k 256 \
+                --device cuda
+
+              echo "Measurement complete."
+            env:
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            resources:
+              limits:
+                nvidia.com/gpu: 1
+              requests:
+                cpu: "16"
+                memory: "256Gi"
+                nvidia.com/gpu: 1
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx

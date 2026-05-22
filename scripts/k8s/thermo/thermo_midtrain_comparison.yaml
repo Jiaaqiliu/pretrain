@@ -1,0 +1,109 @@
+# PyTorchJob: Mid-training vs Direct Decay comparison (Q3 validation)
+# 2 modes × 2 sizes × 1 seed = 4 sequential runs
+# 190M: 1 node × 8 GPUs; 1B: 需要单独提交
+#
+# kubectl apply -f thermo_midtrain_comparison.yaml -n default \
+#   --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: jiaqi-thermo-midtrain-190m
+  namespace: default
+spec:
+  runPolicy:
+    backoffLimit: 0
+    cleanPodPolicy: None
+    ttlSecondsAfterFinished: 7200
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            role: master
+            job: jiaqi-thermo-midtrain-190m
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+              echo "======== Mid-Training Comparison: 190M ========"
+
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+              pip install scipy matplotlib 2>&1 | tail -3
+
+              BASE_DIR="/fsx/dev/jiaqi/thermo_experiments"
+
+              # Mode 1: Mid-training (data switch + re-warmup)
+              echo "=== midtrain mode ==="
+              torchrun --nproc_per_node=$GPUS_PER_NODE \
+                /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/thermo/train_midtraining_comparison.py \
+                --model-size 190M \
+                --mode midtrain \
+                --seed 42 \
+                --output-dir ${BASE_DIR}/190m_midtrain_s42
+
+              # Mode 2: Direct decay (no data switch)
+              echo "=== direct mode ==="
+              torchrun --nproc_per_node=$GPUS_PER_NODE \
+                /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/thermo/train_midtraining_comparison.py \
+                --model-size 190M \
+                --mode direct \
+                --seed 42 \
+                --output-dir ${BASE_DIR}/190m_direct_s42
+
+              echo "Mid-training comparison complete."
+            env:
+            - name: WANDB_PROJECT
+              value: "thermo-pretraining"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: WANDB_API_KEY
+                  name: wandb-secret-jiaqi
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: FI_PROVIDER
+              value: "efa"
+            - name: FI_EFA_USE_DEVICE_RDMA
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_TIMEOUT
+              value: "600"
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: GPUS_PER_NODE
+              value: "8"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+              requests:
+                cpu: "96"
+                memory: "512Gi"
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+            - mountPath: /dev/shm
+              name: dshm
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "1000Gi"

@@ -1,0 +1,117 @@
+# PyTorchJob: Thermo proxy training — 190M / wsd_exponential / seed=456
+# 节点: 1 × 8 GPUs = 8 GPUs total
+# 预计耗时: ~32h (256 H100-hours)
+#
+# kubectl apply -f jiaqi-thermo-190m-wsd-exponential-s456.yaml -n default \
+#   --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: jiaqi-thermo-190m-wsd-exponential-s456
+  namespace: default
+spec:
+  runPolicy:
+    backoffLimit: 0
+    cleanPodPolicy: None
+    ttlSecondsAfterFinished: 7200
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            role: master
+            job: jiaqi-thermo-190m-wsd-exponential-s456
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+              echo "======== Thermo Training: 190M / wsd_exponential / seed=456 ========"
+
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+              pip install scipy matplotlib 2>&1 | tail -3
+
+              torchrun \
+                --nproc_per_node=$GPUS_PER_NODE \
+                --nnodes=1 \
+                --rdzv_backend=c10d \
+                --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+                /fsx/dev/jiaqi/A-EVOLVE-V2/scripts/thermo/train_schedule_comparison.py \
+                --model-size 190M \
+                --schedule wsd_exponential \
+                --seed 456 \
+                --max-steps 25000 \
+                --output-dir /fsx/dev/jiaqi/thermo_experiments/190m_wsd_exponential_s456 \
+                --measure-interval 200 \
+                --checkpoint-interval 200 \
+                --wandb-project thermo-pretraining
+
+              exitcode=$?
+              if [ $exitcode -ne 0 ]; then
+                echo "Job failed (exit code: $exitcode). Sleeping 3600s for debugging..."
+                sleep 3600
+              fi
+              exit 0
+            env:
+            - name: WANDB_PROJECT
+              value: "thermo-pretraining"
+            - name: WANDB_RUN_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: WANDB_API_KEY
+                  name: wandb-secret-jiaqi
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "NET"
+            - name: FI_PROVIDER
+              value: "efa"
+            - name: FI_EFA_USE_DEVICE_RDMA
+              value: "1"
+            - name: RDMAV_FORK_SAFE
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: NCCL_TIMEOUT
+              value: "600"
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: GPUS_PER_NODE
+              value: "8"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True" 
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+              requests:
+                cpu: "96"
+                memory: "512Gi"
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+            - mountPath: /dev/shm
+              name: dshm
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "1000Gi" 
