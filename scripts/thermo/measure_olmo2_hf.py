@@ -142,22 +142,17 @@ def measure_model(model, svd_k: int = 256) -> dict:
     }
 
 
-def _cleanup_hf_cache(repo_id: str, revision: str):
-    """Remove cached checkpoint files to prevent disk accumulation."""
+def _cleanup_hf_cache(repo_id: str, revision: str, local_rank: int):
+    """Remove cached checkpoint files to prevent disk accumulation.
+
+    Each GPU uses its own HF_HOME to avoid cache race conditions.
+    """
     import shutil
     hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
-    # HF caches to: HF_HOME/hub/models--{org}--{name}/snapshots/{hash}/
     repo_dir_name = f"models--{repo_id.replace('/', '--')}"
-    snapshots_dir = Path(hf_home) / "hub" / repo_dir_name / "snapshots"
-    if snapshots_dir.exists():
-        for snapshot in snapshots_dir.iterdir():
-            if snapshot.is_dir():
-                shutil.rmtree(snapshot, ignore_errors=True)
-    # Also clean blobs (actual weight files)
-    blobs_dir = Path(hf_home) / "hub" / repo_dir_name / "blobs"
-    if blobs_dir.exists():
-        shutil.rmtree(blobs_dir, ignore_errors=True)
-        blobs_dir.mkdir(exist_ok=True)
+    repo_cache = Path(hf_home) / "hub" / repo_dir_name
+    if repo_cache.exists():
+        shutil.rmtree(repo_cache, ignore_errors=True)
 
 
 def parse_args():
@@ -181,8 +176,15 @@ def main():
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
 
+    # Each GPU gets its own HF cache to avoid race conditions
+    base_hf_home = os.environ.get("HF_HOME", "/fsx/dev/jiaqi/.cache/huggingface")
+    per_gpu_hf_home = f"{base_hf_home}_rank{local_rank}"
+    os.environ["HF_HOME"] = per_gpu_hf_home
+    Path(per_gpu_hf_home).mkdir(parents=True, exist_ok=True)
+
     if local_rank == 0:
         print(f"Measuring OLMo-2-{args.model_size} from {repo_id}")
+        print(f"Each GPU uses independent HF cache: {base_hf_home}_rankN")
         print(f"Discovering revisions...")
 
     # Discover checkpoints
@@ -254,9 +256,7 @@ def main():
                 if "model" in locals():
                     del model
                 torch.cuda.empty_cache()
-                # Clean HF cache to prevent disk accumulation
-                # Each 7B checkpoint is ~14GB, 970 checkpoints = 13.6TB without cleanup
-                _cleanup_hf_cache(repo_id, revision)
+                _cleanup_hf_cache(repo_id, revision, local_rank)
 
     print(f"[GPU {local_rank}] Done. Results: {output_path}")
 
