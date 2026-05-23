@@ -429,22 +429,31 @@ def main():
 
     print(f"[GPU {local_rank}] Done: {output_path}")
 
-    if world_size > 1 and local_rank == 0:
-        import time as _t
-        _t.sleep(10)
-        merged_path = Path(args.output)
-        all_records = []
-        for rank in range(world_size):
-            shard = merged_path.with_suffix(f".rank{rank}.jsonl")
-            if shard.exists():
-                with open(shard) as sf:
-                    for line in sf:
-                        all_records.append(json.loads(line))
-        all_records.sort(key=lambda r: r.get("step", 0))
-        with open(merged_path, "w") as mf:
-            for r in all_records:
-                mf.write(json.dumps(r) + "\n")
-        print(f"Merged {len(all_records)} records → {merged_path}")
+    # Barrier: wait for all ranks to finish before merging
+    if world_size > 1:
+        try:
+            import torch.distributed as dist
+            if not dist.is_initialized():
+                dist.init_process_group(backend="gloo")
+            dist.barrier()
+        except Exception:
+            import time as _t
+            _t.sleep(30)
+
+        if local_rank == 0:
+            merged_path = Path(args.output)
+            all_records = []
+            for rank in range(world_size):
+                shard = merged_path.with_suffix(f".rank{rank}.jsonl")
+                if shard.exists():
+                    with open(shard) as sf:
+                        for line in sf:
+                            all_records.append(json.loads(line))
+            all_records.sort(key=lambda r: r.get("step", 0))
+            with open(merged_path, "w") as mf:
+                for r in all_records:
+                    mf.write(json.dumps(r) + "\n")
+            print(f"Merged {len(all_records)} records → {merged_path}")
 
 
 if __name__ == "__main__":

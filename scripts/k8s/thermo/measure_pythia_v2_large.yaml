@@ -1,0 +1,127 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-measure-pythia-v2-2-8b
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: measure
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          mkdir -p /fsx/dev/jiaqi/thermo_results/pythia_v2
+
+          echo "=== [V2] Measuring Pythia-2.8b ==="
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            scripts/thermo/measure_pythia_v2.py \
+            --model-size 2.8b \
+            --output /fsx/dev/jiaqi/thermo_results/pythia_v2/pythia_2.8b.jsonl
+
+          echo "=== Pythia-2.8b V2 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-measure-pythia-v2-6-9b
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: measure
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          mkdir -p /fsx/dev/jiaqi/thermo_results/pythia_v2
+
+          echo "=== [V2] Measuring Pythia-6.9b ==="
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            scripts/thermo/measure_pythia_v2.py \
+            --model-size 6.9b \
+            --output /fsx/dev/jiaqi/thermo_results/pythia_v2/pythia_6.9b.jsonl
+
+          echo "=== Pythia-6.9b V2 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
