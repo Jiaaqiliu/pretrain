@@ -120,7 +120,8 @@ The Gaussian shape emerges naturally from physics: decay slowly at first (mainta
 
 ## Documentation
 
-- **[Experiment Plan](experiments/thermodynamics/EXPERIMENT_PLAN.md)** --- Complete execution plan: research questions, public checkpoint reuse strategy, per-experiment instructions, resource estimates, and paper table/figure mapping
+- **[Experiment Plan V1](experiments/thermodynamics/EXPERIMENT_PLAN.md)** --- Original execution plan: OLMo-2 checkpoint reuse, per-experiment instructions, resource estimates, and paper table/figure mapping
+- **[Experiment Plan V2](experiments/thermodynamics/EXPERIMENT_PLAN_V2.md)** --- Supplementary plan: leverage Pythia (6 scales, 154 checkpoints each) and OLMo-2 for zero-compute measurement experiments (E1/E5), with minimal training only for schedule comparison (E2/E4) and mid-training validation (E3)
 - **[Experiment Log](docs/EXPERIMENT_LOG.md)** --- Running diary of progress, findings, and lessons learned
 - **[Cluster Ops](docs/CLUSTER_OPS.md)** --- K8s cluster operations guide (p5-llm / H200)
 - **[Agent Handoff](experiments/thermodynamics/HANDOFF.md)** --- Task checklist and acceptance criteria for continuing this work
