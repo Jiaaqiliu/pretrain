@@ -6,6 +6,41 @@
 
 ## 时间线
 
+### 2026-05-23: Pythia 全规模热力学测量 (Phase 1-E1)
+
+**目标**: 用 EleutherAI Pythia 套件 (70M-6.9B, 6 个规模) 验证状态方程 PV/(NT) = k_eff(N)。
+
+**关键优势**: Pythia 所有规模在相同数据 (The Pile) 上以相同顺序训练, 154 个中间 checkpoint 公开，是全球最完整的预训练动态分析资源。
+
+**资源:**
+| 模型 | 检查点数 | 每ckpt大小 | 峰值内存 | 预计时间 (8GPU) |
+|------|---------|-----------|---------|---------------|
+| pythia-70m-deduped | 25 (sampled) | 166MB | 166MB | ~1 min |
+| pythia-160m-deduped | 25 | 375MB | 375MB | ~2 min |
+| pythia-410m-deduped | 25 | 911MB | 911MB | ~3 min |
+| pythia-1b-deduped | 25 | 2.1GB | 2.1GB | ~6 min |
+| pythia-2.8b-deduped | 25 | 5.7GB | 5.7GB | ~7 min |
+| pythia-6.9b-deduped | 25 | 13.9GB | 13.9GB | ~10 min |
+| **总计** | **150** | **流式** | **13.9GB** | **~45 min** |
+
+**方法**: 流式处理 (download → measure → delete), 8 GPU 并行分片, per-GPU HF cache
+
+**Jobs (4 节点并行):**
+- `luhanqin-measure-pythia-small` (70m + 160m + 410m sequential)
+- `luhanqin-measure-pythia-1b`
+- `luhanqin-measure-pythia-2-8b`
+- `luhanqin-measure-pythia-6-9b`
+
+**预期结果:**
+- E1: PV/(NT) 在 cosine 稳态期 (step 10K-100K) 收敛到规模相关常数
+- E1: k_eff(N) = k₀ + α·N^(-1/3) 拟合 R² > 0.90
+- ψ(N) scaling law: 6 个点拟合 ψ ∝ N^b
+- 训练相变识别: warmup/early/stable/late 四阶段热力学特征
+
+**状态**: 🔄 已提交 (2026-05-23), 等待 GPU 节点自动扩容
+
+---
+
 ### 2026-05-23: OLMo-2 公开检查点测量 (Phase 1)
 
 **目标**: 从 HuggingFace 下载 OLMo-2 的中间检查点，测量热力学状态变量。零训练成本。
