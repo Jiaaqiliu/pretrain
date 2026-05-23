@@ -120,15 +120,91 @@ The Gaussian shape emerges naturally from physics: decay slowly at first (mainta
 
 ## Documentation
 
-- **[Experiment Plan V1](experiments/thermodynamics/EXPERIMENT_PLAN.md)** --- Original execution plan: OLMo-2 checkpoint reuse, per-experiment instructions, resource estimates, and paper table/figure mapping
-- **[Experiment Plan V2](experiments/thermodynamics/EXPERIMENT_PLAN_V2.md)** --- Supplementary plan: leverage Pythia (6 scales, 154 checkpoints each) and OLMo-2 for zero-compute measurement experiments (E1/E5), with minimal training only for schedule comparison (E2/E4) and mid-training validation (E3)
-- **[Experiment Log](docs/EXPERIMENT_LOG.md)** --- Running diary of progress, findings, and lessons learned
-- **[Cluster Ops](docs/CLUSTER_OPS.md)** --- K8s cluster operations guide (p5-llm / H200)
-- **[Agent Handoff](experiments/thermodynamics/HANDOFF.md)** --- Task checklist and acceptance criteria for continuing this work
+本项目的文档体系由以下文件组成，按逻辑关系组织如下：
 
-## Current Status
+### 核心理论与结果
 
-- **Phase 0 complete**: 190M x 4 schedules pilot --- thermodynamic signals confirmed (S decreases, psi increases)
-- **Phase 0.5 in progress**: Corrected 190M experiments (25B tokens, 40% decay)
-- **3B training running**: Gaussian schedule on 8xH200
-- **Next**: Multi-scale OLMo-2 checkpoint measurement (1B/7B/13B), 1B proxy training
+| 文档 | 作用 | 核心内容 |
+|------|------|---------|
+| **[docs/THEORY_V2.md](docs/THEORY_V2.md)** | 📐 **最终理论框架** | 完整的修正理论 (15 sections)：SR/d 通用常数、α 相变、Structural Chinchilla 公式、跨架构验证、E5 相关性结果。**最重要的文档，所有核心发现和公式都在这里。** |
+| **[docs/MONITORING_FRAMEWORK.md](docs/MONITORING_FRAMEWORK.md)** | 🖥️ **实用监测指南** | 面向从业者的实操文档：如何用 α 和 SR/d 监测训练健康度，4 个 actionable signals，三阶段训练动力学，compute efficiency 分析。**论文的"practical contribution"部分。** |
+| **[results/CROSS_SCALE_ANALYSIS.md](results/CROSS_SCALE_ANALYSIS.md)** | 📊 V1 指标的跨规模分析 | V1 (ψ/S) 的分析及其失败原因。保留作为参考，展示为什么需要修正到 V2。 |
+| **[results/pythia/analysis/PYTHIA_ANALYSIS.md](results/pythia/analysis/PYTHIA_ANALYSIS.md)** | 📊 V1 Pythia 结果报告 | V1 指标在 Pythia 上的完整测量结果。展示了 ψ 饱和问题。 |
+
+### 过程记录
+
+| 文档 | 作用 | 核心内容 |
+|------|------|---------|
+| **[docs/MEASUREMENT_REVISION.md](docs/MEASUREMENT_REVISION.md)** | 🔧 **方法修正过程** | 从 V1 到 V2 的完整研究过程：为什么 V1 失败、文献调研 (Martin & Mahoney, WeightWatcher)、新指标设计理由、迭代过程。**体现了研究方法论。** |
+| **[docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md)** | 📋 实验进度日志 | 时间线记录：Phase 0/0.5 的实验细节、工程经验教训、资源使用。V1 阶段的过程记录。 |
+| **[docs/CLUSTER_OPS.md](docs/CLUSTER_OPS.md)** | ⚙️ 集群操作手册 | K8s 连接、job 提交、监控命令。纯操作性文档。 |
+
+### 实验计划
+
+| 文档 | 作用 | 核心内容 |
+|------|------|---------|
+| **[experiments/thermodynamics/EXPERIMENT_PLAN_V2.md](experiments/thermodynamics/EXPERIMENT_PLAN_V2.md)** | 📝 实验计划 V2 | 基于 Pythia/OLMo-2 checkpoint 复用的实验设计：E1-E5 五个实验的详细方案。 |
+| **[experiments/thermodynamics/EXPERIMENT_PLAN.md](experiments/thermodynamics/EXPERIMENT_PLAN.md)** | 📝 实验计划 V1 | 初始计划（已部分过时，保留作参考）。 |
+
+### 文档之间的逻辑关系
+
+```
+EXPERIMENT_PLAN_V2.md          ← 实验设计（输入）
+        ↓
+MEASUREMENT_REVISION.md        ← V1 失败 → 文献调研 → V2 设计（过程）
+        ↓
+THEORY_V2.md                   ← 所有发现的理论整合（核心产出）
+        ↓
+MONITORING_FRAMEWORK.md        ← 将理论转化为实操指南（应用产出）
+```
+
+### 数据目录
+
+```
+results/
+├── pythia_v2/                  ← V2 核心数据 (α, SR, concentration)
+│   ├── pythia_70m.jsonl            6 个规模的 V2 测量
+│   ├── pythia_160m.jsonl
+│   ├── pythia_410m.jsonl
+│   ├── pythia_1b.jsonl
+│   ├── pythia_2.8b.jsonl
+│   └── pythia_6.9b.jsonl
+├── amber_v2/                   ← 跨架构验证 (LLaMA arch)
+│   └── amber_7b.jsonl              LLM360/Amber 25 checkpoints
+├── pythia_benchmarks/          ← 下游性能数据 (E5 correlation)
+│   └── {size}_step{N}.json         102 个 benchmark 结果
+├── olmo2/                      ← OLMo-2 V1 测量数据
+│   ├── olmo2_1b.jsonl              260 checkpoints
+│   ├── olmo2_7b.jsonl              962 checkpoints
+│   └── olmo2_13b.jsonl             (partial, still running)
+├── pythia/                     ← Pythia V1 测量数据 (历史)
+├── 190m_phase0/                ← 190M 自训练 Phase 0
+└── 190m_phase05/               ← 190M 自训练 Phase 0.5
+```
+
+### 下一步更新将在哪里
+
+| 进展类型 | 更新位置 |
+|---------|---------|
+| OLMo-2 V2 结果 (第三架构验证) | `docs/THEORY_V2.md` Section 13 追加 |
+| 3B 自训练完成后的分析 | `docs/THEORY_V2.md` 新增 Section |
+| 新的监测信号或规则 | `docs/MONITORING_FRAMEWORK.md` 追加 |
+| 实验进度/bug修复 | `docs/EXPERIMENT_LOG.md` |
+| 如果再次修改测量方法 | `docs/MEASUREMENT_REVISION.md` 追加 |
+
+## Current Status (2026-05-23)
+
+### Key Results
+
+| Finding | Evidence |
+|---------|----------|
+| **SR/d ≈ 0.056** (universal compression) | 7 models, 2 architectures, CV=14.9% |
+| **SR/d predicts performance** (r=-0.92) | N=143, p<10⁻⁵⁸, R²=0.75 |
+| **α reversal = structural degradation** | Confirmed in Pythia + Amber (cross-arch) |
+| **Structural Chinchilla**: α = 2.54 + 3.5×e^(-D/269N) | R²=0.81, explains over-training advantage |
+| **Three-phase dynamics** | Explosive → Reversal → Recovery |
+
+### Running Experiments
+- OLMo-2-13B V1 measurement (~16% complete)
+- OLMo-2-1B/7B V2 measurement (queued, waiting for GPU)
+- 3B gaussian training (~34% complete)
