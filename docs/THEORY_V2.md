@@ -270,4 +270,73 @@ CV = 13.4% 不够小 (理想是 <5%)。可能的原因:
 
 ---
 
-*Updated: 2026-05-23, with complete 6-scale V2 results*
+---
+
+## 11. E5 结果: SR/d 与下游性能的惊人相关性
+
+### 核心结果
+
+| Metric | Spearman r | p-value | N |
+|--------|-----------|---------|---|
+| **SR/d** | **-0.918** | **1.9×10⁻⁵⁸** | 143 |
+| C₁₀ | +0.745 | 1.4×10⁻²⁶ | 143 |
+| α (per-model) | -0.68 to -0.79 | < 10⁻³ | ~25 each |
+| α (global) | -0.24 | 3.4×10⁻³ | 143 |
+
+### 为什么 SR/d 是最强的监测指标
+
+1. **单指标解释 75.4% 的性能方差** (R²=0.754, 不需要知道模型大小)
+2. **加入模型大小只增加 12.5%** (R²: 0.754 → 0.878)
+3. **不需要训练数据、测试数据或 loss** — 纯粹从权重计算
+4. **跨规模可比** — 归一化后的维度, 70M 和 6.9B 在同一尺度上
+5. **方向一致**: lower SR/d = more compressed = better performance
+
+### 回归公式
+
+```
+score ≈ -0.258 × log₁₀(SR/d) + 0.048 × log₁₀(N) - 0.252
+```
+
+这可以在训练中实时预测下游性能, 不需要实际跑 eval!
+
+### 与 α 的互补
+
+α 在全局相关性弱 (r=-0.24) 是因为大模型 α 高但性能也高 (confounded with N)。
+但在**单个模型的训练过程中**, α 是强预测器 (r=-0.68 to -0.79)。
+
+**实际使用建议**:
+- **跨模型比较**: 用 SR/d
+- **单模型训练监控**: 用 α (和 dα/dt)
+- **两者结合**: 用 log(SR/d) + log(N) 回归预测性能
+
+---
+
+## 12. 论文最终框架
+
+### 标题
+"Beyond Loss Curves: Spectral Monitoring for Language Model Pretraining"
+
+### 贡献列表
+
+1. **SR/d 作为通用质量指标** (Spearman r=-0.92, R²=0.75)
+   - 不需要 training/test data
+   - 跨规模可比
+   - 比 loss 提供更多信息 (e.g., 检测结构退化)
+
+2. **α 作为训练健康度指标**
+   - α reversal (dα/dt > 0) = 结构退化的 early warning
+   - dα/dt → 0 = adaptive schedule trigger
+   - α < 3 = structurally mature
+
+3. **SR/d 通用常数** (~0.055)
+   - 跨 70M-6.9B 六个规模
+   - 与训练充分度无关
+   - 架构决定的"压缩目标"
+
+4. **α 相变** (tokens/param ≈ 200-300)
+   - Bulk+Spikes → Heavy-Tail 转变
+   - 重新定义"训练充分性": 不是 loss 是否收敛, 而是 α 是否进入 [2,3]
+
+---
+
+*Final update: 2026-05-23. SR/d correlation with benchmarks confirmed.*
