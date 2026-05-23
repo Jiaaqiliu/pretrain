@@ -1,0 +1,121 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-measure-olmo2-1b-v2
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: measure
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          mkdir -p /fsx/dev/jiaqi/thermo_results/olmo2_v2
+
+          echo "=== [V2] Measuring OLMo-2-1B (sampled 25 checkpoints) ==="
+          python3 -c "
+import json, sys
+sys.path.insert(0, '.')
+from scripts.thermo.measure_pythia_v2 import measure_model_v2, fit_power_law_alpha, cleanup_hf_cache
+import torch, time, os, shutil, numpy as np
+from pathlib import Path
+from huggingface_hub import list_repo_refs
+import re
+
+repo_id = 'allenai/OLMo-2-0425-1B'
+local_rank = int(os.environ.get('LOCAL_RANK', 0))
+world_size = int(os.environ.get('WORLD_SIZE', 1))
+
+base_hf_home = os.environ.get('HF_HOME', '/fsx/dev/jiaqi/.cache/huggingface')
+per_gpu_hf_home = f'{base_hf_home}_rank{local_rank}'
+os.environ['HF_HOME'] = per_gpu_hf_home
+Path(per_gpu_hf_home).mkdir(parents=True, exist_ok=True)
+
+# Discover checkpoints
+refs = list_repo_refs(repo_id)
+ckpts = []
+for branch in refs.branches:
+    m = re.search(r'step(\d+)', branch.name)
+    if m:
+        step = int(m.group(1))
+        if step % 10000 == 0 or step in [1000, 5000]:
+            ckpts.append({'step': step, 'revision': branch.name})
+ckpts.sort(key=lambda x: x['step'])
+ckpts = ckpts[:25]  # limit to 25
+
+my_ckpts = ckpts[local_rank::world_size]
+device = f'cuda:{local_rank}'
+output_path = Path(f'/fsx/dev/jiaqi/thermo_results/olmo2_v2/olmo2_1b.rank{local_rank}.jsonl')
+output_path.parent.mkdir(parents=True, exist_ok=True)
+
+print(f'[GPU {local_rank}] Processing {len(my_ckpts)} checkpoints')
+
+from transformers import AutoModelForCausalLM
+
+with open(output_path, 'w') as f:
+    for i, ckpt in enumerate(my_ckpts):
+        print(f'[GPU {local_rank}] [{i+1}/{len(my_ckpts)}] step={ckpt[\"step\"]}')
+        t0 = time.time()
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                repo_id, revision=ckpt['revision'],
+                torch_dtype=torch.float32, device_map=device, trust_remote_code=True)
+            m = measure_model_v2(model, svd_k=256)
+            record = {'step': ckpt['step'], 'revision': ckpt['revision'],
+                      'model_name': 'OLMo-2-1B', 'hidden_dim': 2048, **m}
+            f.write(json.dumps(record) + '\n')
+            f.flush()
+            print(f'  α={m[\"alpha_mean\"]:.2f} SR={m[\"stable_rank_mean\"]:.0f} ({time.time()-t0:.1f}s)')
+        except Exception as e:
+            print(f'  ERROR: {e}')
+            f.write(json.dumps({'step': ckpt['step'], 'error': str(e)}) + '\n')
+            f.flush()
+        finally:
+            if 'model' in dir(): del model
+            torch.cuda.empty_cache()
+            cleanup_hf_cache(repo_id)
+
+print(f'[GPU {local_rank}] Done')
+"
+          echo "=== OLMo-2-1B V2 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
