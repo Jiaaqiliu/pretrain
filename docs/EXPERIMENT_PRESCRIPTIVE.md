@@ -326,4 +326,56 @@ last-checkpoint by X%, recovering Y% of the oracle gap."
 
 ---
 
+---
+
+## 实验 A-Real: 真实数据上的 3-Way Schedule 对比 (待执行)
+
+### 核心问题
+
+> "在真实语言数据上, α-guided 是否同样优于 cosine? 与 WSD 相比如何?"
+
+### 设计
+
+| 配置 | Run 1 | Run 2 | Run 3 |
+|------|-------|-------|-------|
+| Schedule | Cosine | WSD (stable 78% + linear decay) | α-Guided |
+| 数据 | FineWeb-Edu 10B | 相同 | 相同 |
+| 模型 | Pythia-410M (step0 init) | 相同 | 相同 |
+| Steps | 25,000 | 25,000 | 25,000 |
+| Seeds | 42, 123 | 42, 123 | 42, 123 |
+
+**总计**: 3 schedules × 2 seeds = 6 runs, 每 run ~3h = **18 GPU-hours**
+
+### 评估
+
+每 5000 步跑一次 eval (6 benchmarks): lambada, piqa, winogrande, arc_easy, arc_challenge, sciq
+
+### 预期
+
+- α-guided ≈ WSD (两者都保持高 LR 到后期)
+- α-guided > cosine (cosine 过早 decay)
+- 关键差异: WSD 的 stable→decay 分界是人为设定的 (78%), α-guided 是数据驱动的
+
+### 状态
+
+- [x] 数据下载 job 已提交 (FineWeb-Edu 10B → FSx)
+- [ ] 训练脚本编写 (需要支持真实数据加载 + eval)
+- [ ] 提交 6 个训练 job
+
+---
+
+## 总结: 论文还需要什么
+
+| 需求 | 状态 | 重要性 |
+|------|------|--------|
+| SR/d 通用常数 (9 models, 3 archs) | ✅ 完成 | 核心 |
+| SR/d-performance correlation (r=-0.92) | ✅ 完成 | 核心 |
+| α reversal (cross-arch confirmed) | ✅ 完成 | 核心 |
+| Structural Chinchilla law | ✅ 完成 | 核心 |
+| α-guided vs cosine (proxy) | ✅ 完成 | 支撑 |
+| **α-guided vs cosine vs WSD (真实数据)** | 🔄 进行中 | **必须** |
+| 3B gaussian 训练结果 | 🔄 运行中 (~2d) | 加分 |
+| OLMo-2-13B 完整数据 | 🔄 运行中 (~3h) | 加分 |
+| Paper figures | ⏳ 待做 | 必须 |
+
 *Document updated: 2026-05-23.*
