@@ -142,6 +142,24 @@ def measure_model(model, svd_k: int = 256) -> dict:
     }
 
 
+def _cleanup_hf_cache(repo_id: str, revision: str):
+    """Remove cached checkpoint files to prevent disk accumulation."""
+    import shutil
+    hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+    # HF caches to: HF_HOME/hub/models--{org}--{name}/snapshots/{hash}/
+    repo_dir_name = f"models--{repo_id.replace('/', '--')}"
+    snapshots_dir = Path(hf_home) / "hub" / repo_dir_name / "snapshots"
+    if snapshots_dir.exists():
+        for snapshot in snapshots_dir.iterdir():
+            if snapshot.is_dir():
+                shutil.rmtree(snapshot, ignore_errors=True)
+    # Also clean blobs (actual weight files)
+    blobs_dir = Path(hf_home) / "hub" / repo_dir_name / "blobs"
+    if blobs_dir.exists():
+        shutil.rmtree(blobs_dir, ignore_errors=True)
+        blobs_dir.mkdir(exist_ok=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-size", required=True, choices=["1B", "7B", "13B"])
@@ -236,6 +254,9 @@ def main():
                 if "model" in locals():
                     del model
                 torch.cuda.empty_cache()
+                # Clean HF cache to prevent disk accumulation
+                # Each 7B checkpoint is ~14GB, 970 checkpoints = 13.6TB without cleanup
+                _cleanup_hf_cache(repo_id, revision)
 
     print(f"[GPU {local_rank}] Done. Results: {output_path}")
 
