@@ -6,6 +6,38 @@
 
 ## 时间线
 
+### 2026-05-23: OLMo-2 公开检查点测量 (Phase 1)
+
+**目标**: 从 HuggingFace 下载 OLMo-2 的中间检查点，测量热力学状态变量。零训练成本。
+
+**资源:**
+| 模型 | 检查点数 | 时间 (8 GPU) | 峰值存储 |
+|------|---------|-------------|---------|
+| OLMo-2-1B | ~267 | ~15 min | 2GB |
+| OLMo-2-7B | ~970 | ~1.5h | 14GB |
+| OLMo-2-13B | ~717 | ~2.5h | 26GB |
+| **总计** | **~1954** | **~4h** | **流式不累积** |
+
+**方法**: 流式处理（下载→SVD→记录→删除→下一个），8 GPU 并行分片
+
+**Jobs:**
+- `luhanqin-measure-olmo2-1b`
+- `luhanqin-measure-olmo2-7b`
+- `luhanqin-measure-olmo2-13b`
+
+**预期:**
+- 验证 S/ψ 在 7B/13B 上的行为 (190M 上 decay phase 无信号，大模型可能不同)
+- 获得 cosine schedule 基线
+- 拟合 k_eff(N) scaling law (论文 P1)
+- 为 3B 自训练实验提供参照
+
+**Phase 0.5 结论 (前一轮):**
+- 190M 上 decay phase 对 ψ 贡献 <0.1%，结构形成集中在 stable phase
+- Gaussian 是唯一 Δψ_decay > 0 的 schedule (极微弱信号)
+- 需要更大模型验证是否是 scale 问题
+
+---
+
 ### 2026-05-22: Phase 0 完成 + 分析 + Phase 0.5 设计
 
 **Phase 0 结果:**
