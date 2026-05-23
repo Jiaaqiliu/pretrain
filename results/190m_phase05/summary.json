@@ -1,0 +1,83 @@
+{
+  "experiment": "190M Phase 0.5 (corrected)",
+  "config": {
+    "model": "OLMo2-190M (267M params)",
+    "steps": 25000,
+    "data_tokens": "25B (no cycling, epoch<1)",
+    "stable_frac": 0.58,
+    "decay_frac": 0.4,
+    "warmup_frac": 0.02,
+    "seed": 42,
+    "gpu": "8\u00d7H200"
+  },
+  "results": {
+    "gaussian": {
+      "S_initial": 6.02483286033383,
+      "S_final": 5.9128792282624385,
+      "S_min": 5.907366334032121,
+      "S_min_step": 11200,
+      "delta_S_total": -0.11195363207139142,
+      "delta_S_decay": 0.00430292442053215,
+      "psi_initial": 0.013300259457212272,
+      "psi_final": 0.07919629022761449,
+      "delta_psi_total": 0.06589603077040221,
+      "delta_psi_decay": 4.934470679351932e-05,
+      "V_initial": 18451.514152526855,
+      "V_final": 49882.87742328644,
+      "LR_final": 5.999999999999997e-06
+    },
+    "wsd_linear": {
+      "S_initial": 6.0248152922106595,
+      "S_final": 5.9096684051384525,
+      "S_min": 5.905111543869765,
+      "S_min_step": 12200,
+      "delta_S_total": -0.115146887072207,
+      "delta_S_decay": 0.003956318297536399,
+      "psi_initial": 0.013280745536109414,
+      "psi_final": 0.07366919823546458,
+      "delta_psi_total": 0.060388452699355166,
+      "delta_psi_decay": -9.493147339673103e-05,
+      "V_initial": 18452.990602493286,
+      "V_final": 50176.21425437927,
+      "LR_final": 6.000000000000004e-06
+    },
+    "wsd_exponential": {
+      "S_initial": 6.024798718052964,
+      "S_final": 5.912705245785976,
+      "S_min": 5.9073393473294376,
+      "S_min_step": 11400,
+      "delta_S_total": -0.11209347226698796,
+      "delta_S_decay": 0.004200409682658446,
+      "psi_initial": 0.01315369547905142,
+      "psi_final": 0.07911302062356189,
+      "delta_psi_total": 0.06595932514451047,
+      "delta_psi_decay": -2.8350595060747108e-05,
+      "V_initial": 18455.180656433105,
+      "V_final": 50125.1567697525,
+      "LR_final": 6.000000000000002e-06
+    }
+  },
+  "comparison_with_phase0": {
+    "gaussian": {
+      "delta_S_phase0": -0.03619138695287827,
+      "delta_S_phase05": -0.11195363207139142,
+      "S_signal_improvement": "3.1x",
+      "psi_final_phase0": 0.09264609998388922,
+      "psi_final_phase05": 0.07919629022761449
+    },
+    "wsd_linear": {
+      "delta_S_phase0": -0.03606864503156881,
+      "delta_S_phase05": -0.115146887072207,
+      "S_signal_improvement": "3.2x",
+      "psi_final_phase0": 0.09503037860354116,
+      "psi_final_phase05": 0.07366919823546458
+    },
+    "wsd_exponential": {
+      "delta_S_phase0": -0.03623903079675461,
+      "delta_S_phase05": -0.11209347226698796,
+      "S_signal_improvement": "3.1x",
+      "psi_final_phase0": 0.0939631463431681,
+      "psi_final_phase05": 0.07911302062356189
+    }
+  }
+}
