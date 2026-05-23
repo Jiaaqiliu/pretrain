@@ -19,11 +19,12 @@
 - 根因: 500M tokens 循环 52 次 + decay 只有 20%
 - 详见 `results/190m_phase0/ANALYSIS.md`
 
-**Phase 0.5 (修正实验) 设计并提交:**
-- 修正1: 数据量 500M → 25B tokens (消除循环)
-- 修正2: decay 比例 20% → 40% (放大信号窗口)
-- 修正3: 只跑 wsd_linear/gaussian/wsd_exponential (cosine 不可比)
-- 训练时间不变: ~8h, 计算量不变: 26.2B tokens consumed
+**Phase 0.5 (修正实验) 完成:**
+- 修正1: 数据量 500M → 25B tokens (消除循环) → ✅ S 信号 3.1× 放大
+- 修正2: decay 比例 20% → 40% (放大信号窗口) → ⚠️ Δψ_decay 仍极小
+- 修正3: 只跑 wsd_linear/gaussian/wsd_exponential (cosine 不可比) → ✅ 公平对比
+- 关键发现: **decay phase 对 ψ 贡献接近零 (0.07%)**，结构形成在 stable phase 完成
+- 详见 `results/190m_phase05/ANALYSIS.md`
 
 ### 2026-05-22: 项目启动 + 9 次迭代调试
 
