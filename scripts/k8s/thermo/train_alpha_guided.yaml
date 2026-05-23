@@ -1,0 +1,133 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-alpha-guided-cosine-s42
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          mkdir -p /fsx/dev/jiaqi/thermo_results/alpha_guided
+
+          echo "=== Training Pythia-410M with COSINE schedule (seed=42) ==="
+          python scripts/thermo/train_alpha_guided.py \
+            --schedule cosine --seed 42 \
+            --output /fsx/dev/jiaqi/thermo_results/alpha_guided/cosine_s42.jsonl
+
+          echo "=== Training Pythia-410M with α-GUIDED schedule (seed=42) ==="
+          python scripts/thermo/train_alpha_guided.py \
+            --schedule alpha_guided --seed 42 \
+            --output /fsx/dev/jiaqi/thermo_results/alpha_guided/alpha_guided_s42.jsonl
+
+          echo "=== BOTH RUNS COMPLETE (seed=42) ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-alpha-guided-s123
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          mkdir -p /fsx/dev/jiaqi/thermo_results/alpha_guided
+
+          echo "=== Training with COSINE (seed=123) ==="
+          python scripts/thermo/train_alpha_guided.py \
+            --schedule cosine --seed 123 \
+            --output /fsx/dev/jiaqi/thermo_results/alpha_guided/cosine_s123.jsonl
+
+          echo "=== Training with α-GUIDED (seed=123) ==="
+          python scripts/thermo/train_alpha_guided.py \
+            --schedule alpha_guided --seed 123 \
+            --output /fsx/dev/jiaqi/thermo_results/alpha_guided/alpha_guided_s123.jsonl
+
+          echo "=== BOTH RUNS COMPLETE (seed=123) ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
