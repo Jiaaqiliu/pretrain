@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-alpha-real-data-prep
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install scipy transformers huggingface_hub datasets > /dev/null 2>&1 || true
+          set -e
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+
+          echo "=== Downloading FineWeb-Edu sample (10B tokens) for real-data experiment ==="
+          python3 -c "
+          from datasets import load_dataset
+          import os
+          # Download a 10B token sample of FineWeb-Edu
+          ds = load_dataset('HuggingFaceFW/fineweb-edu', 'sample-10BT', split='train', cache_dir='/fsx/dev/jiaqi/.cache/datasets')
+          print(f'Downloaded: {len(ds)} samples')
+          # Save path for training scripts
+          ds.save_to_disk('/fsx/dev/jiaqi/data/fineweb_10bt')
+          print('Saved to /fsx/dev/jiaqi/data/fineweb_10bt')
+          "
+
+          echo "=== Data prep COMPLETE ==="
+          ls -la /fsx/dev/jiaqi/data/fineweb_10bt/
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: HF_DATASETS_CACHE
+          value: "/fsx/dev/jiaqi/.cache/datasets"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
