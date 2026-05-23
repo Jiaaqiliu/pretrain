@@ -168,6 +168,7 @@
 | 6 | work_dir 必须是共享文件系统 | 各 rank 需要同一个 global indices 文件 |
 | 7 | 先 disable WandB 跑通再加 | WandB 不应该阻塞训练 |
 | 8 | 数据加载用 InMemoryTokenSource | NumpyFSLDatasetConfig 语义不同 |
+| 9 | **HF 检查点流式测量必须清理缓存** | 970×14GB=13.6TB, 每次 `from_pretrained` 后删 snapshots+blobs |
 
 ### 热力学测量教训
 
