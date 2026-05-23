@@ -267,4 +267,63 @@ last-checkpoint by X%, recovering Y% of the oracle gap."
 
 ---
 
-*Document created: 2026-05-23. 实验 B 立即开始，实验 A 准备提交。*
+---
+
+## 实验结果
+
+### 实验 B 结果 (2026-05-23): Checkpoint Selection — Negative Result
+
+**结论: SR/d 选 checkpoint 不比 last-ckpt 好。**
+
+| Model | Last-ckpt | Min-SR/d | Min-α | Oracle |
+|-------|-----------|----------|-------|--------|
+| Pythia-70m | 0.3786 | **0.3823** | 0.3786 | 0.3951 |
+| Pythia-160m | 0.4287 | 0.4287 | 0.4287 | 0.4482 |
+| Pythia-410m | 0.4944 | 0.4944 | 0.4944 | 0.4962 |
+| Pythia-1b | 0.5307 | 0.5307 | 0.5198 | 0.5319 |
+| Pythia-2.8b | 0.5725 | 0.5602 | 0.5602 | 0.5725 |
+| Pythia-6.9b | 0.6010 | 0.5859 | 0.5859 | 0.6010 |
+
+**教训**: 指标的价值在于**训练过程中的决策** (when to decay, when to stop)，不在于**部署时选哪个 checkpoint**。对于 well-trained 模型，last checkpoint 就是最好的。
+
+---
+
+### 实验 A 结果 (2026-05-23): α-Guided vs Cosine — POSITIVE Result ✓
+
+**结论: α-guided schedule 产生更好的谱结构和更低的 loss。**
+
+| Metric | Cosine (2 seeds) | α-Guided (2 seeds) | Δ |
+|--------|-----------------|--------------------|----|
+| Final Loss | 10.837 ± 0.002 | **10.829 ± 0.001** | **-0.008** |
+| Final α | 2.94 | **2.35** | **-0.59** |
+| Decay start | Step 250 (1%) | Step 20000 (80%) | — |
+
+**α trajectory (seed=42)**:
+
+| Step | Cosine α | α-Guided α | Cosine LR | Guided LR |
+|------|---------|-----------|-----------|-----------|
+| 500 | 9.22 | 9.22 | 3.0e-4 | 3.0e-4 |
+| 5000 | 3.50 | 3.32 | 2.8e-4 | 3.0e-4 |
+| 10000 | 2.95 | 2.52 | 2.1e-4 | 3.0e-4 |
+| 15000 | 2.95 | 2.38 | 1.3e-4 | 3.0e-4 |
+| 20000 | 3.00 | 2.33 | 5.6e-5 | 3.0e-4 |
+
+**为什么 α-guided 更好**:
+1. 保持 peak LR 到 step 20000 (vs cosine 从 step 250 就开始衰减)
+2. 高 LR = 强梯度驱动力 → 更充分的结构形成时间
+3. 最终 α=2.35 vs 2.94: α-guided 达到了更深的 heavy-tail 状态
+
+**注意**: 本实验使用随机 token (proxy training)。在真实数据上，预期差距更大（因为 α reversal 会更早触发，给 guided schedule 一个自然的 decay 信号而非 80% fallback）。
+
+---
+
+### 正在运行的实验 (状态: 2026-05-23)
+
+| 实验 | 进度 | 预计完成 |
+|------|------|---------|
+| OLMo-2-13B V1 测量 | 44/90 (49%) | ~3h |
+| 3B gaussian 训练 | 18.1B/50B (36%) | ~2 days |
+
+---
+
+*Document updated: 2026-05-23.*
