@@ -1,0 +1,1 @@
+{"step": 1000, "revision": "stage2-ingredient4-step1000-tokens9B", "tokens_b": 9, "model_name": "OLMo-2-13B", "num_params": 13000000000, "weight_decay": 0.1, "batch_size": 512, "volume": 22532285.5583086, "spectral_entropy": 5.502110492128052, "order_parameter": 0.23331531587441118, "n_params": 13716198400}
