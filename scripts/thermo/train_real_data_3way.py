@@ -36,7 +36,7 @@ CONFIG = {
     "seq_len": 2048,
     "micro_batch_size": 4,       # per GPU
     "grad_accum_steps": 16,      # effective batch = 4*8*16 = 512 seqs = 1M tokens/step
-    "total_steps": 19_000,
+    "total_steps": 9_000,
     "warmup_steps": 500,
     "peak_lr": 3.0e-4,
     "min_lr": 3.0e-5,
@@ -44,9 +44,9 @@ CONFIG = {
     "alpha_measure_interval": 500,
     "alpha_reversal_patience": 3,
     "fallback_decay_start": 0.80,
-    "eval_interval": 5000,
+    "eval_interval": 3000,
     "log_interval": 100,
-    "save_interval": 5000,
+    "save_interval": 3000,
     # WSD specific
     "wsd_stable_fraction": 0.80,
 }
