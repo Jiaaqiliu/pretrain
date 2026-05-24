@@ -65,16 +65,17 @@ spec:
           print(f'First sequence tokens: {data[0, :20]}')
           print(f'Token range: [{data.min()}, {data.max()}]')
 
-          # Verify tokenizer compatibility
-          from transformers import AutoTokenizer
-          tok = AutoTokenizer.from_pretrained('EleutherAI/pythia-410m-deduped')
-          vocab_size = tok.vocab_size
+          # Model vocab_size is 50304 (includes padding), tokenizer len is 50277
+          # All tokens must be < 50304
+          MODEL_VOCAB_SIZE = 50304
           max_token = int(data.max())
-          print(f'Tokenizer vocab_size: {vocab_size}')
+          print(f'Model vocab_size: {MODEL_VOCAB_SIZE}')
           print(f'Max token in data: {max_token}')
-          assert max_token < vocab_size, f'Token {max_token} >= vocab_size {vocab_size}!'
+          assert max_token < MODEL_VOCAB_SIZE, f'Token {max_token} >= model vocab {MODEL_VOCAB_SIZE}!'
 
           # Decode first sequence to verify it's real text
+          from transformers import AutoTokenizer
+          tok = AutoTokenizer.from_pretrained('EleutherAI/pythia-410m-deduped')
           first_seq = data[0].tolist()
           text = tok.decode(first_seq[:100])
           print(f'Decoded sample: {text[:200]}')
@@ -82,7 +83,7 @@ spec:
           # Total data stats
           total_seqs = sum(np.load(s, mmap_mode='r').shape[0] for s in shards)
           total_tokens = total_seqs * 2048
-          print(f'\\nTotal sequences: {total_seqs:,}')
+          print(f'Total sequences: {total_seqs:,}')
           print(f'Total tokens: {total_tokens/1e9:.2f}B')
           print(f'Max steps (batch=512): {total_seqs // 512}')
           print('DEBUG TEST 2: PASSED')
