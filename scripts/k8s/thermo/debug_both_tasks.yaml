@@ -28,51 +28,16 @@ spec:
           echo "=== DEBUG TEST 1: OLMo-2-13B V2 (1 ckpt) ==="
           echo "============================================="
 
-          python -c "
-          import sys
-          sys.path.insert(0, '.')
-          from scripts.thermo.measure_olmo2_v2 import discover_revisions, measure_model_v2, OLMO2_CONFIGS
-          import torch, json, time
+          # Use single GPU, 1 checkpoint only
+          # 13B in fp32 = ~52GB, fits on H200 (80GB)
+          python scripts/thermo/measure_olmo2_v2.py \
+            --model-size 13B \
+            --output /fsx/dev/jiaqi/thermo_results/olmo2_v2/debug_13b.jsonl \
+            --max-checkpoints 2
 
-          config = OLMO2_CONFIGS['13B']
-          repo_id = config['hf_repo']
-          print(f'Repo: {repo_id}')
-
-          # Discover revisions
-          checkpoints = discover_revisions(repo_id, max_count=25)
-          print(f'Found {len(checkpoints)} checkpoints')
-          for c in checkpoints[:5]:
-              print(f'  {c}')
-
-          # Try loading the first one
-          ckpt = checkpoints[0]
-          print(f'\nLoading step={ckpt[\"step\"]} rev={ckpt[\"revision\"]}...')
-          t0 = time.time()
-
-          from transformers import AutoModelForCausalLM
-          model = AutoModelForCausalLM.from_pretrained(
-              repo_id, revision=ckpt['revision'],
-              torch_dtype=torch.float32,
-              device_map='cuda:0', trust_remote_code=True,
-          )
-          print(f'Model loaded in {time.time()-t0:.1f}s')
-          print(f'Params: {sum(p.numel() for p in model.parameters())/1e9:.2f}B')
-
-          # Measure V2
-          t0 = time.time()
-          result = measure_model_v2(model, svd_k=256)
-          print(f'V2 measurement done in {time.time()-t0:.1f}s')
-          print(f'  alpha_mean={result[\"alpha_mean\"]:.3f}')
-          print(f'  stable_rank_mean={result[\"stable_rank_mean\"]:.1f}')
-          print(f'  SR/d={result[\"stable_rank_mean\"]/config[\"hidden_dim\"]:.4f}')
-          print(f'  alpha_attn={result[\"alpha_attn\"]:.3f}')
-          print(f'  alpha_mlp={result[\"alpha_mlp\"]:.3f}')
-          print(f'  C10={result[\"concentration_top10\"]:.4f}')
-          print(f'  n_layers={result[\"n_layers_measured\"]}')
-          print('DEBUG TEST 1: PASSED')
-          del model
-          torch.cuda.empty_cache()
-          "
+          echo ""
+          cat /fsx/dev/jiaqi/thermo_results/olmo2_v2/debug_13b.jsonl
+          echo "DEBUG TEST 1: PASSED"
 
           echo ""
           echo "============================================="
