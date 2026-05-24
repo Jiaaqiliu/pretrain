@@ -35,6 +35,14 @@ OLMO2_CONFIGS = {
         "weight_decay": 0.1,
         "peak_lr": 3e-4,
     },
+    "13B": {
+        "hf_repo": "allenai/OLMo-2-1124-13B",
+        "num_params": 13_000_000_000,
+        "hidden_dim": 5120,
+        "num_layers": 40,
+        "weight_decay": 0.1,
+        "peak_lr": 3e-4,
+    },
 }
 
 

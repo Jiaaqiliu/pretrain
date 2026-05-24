@@ -36,7 +36,7 @@ CONFIG = {
     "seq_len": 2048,
     "micro_batch_size": 4,       # per GPU
     "grad_accum_steps": 16,      # effective batch = 4*8*16 = 512 seqs = 1M tokens/step
-    "total_steps": 25_000,
+    "total_steps": 19_000,
     "warmup_steps": 500,
     "peak_lr": 3.0e-4,
     "min_lr": 3.0e-5,

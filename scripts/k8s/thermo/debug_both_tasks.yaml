@@ -1,0 +1,167 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-debug-v2-and-3way
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 7200
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: debug
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          echo "============================================="
+          echo "=== DEBUG TEST 1: OLMo-2-13B V2 (1 ckpt) ==="
+          echo "============================================="
+
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from scripts.thermo.measure_olmo2_v2 import discover_revisions, measure_model_v2, OLMO2_CONFIGS
+          import torch, json, time
+
+          config = OLMO2_CONFIGS['13B']
+          repo_id = config['hf_repo']
+          print(f'Repo: {repo_id}')
+
+          # Discover revisions
+          checkpoints = discover_revisions(repo_id, max_count=25)
+          print(f'Found {len(checkpoints)} checkpoints')
+          for c in checkpoints[:5]:
+              print(f'  {c}')
+
+          # Try loading the first one
+          ckpt = checkpoints[0]
+          print(f'\nLoading step={ckpt[\"step\"]} rev={ckpt[\"revision\"]}...')
+          t0 = time.time()
+
+          from transformers import AutoModelForCausalLM
+          model = AutoModelForCausalLM.from_pretrained(
+              repo_id, revision=ckpt['revision'],
+              torch_dtype=torch.float32,
+              device_map='cuda:0', trust_remote_code=True,
+          )
+          print(f'Model loaded in {time.time()-t0:.1f}s')
+          print(f'Params: {sum(p.numel() for p in model.parameters())/1e9:.2f}B')
+
+          # Measure V2
+          t0 = time.time()
+          result = measure_model_v2(model, svd_k=256)
+          print(f'V2 measurement done in {time.time()-t0:.1f}s')
+          print(f'  alpha_mean={result[\"alpha_mean\"]:.3f}')
+          print(f'  stable_rank_mean={result[\"stable_rank_mean\"]:.1f}')
+          print(f'  SR/d={result[\"stable_rank_mean\"]/config[\"hidden_dim\"]:.4f}')
+          print(f'  alpha_attn={result[\"alpha_attn\"]:.3f}')
+          print(f'  alpha_mlp={result[\"alpha_mlp\"]:.3f}')
+          print(f'  C10={result[\"concentration_top10\"]:.4f}')
+          print(f'  n_layers={result[\"n_layers_measured\"]}')
+          print('DEBUG TEST 1: PASSED')
+          del model
+          torch.cuda.empty_cache()
+          "
+
+          echo ""
+          echo "============================================="
+          echo "=== DEBUG TEST 2: 3-way data loading      ==="
+          echo "============================================="
+
+          python -c "
+          import sys, numpy as np, torch, time
+          from pathlib import Path
+
+          data_dir = Path('/fsx/dev/jiaqi/data/fineweb_pythia')
+          print(f'Data dir: {data_dir}')
+          shards = sorted(data_dir.glob('shard_*.npy'))
+          print(f'Found {len(shards)} shards')
+
+          if not shards:
+              print('ERROR: No shards found!')
+              sys.exit(1)
+
+          # Load first shard
+          t0 = time.time()
+          data = np.load(shards[0], mmap_mode='r')
+          print(f'Shard 0 shape: {data.shape}, dtype: {data.dtype}')
+          print(f'Loaded in {time.time()-t0:.3f}s')
+          print(f'First sequence tokens: {data[0, :20]}')
+          print(f'Token range: [{data.min()}, {data.max()}]')
+
+          # Verify tokenizer compatibility
+          from transformers import AutoTokenizer
+          tok = AutoTokenizer.from_pretrained('EleutherAI/pythia-410m-deduped')
+          vocab_size = tok.vocab_size
+          max_token = int(data.max())
+          print(f'Tokenizer vocab_size: {vocab_size}')
+          print(f'Max token in data: {max_token}')
+          assert max_token < vocab_size, f'Token {max_token} >= vocab_size {vocab_size}!'
+
+          # Decode first sequence to verify it's real text
+          first_seq = data[0].tolist()
+          text = tok.decode(first_seq[:100])
+          print(f'Decoded sample: {text[:200]}')
+
+          # Total data stats
+          total_seqs = sum(np.load(s, mmap_mode='r').shape[0] for s in shards)
+          total_tokens = total_seqs * 2048
+          print(f'\\nTotal sequences: {total_seqs:,}')
+          print(f'Total tokens: {total_tokens/1e9:.2f}B')
+          print(f'Max steps (batch=512): {total_seqs // 512}')
+          print('DEBUG TEST 2: PASSED')
+          "
+
+          echo ""
+          echo "============================================="
+          echo "=== DEBUG TEST 3: Training 100 steps      ==="
+          echo "============================================="
+
+          # Quick 100-step training run to verify the full pipeline
+          torchrun --nproc_per_node=2 scripts/thermo/train_real_data_3way.py \
+            --schedule cosine --seed 42 \
+            --data-dir /fsx/dev/jiaqi/data/fineweb_pythia \
+            --output /fsx/dev/jiaqi/thermo_results/real_3way/debug_cosine.jsonl \
+            --total-steps 100
+
+          echo "DEBUG TEST 3: PASSED"
+          echo ""
+          echo "=== ALL DEBUG TESTS PASSED ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
