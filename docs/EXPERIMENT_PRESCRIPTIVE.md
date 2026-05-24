@@ -317,12 +317,14 @@ last-checkpoint by X%, recovering Y% of the oracle gap."
 
 ---
 
-### 正在运行的实验 (状态: 2026-05-23)
+### 正在运行的实验 (状态: 2026-05-24)
 
 | 实验 | 进度 | 预计完成 |
 |------|------|---------|
-| OLMo-2-13B V1 测量 | 44/90 (49%) | ~3h |
-| 3B gaussian 训练 | 18.1B/50B (36%) | ~2 days |
+| OLMo-2-13B V2 测量 | ✅ 完成 | — |
+| 真实数据 3-Way (6 runs) | 🔄 运行中 (~step 500/9000) | ~8h |
+| OLMo-2-32B V2 测量 | ⏳ 验证中 | 提交后 ~4h |
+| K2-V2 70B V2 测量 | ⏳ 待验证 | 提交后 ~8h |
 
 ---
 
@@ -344,17 +346,51 @@ last-checkpoint by X%, recovering Y% of the oracle gap."
 | Steps | 25,000 | 25,000 | 25,000 |
 | Seeds | 42, 123 | 42, 123 | 42, 123 |
 
-**总计**: 3 schedules × 2 seeds = 6 runs, 每 run ~3h = **18 GPU-hours**
+**总计**: 3 schedules × 2 seeds = 6 runs
 
-### 评估
+### 实际执行 (2026-05-24)
 
-每 5000 步跑一次 eval (6 benchmarks): lambada, piqa, winogrande, arc_easy, arc_challenge, sciq
+- 数据: FineWeb-Edu 9.92B tokens (10 shards, Pythia tokenizer), 35GB on FSx
+- 步数调整: **9000 steps** (数据限制: 9.92B / 1M batch = 9920 max)
+- 模型: Pythia-410M **from step0 checkpoint** (from_config NaN bug 已修复)
+- 评估: 每 3000 步 spectral (α, SR/d) + validation loss
+- Status: **6 runs 已提交, 运行中 (ETA ~8h)**
 
 ### 预期
 
 - α-guided ≈ WSD (两者都保持高 LR 到后期)
 - α-guided > cosine (cosine 过早 decay)
-- 关键差异: WSD 的 stable→decay 分界是人为设定的 (78%), α-guided 是数据驱动的
+- 关键差异: WSD 的 stable→decay 分界是人为设定的 (80%), α-guided 是数据驱动的
+
+---
+
+## 大规模模型测量实验 (2026-05-24 新增)
+
+### 核心目的
+
+验证 spectral metrics (SR/d, α) 在 30B-70B 规模的行为，确认:
+1. SR/d asymptotic limit (0.040) 在更大 d 下是否成立
+2. α reversal 在 30B+ 是否更严重
+3. Structural Chinchilla 公式是否需要 model-size correction
+
+### 目标模型
+
+| 模型 | 参数 | d | Checkpoints | D/N | 预测 SR/d |
+|------|------|---|-------------|-----|----------|
+| OLMo-2-32B | 32B | 5120 | ~752 (sample 25) | 189 | 0.049 |
+| K2-V2 70B | 70B | 8192 | ~54 (sample 25) | 171 | 0.047 |
+
+### 资源估算
+
+| 模型 | 单 ckpt 内存 | 加载方式 | 测量时间/ckpt | 总时间 (8 GPU) |
+|------|-------------|---------|--------------|---------------|
+| 32B | 128GB (fp32) | 2 GPU (device_map) | ~10 min | ~4h |
+| 70B | 140GB (fp16) + 逐层 fp32 | single GPU fp16 | ~20 min | ~8h |
+
+### 预期结果对论文的价值
+
+完成后论文 scale range: **70M → 70B (1000×)**，覆盖 d=512 到 8192，共 12 个模型/4 架构。
+这在 NeurIPS scaling law 论文中是顶级的覆盖范围。
 
 ### 状态
 
