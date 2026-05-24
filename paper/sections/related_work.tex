@@ -3,39 +3,20 @@
 \label{sec:related}
 %=============================================================================
 
-\paragraph{Statistical physics of neural networks.}
-The application of statistical mechanics to learning systems has a long history~\citep{engel_van_den_broek_2001}, but recent work has established \emph{quantitative} correspondences rather than loose analogies.
-\citet{sadrtdinov2025} proved that SGD with finite learning rate minimizes free energy $\free = \intE - \temp\entropy$, not loss alone, and \citet{pvnkt_ijcai2026} showed that scale-invariant networks with weight decay exactly satisfy the ideal gas law $\press\vol = Nk\temp$.
-\citet{liu_tegmark2025} derived three thermodynamic laws for LLM training and showed the optimal schedule corresponds to a quasi-static process, though experiments were limited to GPT-2-small (124M).
-\citet{liu_ziyin_neurips2025} established entropic force theory, proving that SGD stochasticity systematically breaks continuous parameter symmetries.
-\citet{okanohara2026} proved the Epistemic Speed Limit---an algorithm-independent lower bound on entropy production for any learning process, analogous to Landauer's principle.
-\citet{seroussi2023speed} derived training speed limits via Wasserstein-2 distance bounds.
-All of these results were verified only at small scale.
-Our work provides the first large-scale (190M--13B) empirical validation and extends the framework to multi-stage pretraining, which none of these papers address.
+\paragraph{Heavy-tail self-regularization.}
+Martin \& Mahoney~\citep{martin_mahoney_jmlr2021} discovered that well-trained neural network layers exhibit heavy-tailed eigenvalue spectra and that the power-law exponent $\alpha$ correlates with model quality. Their WeightWatcher tool~\citep{weightwatcher} demonstrated this across hundreds of pre-trained models. Our work extends their framework from \emph{static} analysis of final models to \emph{dynamic} monitoring during training, discovering the $\alpha$ reversal phenomenon and the Structural Chinchilla scaling law.
 
-\paragraph{Phase transitions and glass dynamics in learning.}
-\citet{grokking_glass_neurips2025} demonstrated that grokking is a glass relaxation process: memorization corresponds to rapid quenching into a disordered state, and generalization to slow annealing toward an ordered state.
-They developed the WanD optimizer to eliminate grokking entirely.
-\citet{barney_spin_glass2024} mapped untrained networks to Sherrington-Kirkpatrick spin glasses and showed that training creates hidden order.
-\citet{winter_janssen2025} provided an important counterpoint: DNN training shares features with structural glass dynamics but is not a perfect glass (no diverging relaxation times, no caging).
-\citet{phase_transitions_on_model} reformulated transformers as O(N) spin models with two phase transitions.
-\citet{scaling_collapse_icml2025} discovered that loss curves from different-scale compute-optimal models collapse onto a single universal curve under renormalization, and \citet{rg_for_dnns2025} established a renormalization group framework for weakly nonlinear networks.
-\citet{spring_block_prl2025} derived a spring-block chain model for layerwise feature learning, published in \emph{Physical Review Letters}.
-Our contribution applies glass relaxation theory specifically to the mid-training phase transition, with quantitative KWW fits at billion-parameter scale.
+\paragraph{Stable rank in deep learning.}
+Sanyal et al.~\citep{sanyal2019stable} proposed Stable Rank Normalization as a regularizer, showing that constraining stable rank improves generalization. We use stable rank as a \emph{monitoring metric} rather than a regularizer, and discover its universal convergence (SR/$d \approx 0.055$) across architectures---a finding not previously reported.
 
-\paragraph{Learning rate schedules and WSD theory.}
-\citet{wsd_schedule} introduced the river-valley landscape conjecture to explain WSD: the stable phase drives progress along flat directions while decay eliminates oscillations in sharp directions.
-\citet{mpemba_llm} connected WSD to the Mpemba effect (hotter systems cool faster) but provided no empirical validation.
-\citet{bordelon_schedules2026} and \citet{li_schedules2026} independently derived WSD optimality from optimal control theory, finding a sharp phase transition between ``easy-task'' (power decay optimal) and ``hard-task'' (WSD optimal) regimes.
-\citet{annealing_scaling_law2024} proposed an empirical scaling law decomposing training into power-law scaling plus annealing reduction, and \citet{annealing_scaling_aaai2026} studied transferability of annealing strategies across Dense and MoE models.
-\citet{kalra_curvature2026} measured progressive sharpening and Edge of Stability at 7B scale (OLMo-2), providing the first large-scale loss landscape curvature measurements without thermodynamic interpretation.
-Our work differs by providing the first \emph{thermodynamic} explanation of WSD superiority (entropy production), rather than geometric (river-valley) or control-theoretic (optimal control) accounts.
+\paragraph{Thermodynamics of neural networks.}
+Several works establish thermodynamic analogies for training: \citet{sadrtdinov2025} showed SGD minimizes free energy; \citet{liu_tegmark2025} identified learning rate with temperature via fluctuation-dissipation; \citet{pvnkt_ijcai2026} verified PV=NkT at small scale. Our initial investigation attempted to scale these state-equation results to 7B+, but found the PV/(NT) formulation does not converge at scale (CV $> 40\%$). This motivated our shift to spectral metrics (SR, $\alpha$) which provide robust, scale-invariant diagnostics.
 
-\paragraph{Multi-stage pretraining and data curriculum.}
-The convergence of the industry on multi-stage training~\citep{olmo2, deepseekv3, llama3, llama4} has created an urgent need for principled guidance on stage transitions.
-OLMo~2 uses a two-stage recipe: 3.9T tokens of web data followed by 843B tokens of curated data~\citep{olmo2}.
-DeepSeek~V3 employs a similar pattern with domain-reweighted mid-training~\citep{deepseekv3}.
-\citet{cpt_dynamics2025} derived a continual pretraining scaling law that decouples distribution shift from LR annealing, enabling loss prediction across schedules.
-The overtraining fragility phenomenon~\citep{overtraining_fragile2025} shows that models trained far beyond the Chinchilla point become harder to fine-tune, but the mechanism remains unexplained.
-No prior work provides a thermodynamic account of why multi-stage training works, how long each stage should last, or what happens to the model's internal state at stage boundaries.
-Our glass annealing theory directly addresses these questions.
+\paragraph{Chinchilla scaling laws.}
+Hoffmann et al.~\citep{hoffmann2022} established compute-optimal data/parameter ratios ($D/N \approx 20$). Subsequent work showed that ``over-training'' beyond Chinchilla ratios produces better models for deployment~\citep{gadre2024, llama3}. Our Structural Chinchilla law provides a spectral explanation: structural maturity ($\alpha < 3$) requires $D/N > 500$, far exceeding compute-optimality.
+
+\paragraph{Training monitoring.}
+Current practice monitors loss, gradient norms, and occasionally loss spikes~\citep{deepseekv3}. \citet{grokking_pretraining2025} showed MoE routing consistency predicts performance at $r > 0.97$ but this only applies to mixture-of-experts models. Our SR/$d$ metric ($r = -0.92$) works for all dense transformers and requires only weight access, not routing statistics.
+
+\paragraph{Random Matrix Theory for neural networks.}
+The Marchenko-Pastur distribution~\citep{marchenko_pastur1967} describes eigenvalue spectra of random matrices. Deviations from MP signal learned structure. Pennington \& Worah~\citep{pennington2017} analyzed spectra of trained networks via free probability theory. Our work uses deviation from MP (quantified by $\alpha$) as a real-time training signal rather than a post-hoc analysis tool.

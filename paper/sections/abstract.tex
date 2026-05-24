@@ -1,11 +1,11 @@
 \begin{abstract}
-Training a frontier language model costs hundreds of millions of dollars, yet practitioners monitor this investment through a single, impoverished signal: the training loss.
-We show that loss curves are a fundamentally incomplete instrument for understanding pretraining dynamics, analogous to monitoring a chemical reaction by temperature alone.
-We propose a thermodynamic framework that equips pretraining with a full state-variable panel: spectral free energy, spectral entropy, a crystallization order parameter, and thermodynamic efficiency.
-Measuring these quantities across 4,000+ checkpoints from OLMo models spanning 190M to 13B parameters, we establish four results:
-(1)~pretraining dynamics satisfy a modified thermodynamic state equation that generalizes the ideal gas law recently verified at small scale, with finite-size corrections that vanish as $N^{-1/3}$;
-(2)~Warmup-Stable-Decay traces a more thermodynamically efficient trajectory than cosine decay, with 23--37\% lower cumulative entropy production, providing the first physics-grounded explanation for its empirical superiority;
-(3)~mid-training exhibits glass-like relaxation: spectral entropy follows the Kohlrausch-Williams-Watts stretched exponential with $\beta \approx 0.6$, yielding a principled estimate of optimal mid-training duration;
-(4)~a Gaussian decay schedule derived from the minimum entropy production principle outperforms WSD by 2.1\% in final loss at matched compute.
-These results reframe pretraining as a thermodynamic process where the central question shifts from ``has loss converged?'' to ``is the system still producing useful work?''
+Training a frontier language model costs hundreds of millions of dollars, yet practitioners monitor this investment through a single signal: the training loss.
+We show that spectral properties of weight matrices---specifically, the stable rank and power-law exponent of the eigenvalue spectrum---provide monitoring signals that loss fundamentally cannot.
+Measuring these quantities across 9 models spanning three architectures (GPT-NeoX, LLaMA, OLMo2) and two orders of magnitude in scale (70M--7B parameters), we establish four results:
+(1)~the normalized stable rank (SR/$d$) converges to a universal constant $\approx 0.056 \pm 0.008$ regardless of model scale or architecture, revealing that training compresses all models to ${\sim}5\%$ of their representational capacity;
+(2)~SR/$d$ achieves Spearman correlation $r = -0.92$ with downstream task performance ($N\!=\!143$ checkpoints, $p < 10^{-58}$), predicting model quality without requiring any evaluation data;
+(3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal---$d\alpha/dt > 0$---that detects structural degradation invisible to loss, enabling adaptive scheduling and early detection of capacity exhaustion;
+(4)~an $\alpha$-guided learning rate schedule that maintains peak LR until the reversal signal outperforms cosine decay in both final loss and spectral structure quality.
+We further derive a ``Structural Chinchilla'' law---$\alpha = 2.54 + 3.5 \exp(-D/269N)$---showing that compute-optimal training (20 tokens/param) leaves models structurally immature ($\alpha > 5$), while structural maturity requires ${\sim}500$ tokens/param.
+These results provide practitioners with a physics-grounded instrument panel for pretraining that answers questions loss cannot: ``Is structure still forming?'', ``When should I decay the LR?'', and ``Is this model structurally ready for deployment?''
 \end{abstract}

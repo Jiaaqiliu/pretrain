@@ -4,42 +4,38 @@
 %=============================================================================
 
 Pretraining a state-of-the-art language model is among the most expensive computational endeavors in science and industry.
-A single frontier run consumes \$100--500M in compute, occupies thousands of GPUs for 3--9 months, and processes trillions of tokens of text~\citep{deepseekv3, llama4, olmo2}.
+A single frontier run consumes \$100--500M in compute, occupies thousands of GPUs for months, and processes trillions of tokens~\citep{deepseekv3, llama4, olmo2}.
 Throughout this process, practitioners rely on one real-time diagnostic: the training loss curve.
 This is the equivalent of piloting a \$500M aircraft with nothing but an altimeter.
 
-The poverty of loss-only monitoring is not a minor inconvenience; it is a structural blind spot.
-Loss correlates with final downstream performance at $r < 0.40$~\citep{olmo2}---worse than a coin flip for predicting which checkpoint to deploy.
-MoE routing pattern consistency predicts performance at $r > 0.97$~\citep{grokking_pretraining2025}, yet is rarely tracked.
-Overtraining, now standard practice to reduce inference cost~\citep{gadre2024}, makes models \emph{harder} to fine-tune through a mechanism no existing theory explains~\citep{overtraining_fragile2025}.
-The Warmup-Stable-Decay (WSD) learning rate schedule has empirically displaced cosine decay across the industry~\citep{wsd_schedule, olmo2, deepseekv3}, but the only explanation offered is a geometrical conjecture about ``river-valley'' landscapes~\citep{wsd_schedule}---descriptive, not predictive.
-Mid-training duration, arguably the highest-leverage hyperparameter in the multi-stage pipeline, is chosen by grid search over proxy models~\citep{olmo2, llama3}.
-
-Meanwhile, a convergent body of results from statistical physics has established that neural network training is, in a precise mathematical sense, a \textbf{thermodynamic process}:
+The poverty of loss-only monitoring is not a minor inconvenience; it is a structural blind spot:
 \begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
-    \item SGD minimizes \emph{free energy} $\free = \intE - \temp\entropy$, not loss alone, where $\temp$ is an effective temperature determined by the learning rate and gradient noise~\citep{sadrtdinov2025}.
-    \item The fluctuation-dissipation relation identifies learning rate as the system temperature~\citep{liu_tegmark2025, liu_ziyin_neurips2025}.
-    \item Scale-invariant networks satisfy the ideal gas law $\press\vol = Nk\temp$, with weight decay as pressure and parameter norm as volume~\citep{pvnkt_ijcai2026}.
-    \item Grokking---delayed generalization---is a glass relaxation process, not a phase transition~\citep{grokking_glass_neurips2025}.
-    \item An algorithm-independent lower bound on entropy production constrains how fast any system can learn: the Epistemic Speed Limit~\citep{okanohara2026}.
-    \item Deep networks exhibit scaling collapse under renormalization, a hallmark of universality~\citep{scaling_collapse_icml2025}.
+    \item Loss can \emph{decrease} while model structure \emph{degrades}---memorization reduces loss without improving generalization~\citep{overtraining_fragile2025}.
+    \item Loss is \emph{scale-dependent}: a loss of 2.0 means different things for 1B vs.\ 7B models, making cross-model comparison impossible.
+    \item The decision of \emph{when to decay the learning rate} is made by fixed schedules, not by any signal from the model itself.
+    \item There is no \emph{early warning} for training instability---loss spikes are detected only after the damage is done.
 \end{itemize}
-Yet every one of these results was established at toy scale: GPT-2-small or smaller~\citep{liu_tegmark2025}, synthetic arithmetic tasks~\citep{grokking_glass_neurips2025}, CIFAR classifiers~\citep{sadrtdinov2025, pvnkt_ijcai2026}.
-The thermodynamic lens has never been turned on real, large-scale, multi-stage pretraining.
+
+Meanwhile, a convergent body of results from Random Matrix Theory~\citep{martin_mahoney_jmlr2021} and statistical physics~\citep{sadrtdinov2025, liu_tegmark2025} has established that neural network weight matrices develop distinctive spectral signatures during training.
+Specifically, well-trained layers exhibit \emph{heavy-tailed} eigenvalue distributions characterized by a power-law exponent $\alpha \in [2, 4]$, while untrained or poorly-trained layers remain close to the random Marchenko-Pastur distribution ($\alpha > 6$)~\citep{martin_mahoney_jmlr2021}.
+The tool WeightWatcher~\citep{weightwatcher} demonstrated that $\alpha$ correlates with model quality across architectures, but only for final models---the \emph{dynamics} of $\alpha$ during training, and its potential as a \emph{real-time monitoring signal}, have not been explored.
 
 \textbf{This paper fills that gap.}
-We define operationally measurable thermodynamic state variables for language model pretraining (\S\ref{sec:framework}), compute them across 4,000+ OLMo checkpoints from 190M to 13B parameters (\S\ref{sec:experiments}), and derive four results that change how pretraining should be understood and practiced:
+We measure spectral properties of weight matrices across 9 language models spanning three architectures and two orders of magnitude in scale, tracking their evolution throughout training.
+We discover:
 
 \begin{enumerate}[leftmargin=*,itemsep=1pt,topsep=2pt]
-    \item \textbf{A thermodynamic state equation at scale} (\S\ref{sec:state_equation}). Pretraining dynamics satisfy a modified ideal gas law with finite-size corrections, validated across four model scales on modern architectures (RMSNorm, AdamW, RoPE). The state equation predicts training trajectory shapes and identifies three distinct thermodynamic regimes: ideal gas (early training), liquid (stable phase), and solid/glass (post-decay).
+    \item \textbf{A universal compression constant} (\S\ref{sec:universal}). The stable rank normalized by hidden dimension (SR/$d$) converges to $\approx 0.056$ for all tested models, regardless of scale (70M--7B) or architecture (GPT-NeoX, LLaMA, OLMo2). This means training universally compresses weight matrices to ${\sim}5\%$ of their available dimensionality.
 
-    \item \textbf{A physics-grounded explanation of why WSD outperforms cosine} (\S\ref{sec:wsd}). We measure the entropy production rate---the thermodynamic measure of irreversibility---for both schedules and find that WSD produces 23--37\% less cumulative entropy. The isothermal stable phase functions as a quasi-equilibrium exploration period; the subsequent decay is a controlled quench. Cosine's continuous cooling forces the system through non-equilibrium intermediate states that dissipate compute irreversibly.
+    \item \textbf{SR/$d$ as a universal quality predictor} (\S\ref{sec:predictor}). SR/$d$ achieves Spearman $r = -0.92$ with downstream benchmark performance across 143 checkpoints from 6 model scales---predicting quality from weights alone, without training data, test data, or loss values.
 
-    \item \textbf{Mid-training as glass-to-crystal annealing} (\S\ref{sec:midtraining}). At the data-switching point, spectral entropy drops sharply and follows the Kohlrausch-Williams-Watts (KWW) stretched exponential $\phi(t) = \exp[-(t/\tau)^\beta]$ with $\beta \approx 0.6$, the quantitative signature of glassy relaxation~\citep{kww_williams}. The characteristic time $\tau$ provides a principled estimate of optimal mid-training duration: $\sim\!3\tau$ tokens for 95\% relaxation. The crystallization order parameter $\psi$ correlates with downstream benchmark performance at $r > 0.92$, far exceeding loss ($r < 0.40$).
+    \item \textbf{$\alpha$ reversal as early warning} (\S\ref{sec:reversal}). When the power-law exponent $\alpha$ begins \emph{increasing} ($d\alpha/dt > 0$), the model's spectral structure is degrading. This signal, invisible to loss, occurs in all models with fewer than ${\sim}250$ tokens/parameter. It diagnoses capacity exhaustion and signals the optimal point to begin LR decay.
 
-    \item \textbf{A better schedule from first principles} (\S\ref{sec:optimal}). We derive a Gaussian decay schedule from the minimum entropy production principle~\citep{okanohara2026, liu_tegmark2025} and validate it on proxy experiments at 190M and 1B scale, achieving 2.1\% lower final loss than WSD at matched compute.
+    \item \textbf{An $\alpha$-guided adaptive schedule} (\S\ref{sec:schedule}). Maintaining peak LR until the $\alpha$ reversal signal, then decaying, outperforms cosine decay in both final loss ($-0.008$) and spectral structure ($\alpha$: 2.35 vs.\ 2.94). This demonstrates that spectral metrics can \emph{guide} training decisions, not merely observe them.
 \end{enumerate}
 
-Together, these results establish that the right mental model for pretraining is not optimization but thermodynamics.
-The question that should guide every training decision is not ``has loss converged?'' but ``is the system still doing useful thermodynamic work, or is it wasting compute on irreversible dissipation?''
-We release \ours, a library for computing thermodynamic state variables from checkpoints and deriving optimal schedules.
+Additionally, we derive a \textbf{``Structural Chinchilla'' scaling law} (\S\ref{sec:scaling}): $\alpha = 2.54 + 3.5\exp(-D/269N)$, where $D$ is training tokens and $N$ is parameters. This law identifies a \emph{structural phase transition} at $D/N \approx 250$--$500$ tokens/parameter, far beyond compute-optimal Chinchilla ratios (20 tokens/param). It explains quantitatively why ``over-training'' strategies like Llama-3 (15,000 tokens/param) produce models with superior generalization: they achieve heavy-tailed self-regularization that Chinchilla-optimal models never reach.
+
+Together, these results establish spectral monitoring as a practical complement to loss curves.
+The question that should guide every training decision shifts from ``has loss converged?'' to ``is spectral structure still forming, and is the model structurally mature?''
+We release measurement code and monitoring dashboards for integration into existing training pipelines.
