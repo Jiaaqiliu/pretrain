@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-dataprep
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: prep
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy > /dev/null 2>&1 || true
+          set -e
+
+          echo "=== Preparing FineWeb-Edu data for Pythia tokenizer ==="
+          echo "Target: ~14B tokens in /fsx/dev/jiaqi/data/fineweb_pythia/"
+
+          python scripts/thermo/prepare_data_fineweb.py \
+            --output-dir /fsx/dev/jiaqi/data/fineweb_pythia \
+            --num-tokens 14000000000 \
+            --shard-size 500000
+
+          echo "=== DATA PREP COMPLETE ==="
+          ls -lh /fsx/dev/jiaqi/data/fineweb_pythia/
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: HF_DATASETS_CACHE
+          value: "/fsx/dev/jiaqi/.cache/huggingface/datasets"
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            cpu: "32"
+            memory: "128Gi"
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "64Gi"

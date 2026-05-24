@@ -1,0 +1,420 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-cosine-s42
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          echo "=== Verifying data ==="
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found! Run data prep first."; exit 1; }
+
+          echo "=== Training Pythia-410M: COSINE schedule (seed=42) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule cosine --seed 42 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/cosine_s42.jsonl \
+            --save-dir $OUTDIR/checkpoints/cosine_s42
+
+          echo "=== COSINE s42 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-wsd-s42
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found!"; exit 1; }
+
+          echo "=== Training Pythia-410M: WSD schedule (seed=42) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule wsd --seed 42 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/wsd_s42.jsonl \
+            --save-dir $OUTDIR/checkpoints/wsd_s42
+
+          echo "=== WSD s42 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-alpha-s42
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found!"; exit 1; }
+
+          echo "=== Training Pythia-410M: α-GUIDED schedule (seed=42) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule alpha_guided --seed 42 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/alpha_guided_s42.jsonl \
+            --save-dir $OUTDIR/checkpoints/alpha_guided_s42
+
+          echo "=== α-GUIDED s42 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-cosine-s123
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found!"; exit 1; }
+
+          echo "=== Training Pythia-410M: COSINE schedule (seed=123) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule cosine --seed 123 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/cosine_s123.jsonl \
+            --save-dir $OUTDIR/checkpoints/cosine_s123
+
+          echo "=== COSINE s123 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-wsd-s123
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found!"; exit 1; }
+
+          echo "=== Training Pythia-410M: WSD schedule (seed=123) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule wsd --seed 123 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/wsd_s123.jsonl \
+            --save-dir $OUTDIR/checkpoints/wsd_s123
+
+          echo "=== WSD s123 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-real3way-alpha-s123
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: train
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers datasets huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/real_3way
+          DATADIR=/fsx/dev/jiaqi/data/fineweb_pythia
+          mkdir -p $OUTDIR
+
+          ls $DATADIR/shard_0000.npy || { echo "ERROR: Data not found!"; exit 1; }
+
+          echo "=== Training Pythia-410M: α-GUIDED schedule (seed=123) ==="
+          torchrun --nproc_per_node=8 scripts/thermo/train_real_data_3way.py \
+            --schedule alpha_guided --seed 123 \
+            --data-dir $DATADIR \
+            --output $OUTDIR/alpha_guided_s123.jsonl \
+            --save-dir $OUTDIR/checkpoints/alpha_guided_s123
+
+          echo "=== α-GUIDED s123 COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        - name: NCCL_DEBUG
+          value: "WARN"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
