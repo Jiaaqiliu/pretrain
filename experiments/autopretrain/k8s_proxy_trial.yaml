@@ -1,0 +1,126 @@
+# PyTorchJob template for a single proxy search trial (190M model)
+# Used by ProxySearchLoop to launch trials on the H200 cluster.
+#
+# This template is filled in by workspace_bridge.py with:
+#   - TRIAL_ID: unique trial identifier
+#   - WORKSPACE_DIR: path to the generated workspace on FSx
+#
+# Usage (manual):
+#   envsubst < k8s_proxy_trial.yaml | kubectl apply -f - -n default
+#
+# Cluster: ap-south-1 p5-llm, 1 node × 8 H200 GPUs
+# Expected runtime: ~45 minutes per trial (5000 steps, 190M model)
+#
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: autopretrain-${TRIAL_ID}
+  namespace: default
+  labels:
+    experiment: autopretrain-proxy-search
+    phase: phase1
+spec:
+  runPolicy:
+    backoffLimit: 0
+    cleanPodPolicy: None
+    ttlSecondsAfterFinished: 3600
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            role: master
+            experiment: autopretrain-proxy-search
+            trial: ${TRIAL_ID}
+        spec:
+          nodeSelector:
+            eks.amazonaws.com/nodegroup: trainer5
+          restartPolicy: Never
+          containers:
+          - name: pytorch
+            image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+            imagePullPolicy: Always
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euxo pipefail
+
+              echo "======== AutoPretrain Proxy Trial: ${TRIAL_ID} ========"
+              echo "Workspace: ${WORKSPACE_DIR}"
+              echo "GPUs: 8, Steps: 5000, Model: olmo2_190M"
+              echo "======================================================"
+
+              # Install olmo-core
+              pip install -e /fsx/dev/jiaqi/A-EVOLVE-V2/olmo-core/.[all] 2>&1 | tail -5
+
+              # Generate and run training script from workspace
+              cd /fsx/dev/jiaqi/A-EVOLVE-V2
+              python -c "
+              import sys
+              sys.path.insert(0, '.')
+              from pathlib import Path
+              from agent_evolve.backends.olmo_core.config_translator import OLMoCoreConfigTranslator
+              from agent_evolve.backends.olmo_core.script_generator import OLMoCoreScriptGenerator
+
+              translator = OLMoCoreConfigTranslator()
+              config = translator.translate(Path('${WORKSPACE_DIR}'))
+              config.save_folder = '${WORKSPACE_DIR}/checkpoints'
+              config.gpus_per_node = 8
+              config.num_nodes = 1
+
+              gen = OLMoCoreScriptGenerator()
+              script_path = gen.generate(config, Path('${WORKSPACE_DIR}'))
+              print(f'Generated: {script_path}')
+              "
+
+              # Launch training
+              torchrun \
+                --nproc_per_node=8 \
+                ${WORKSPACE_DIR}/train_olmo_core.py
+
+              echo "Trial ${TRIAL_ID} completed successfully"
+            env:
+            - name: WANDB_PROJECT
+              value: "autopretrain-proxy-search"
+            - name: WANDB_RUN_ID
+              value: "${TRIAL_ID}"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: WANDB_API_KEY
+                  name: wandb-secret-jiaqi
+            - name: NCCL_DEBUG
+              value: "WARN"
+            - name: FI_PROVIDER
+              value: "efa"
+            - name: FI_EFA_USE_DEVICE_RDMA
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: CUDA_HOME
+              value: "/opt/cuda-toolkit"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+              requests:
+                cpu: "96"
+                memory: "1800Gi"
+                nvidia.com/gpu: 8
+                vpc.amazonaws.com/efa: 32
+            volumeMounts:
+            - mountPath: /fsx
+              name: fsx
+            - mountPath: /dev/shm
+              name: dshm
+          volumes:
+          - name: fsx
+            persistentVolumeClaim:
+              claimName: fsx
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "500Gi"
