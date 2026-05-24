@@ -54,6 +54,7 @@ inspect_evals/
 !/docs/skillbench-setup.md
 !/docs/algorithms/
 !/docs/agent_team_structure.md
+!/docs/research_plan_autopretrain.md
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py
