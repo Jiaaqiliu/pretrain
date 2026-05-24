@@ -286,15 +286,16 @@ def main():
         print(f"World size: {world_size}, Device: {device}")
         print(f"Config: {cfg['total_steps']} steps, batch={cfg['micro_batch_size']}×{world_size}×{cfg['grad_accum_steps']}")
 
-    # Load model (from scratch using Pythia-410M architecture)
+    # Load model from Pythia-410M step0 checkpoint (proper initialization)
     from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
-    config = AutoConfig.from_pretrained("EleutherAI/pythia-410m-deduped")
-    model = AutoModelForCausalLM.from_config(config).to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        "EleutherAI/pythia-410m-deduped", revision="step0"
+    ).to(device)
 
     if local_rank == 0:
         n_params = sum(p.numel() for p in model.parameters())
-        print(f"Model: Pythia-410M architecture ({n_params/1e6:.1f}M params), random init")
+        print(f"Model: Pythia-410M step0 ({n_params/1e6:.1f}M params)")
 
     # DDP
     if world_size > 1:
