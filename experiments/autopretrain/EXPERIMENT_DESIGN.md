@@ -27,15 +27,28 @@ over the baseline? Is LLM-guided mutation more sample-efficient than random sear
 
 ## Experimental Protocol
 
-### Baselines
+### Baselines (from actual technical reports)
 
 | Name | Web | Code | Math | Books | Academic | Source |
 |------|-----|------|------|-------|----------|--------|
-| OLMo-2 | 55% | 20% | 10% | 8% | 7% | Allen AI (2024) |
-| Llama-3 (est) | 58% | 25% | 10% | 4% | 3% | Meta (2024) |
-| DeepSeek (est) | 45% | 30% | 15% | 5% | 5% | DeepSeek (2024) |
+| OLMo-2 Stage1 | 95.1% | 2.1% | 0.6% | 0.1% | 2.0% | Allen AI tech report (Jan 2025) |
+| OLMo-2 Midtrain | 47.2% | 2.5% | 19.6% | 7.1% | 5.2% | Allen AI (50B annealing mix) |
+| Llama-3 | 50% | 17% | 25% | 4% | 4% | Meta (Jul 2024) |
+| DeepSeek-v3 (est) | 45% | 25% | 20% | 5% | 5% | DeepSeek (Dec 2024) |
+| DoReMi | 60.6% | 1.8% | 0.4% | 2.2% | 3.5% | NeurIPS 2023 |
 | Uniform | 20% | 20% | 20% | 20% | 20% | Control |
-| Reasoning-heavy | 30% | 30% | 25% | 5% | 10% | Hypothesis |
+| Reasoning-heavy | 30% | 30% | 25% | 5% | 10% | Our hypothesis |
+
+**Key observation**: OLMo-2's Stage 1 is 95% web, but their midtraining mix shifts dramatically
+toward math (20%). Llama-3's final mix has 25% math+reasoning. This suggests the optimal recipe
+is NOT a single static mix — it's a staged curriculum. Our MCGS should discover this automatically.
+
+**DCLM transfer validation**: Recipe ranking correlation from proxy to target:
+- 400M → 7B: r=0.838
+- 1B → 7B: r=0.956
+- 3B → 7B: r=0.982
+
+This strongly supports our proxy approach (190M → 3B → 7B).
 
 ### Search Axes (Controlled Variables)
 

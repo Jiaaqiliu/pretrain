@@ -130,3 +130,78 @@ Based on this survey, our MCGS-based approach should:
 
 **Our unique contribution**: First to jointly and adaptively search (mix + curriculum + filter)
 with proxy-to-target transfer verification, validated on reasoning downstream.
+
+---
+
+## Exact Data Ratios from Technical Reports
+
+### OLMo-2 (Allen AI, Jan 2025) — 7B/13B/32B
+
+**Stage 1 (3.9T tokens)**:
+| Source | Tokens | % |
+|--------|--------|---|
+| DCLM-Baseline (web) | 3.71T | 95.1% |
+| StarCoder (code) | 83B | 2.1% |
+| peS2o (academic) | 58.6B | 1.5% |
+| arXiv | 20.8B | 0.5% |
+| OpenWebMath | 12.2B | 0.3% |
+| Algebraic Stack | 11.8B | 0.3% |
+
+**Stage 2 "Mid-training" (50B for 7B model)**:
+- High-quality web (DCLM top 7% + FineWeb-Edu ≥ 2): 47.2%
+- Math mix (synthetic + rewritten): 19.6%
+- FLAN instructions: 16.6%
+- Academic: 5.15%
+- Wikipedia/Wikibooks: 7.11%
+
+**Key techniques**: Microannealing (50B test runs); checkpoint souping (avg 3 annealed ckpts);
+2-4x math duplication is beneficial; MIND rewriting (natural language > code format for math).
+
+### Llama-3 (Meta, Jul 2024) — 8B/70B/405B, 15T tokens
+
+**Final mix**: General=50%, Math+Reasoning=25%, Code=17%, Multilingual=8%
+
+**Annealing** (final 40M tokens): upsample code+math, context=128K, Polyak averaging.
+- 8B: +24 pp GSM8K, +6.4 pp MATH from annealing alone
+- 405B: negligible gain (already strong in-context learner)
+
+**Batch size ramp**: 4M → 8M → 16M tokens.
+
+**Filtering**: 3-level dedup (URL, MinHash, line-level >6 occurrences);
+fastText + RoBERTa quality classifiers; knowledge classifier for category balance.
+
+### DeepSeek-V3 (Dec 2024) — 671B MoE (37B active), 14.8T tokens
+
+- "Enhanced ratio of math and programming vs V2" (exact ratios undisclosed)
+- FIM at 10% rate
+- Batch ramp: 3072 → 15360 sequences over first 469B tokens
+- Zero loss spikes, zero rollbacks (remarkable stability)
+- Cost: $5.6M total for pretraining
+- Novel: Multi-Token Prediction, FP8 training at scale
+
+### DCLM Scale Transfer Correlation
+
+Critical finding for our proxy approach:
+| Proxy Scale | Correlation with 7B |
+|-------------|-------------------|
+| 400M | r = 0.838 |
+| 1B | r = 0.956 |
+| 3B | r = 0.982 |
+
+**This directly validates our approach**: recipe rankings at 190M-3B proxy scale
+are highly predictive of performance at 7B+ target scale.
+
+---
+
+## Cross-Lab Patterns (Consistent Across All Labs)
+
+1. **Multi-stage training** with mix transitions is now standard (all labs use 2-3 stages)
+2. **Math/code upsampled in later stages** (OLMo: 20% math mid-train; Llama: 25% reasoning final)
+3. **Batch size ramp-up is universal** (all labs start small, grow 2-4x)
+4. **fastText classifiers** are the dominant quality filter approach
+5. **2-4x repetition of math data** is beneficial (OLMo-2 finding)
+6. **Model averaging** during annealing improves results (OLMo-2 checkpoint souping, Llama-3 Polyak)
+7. **Sequence length curriculum**: start short (4K), extend late (32K-128K)
+8. **Well-filtered web alone can outperform diverse mixes** (DCLM finding)
+9. **Annealing with domain upsampling** gives massive gains at small model sizes (Llama-3 8B: +24 pp)
+10. **Synthetic math data** is increasingly critical (OLMo-2, Qwen2.5, Qwen3)

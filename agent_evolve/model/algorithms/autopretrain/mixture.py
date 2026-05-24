@@ -17,25 +17,35 @@ DEFAULT_DOMAINS = ["web", "code", "math", "books", "academic"]
 
 # Approximate available unique tokens per domain (after initial quality filter)
 # Used to enforce the 4-epoch repetition ceiling (Muennighoff et al., 2023)
+# Sources: DCLM pool (240T raw), OLMo-2 (3.9T filtered), StarCoder, OpenWebMath
 DOMAIN_TOKEN_BUDGET = {
-    "web": 200_000_000_000,      # 200B (FineWeb-Edu, heavily filtered from CC)
-    "code": 50_000_000_000,      # 50B (StarCoder filtered)
-    "math": 15_000_000_000,      # 15B (OpenWebMath + synthetic)
-    "books": 10_000_000_000,     # 10B (books subset)
-    "academic": 8_000_000_000,   # 8B (academic papers)
+    "web": 3_800_000_000_000,    # 3.8T (DCLM-Baseline level filtering of 240T CC)
+    "code": 83_000_000_000,      # 83B (StarCoder, repos with >= 2 GitHub stars)
+    "math": 24_000_000_000,      # 24B (OpenWebMath 12.2B + Algebraic Stack 11.8B)
+    "books": 6_000_000_000,      # 6B (Project Gutenberg + curated)
+    "academic": 79_000_000_000,  # 79B (peS2o 58.6B + arXiv 20.8B)
 }
 
-# Reference mixtures from published models
-# Sources: OLMo-2 tech report, Llama-3 paper (estimated), DeepSeek-v3 report
+# Reference mixtures from published models (from technical reports)
 REFERENCE_MIXTURES = {
-    "olmo2": {"web": 0.55, "code": 0.20, "math": 0.10, "books": 0.08, "academic": 0.07},
-    "llama3": {"web": 0.58, "code": 0.25, "math": 0.10, "books": 0.04, "academic": 0.03},
-    "deepseek": {"web": 0.45, "code": 0.30, "math": 0.15, "books": 0.05, "academic": 0.05},
+    # OLMo-2 Stage 1: 3.9T tokens (Jan 2025 tech report)
+    # web=95.1%, code=2.1%, academic=2.0%, math=0.6%, books=0.1%
+    "olmo2_stage1": {"web": 0.951, "code": 0.021, "math": 0.006, "books": 0.001, "academic": 0.020},
+    # OLMo-2 Mid-training (50B mix for 7B model) — the "annealing" phase
+    # High-quality web 47.2%, math 19.6%, FLAN 16.6%, academic 5.15%, wiki 7.11%
+    "olmo2_midtrain": {"web": 0.472, "code": 0.025, "math": 0.196, "books": 0.071, "academic": 0.052},
+    # Llama-3 final mix (405B): general=50%, math+reasoning=25%, code=17%, multilingual=8%
+    "llama3": {"web": 0.50, "code": 0.17, "math": 0.25, "books": 0.04, "academic": 0.04},
+    # DeepSeek-v3: "enhanced ratio of math and programming vs V2" (estimated)
+    "deepseek_v3": {"web": 0.45, "code": 0.25, "math": 0.20, "books": 0.05, "academic": 0.05},
+    # DoReMi optimized weights for Pile-CC dominant mix
+    "doremi": {"web": 0.606, "code": 0.018, "math": 0.004, "books": 0.022, "academic": 0.035},
+    # Uniform (control)
     "uniform": {"web": 0.20, "code": 0.20, "math": 0.20, "books": 0.20, "academic": 0.20},
-    "web_heavy": {"web": 0.75, "code": 0.10, "math": 0.05, "books": 0.05, "academic": 0.05},
+    # Our hypothesis: reasoning-heavy mix for downstream tasks
     "reasoning_heavy": {"web": 0.30, "code": 0.30, "math": 0.25, "books": 0.05, "academic": 0.10},
-    # Blakeney et al. (2024) style: web first, then reason-heavy annealing
-    "late_annealing": {"web": 0.30, "code": 0.30, "math": 0.25, "books": 0.05, "academic": 0.10},
+    # Blakeney et al. (2024): annealing-phase mixture (code+math heavy)
+    "late_annealing": {"web": 0.25, "code": 0.30, "math": 0.30, "books": 0.05, "academic": 0.10},
 }
 
 
