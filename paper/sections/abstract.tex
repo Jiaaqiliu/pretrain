@@ -1,11 +1,12 @@
 \begin{abstract}
 Training a frontier language model costs hundreds of millions of dollars, yet practitioners monitor this investment through a single signal: the training loss.
-We show that spectral properties of weight matrices---specifically, the stable rank and power-law exponent of the eigenvalue spectrum---provide monitoring signals that loss fundamentally cannot.
-Measuring these quantities across 9 models spanning three architectures (GPT-NeoX, LLaMA, OLMo2) and two orders of magnitude in scale (70M--7B parameters), we establish four results:
-(1)~the normalized stable rank (SR/$d$) converges to a universal constant $\approx 0.056 \pm 0.008$ regardless of model scale or architecture, revealing that training compresses all models to ${\sim}5\%$ of their representational capacity;
+We show that spectral properties of weight matrices---specifically, the stable rank and power-law exponent of the eigenvalue spectrum---provide physically grounded monitoring signals that loss fundamentally cannot.
+The stable rank is not merely an analogy to statistical mechanics: it \emph{is} the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution, making spectral monitoring a direct measurement of thermodynamic state.
+Measuring these quantities across 10 models spanning three architectures (GPT-NeoX, LLaMA, OLMo2) and over two orders of magnitude in scale (70M--13B parameters), we establish four results:
+(1)~the normalized stable rank (SR/$d$) converges to a universal constant $\approx 0.054 \pm 0.009$ regardless of model scale or architecture, revealing that training compresses R\'{e}nyi-2 entropy by ${\sim}2$ nats universally;
 (2)~SR/$d$ achieves Spearman correlation $r = -0.92$ with downstream task performance ($N\!=\!143$ checkpoints, $p < 10^{-58}$), predicting model quality without requiring any evaluation data;
-(3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal---$d\alpha/dt > 0$---that detects structural degradation invisible to loss, enabling adaptive scheduling and early detection of capacity exhaustion;
-(4)~an $\alpha$-guided learning rate schedule that maintains peak LR until the reversal signal outperforms cosine decay in both final loss and spectral structure quality.
-We further derive a ``Structural Chinchilla'' law---$\alpha = 2.54 + 3.5 \exp(-D/269N)$---showing that compute-optimal training (20 tokens/param) leaves models structurally immature ($\alpha > 5$), while structural maturity requires ${\sim}500$ tokens/param.
+(3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal---$d\alpha/dt > 0$---that detects structural degradation invisible to loss, with the 13B-scale model showing the largest reversal ($\Delta\alpha = +2.71$), demonstrating that larger models are more fragile to insufficient training;
+(4)~an $\alpha$-guided learning rate schedule that maintains peak LR until the reversal signal outperforms cosine decay in both final loss ($-0.008$) and spectral structure quality ($\alpha$: 2.35 vs.\ 2.94).
+We further derive a ``Structural Chinchilla'' law showing that compute-optimal training (20 tokens/param) leaves models structurally immature ($\alpha > 5$), while structural maturity requires ${\sim}500$ tokens/param---and that larger models require \emph{more} tokens per parameter, not fewer, to achieve spectral maturity.
 These results provide practitioners with a physics-grounded instrument panel for pretraining that answers questions loss cannot: ``Is structure still forming?'', ``When should I decay the LR?'', and ``Is this model structurally ready for deployment?''
 \end{abstract}

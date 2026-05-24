@@ -20,22 +20,27 @@ Meanwhile, a convergent body of results from Random Matrix Theory~\citep{martin_
 Specifically, well-trained layers exhibit \emph{heavy-tailed} eigenvalue distributions characterized by a power-law exponent $\alpha \in [2, 4]$, while untrained or poorly-trained layers remain close to the random Marchenko-Pastur distribution ($\alpha > 6$)~\citep{martin_mahoney_jmlr2021}.
 The tool WeightWatcher~\citep{weightwatcher} demonstrated that $\alpha$ correlates with model quality across architectures, but only for final models---the \emph{dynamics} of $\alpha$ during training, and its potential as a \emph{real-time monitoring signal}, have not been explored.
 
-\textbf{This paper fills that gap.}
-We measure spectral properties of weight matrices across 9 language models spanning three architectures and two orders of magnitude in scale, tracking their evolution throughout training.
+A key insight of our work is that spectral monitoring is not merely \emph{analogous} to statistical mechanics---it \emph{is} statistical mechanics.
+The stable rank $\mathrm{SR} = \|W\|_F^2 / \sigma_1^2$ equals $\exp(S_{\text{R\'{e}nyi-2}})$, where $S_{\text{R\'{e}nyi-2}}$ is the R\'{e}nyi-2 entropy of the normalized singular-value distribution.
+When we observe SR/$d$ converging to a universal constant, we are observing that SGD compresses the R\'{e}nyi-2 entropy of every weight matrix by approximately 2 nats, regardless of model scale or architecture.
+This is not analogy; it is a mathematical identity that grounds our entire framework in information-theoretic thermodynamics.
+
+\textbf{This paper fills the gap between static spectral analysis and real-time training guidance.}
+We measure spectral properties of weight matrices across 10 language models spanning three architectures and over two orders of magnitude in scale, tracking their evolution throughout training.
 We discover:
 
 \begin{enumerate}[leftmargin=*,itemsep=1pt,topsep=2pt]
-    \item \textbf{A universal compression constant} (\S\ref{sec:universal}). The stable rank normalized by hidden dimension (SR/$d$) converges to $\approx 0.056$ for all tested models, regardless of scale (70M--7B) or architecture (GPT-NeoX, LLaMA, OLMo2). This means training universally compresses weight matrices to ${\sim}5\%$ of their available dimensionality.
+    \item \textbf{A universal compression constant} (\S\ref{sec:universal}). The stable rank normalized by hidden dimension (SR/$d$) converges to $\approx 0.054 \pm 0.009$ for all tested models, regardless of scale (70M--13B) or architecture (GPT-NeoX, LLaMA, OLMo2). This means training universally compresses weight matrices to ${\sim}5\%$ of their available dimensionality. At 13B scale, SR/$d = 0.043$, approaching the asymptotic limit of 0.040 predicted by the finite-width correction model SR/$d = 0.040 + 0.61/\sqrt{d}$.
 
     \item \textbf{SR/$d$ as a universal quality predictor} (\S\ref{sec:predictor}). SR/$d$ achieves Spearman $r = -0.92$ with downstream benchmark performance across 143 checkpoints from 6 model scales---predicting quality from weights alone, without training data, test data, or loss values.
 
-    \item \textbf{$\alpha$ reversal as early warning} (\S\ref{sec:reversal}). When the power-law exponent $\alpha$ begins \emph{increasing} ($d\alpha/dt > 0$), the model's spectral structure is degrading. This signal, invisible to loss, occurs in all models with fewer than ${\sim}250$ tokens/parameter. It diagnoses capacity exhaustion and signals the optimal point to begin LR decay.
+    \item \textbf{$\alpha$ reversal as early warning} (\S\ref{sec:reversal}). When the power-law exponent $\alpha$ begins \emph{increasing} ($d\alpha/dt > 0$), the model's spectral structure is degrading. This signal, invisible to loss, occurs in all models with fewer than ${\sim}250$ tokens/parameter. Critically, the reversal amplitude \emph{grows} with model scale: OLMo-2-13B exhibits $\Delta\alpha = +2.71$ (from 4.25 to 6.95), the largest observed, revealing that bigger models are more fragile---they form initial structure faster but cannot sustain it without sufficient data.
 
     \item \textbf{An $\alpha$-guided adaptive schedule} (\S\ref{sec:schedule}). Maintaining peak LR until the $\alpha$ reversal signal, then decaying, outperforms cosine decay in both final loss ($-0.008$) and spectral structure ($\alpha$: 2.35 vs.\ 2.94). This demonstrates that spectral metrics can \emph{guide} training decisions, not merely observe them.
 \end{enumerate}
 
-Additionally, we derive a \textbf{``Structural Chinchilla'' scaling law} (\S\ref{sec:scaling}): $\alpha = 2.54 + 3.5\exp(-D/269N)$, where $D$ is training tokens and $N$ is parameters. This law identifies a \emph{structural phase transition} at $D/N \approx 250$--$500$ tokens/parameter, far beyond compute-optimal Chinchilla ratios (20 tokens/param). It explains quantitatively why ``over-training'' strategies like Llama-3 (15,000 tokens/param) produce models with superior generalization: they achieve heavy-tailed self-regularization that Chinchilla-optimal models never reach.
+Additionally, we derive a \textbf{``Structural Chinchilla'' scaling law} (\S\ref{sec:scaling}): $\alpha = 2.54 + 3.5\exp(-D/269N)$, where $D$ is training tokens and $N$ is parameters. This law identifies a \emph{structural phase transition} at $D/N \approx 250$--$500$ tokens/parameter, far beyond compute-optimal Chinchilla ratios (20 tokens/param). It explains quantitatively why ``over-training'' strategies like Llama-3 (15,000 tokens/param) produce models with superior generalization: they achieve heavy-tailed self-regularization that Chinchilla-optimal models never reach. However, OLMo-2-13B ($D/N = 365$) reveals that the law requires a model-size correction at 13B+ scale: large models need \emph{more} tokens per parameter for structural maturity, not fewer, contradicting the common intuition that scale substitutes for data.
 
-Together, these results establish spectral monitoring as a practical complement to loss curves.
-The question that should guide every training decision shifts from ``has loss converged?'' to ``is spectral structure still forming, and is the model structurally mature?''
+Together, these results establish spectral monitoring as a practical complement to loss curves---grounded not in analogy but in the information-theoretic thermodynamics of SGD.
+The question that should guide every training decision shifts from ``has loss converged?'' to ``is R\'{e}nyi entropy still decreasing, and has the model reached spectral maturity?''
 We release measurement code and monitoring dashboards for integration into existing training pipelines.

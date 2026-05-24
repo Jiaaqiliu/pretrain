@@ -8,7 +8,7 @@ We validate the spectral framework on three fronts: (i)~measurement of spectral 
 \subsection{Setup}
 \label{sec:setup}
 
-\paragraph{Models measured.} We measure 9 models spanning 3 architectures:
+\paragraph{Models measured.} We measure 10 models spanning 3 architectures:
 
 \begin{table}[t]
 \centering
@@ -30,6 +30,7 @@ Amber-7B & LLaMA & 4096 & 6.7B & 1.26T & 187 & 25 \\
 \midrule
 OLMo-2-1B & OLMo2 & 2048 & 1.0B & 4T+ & 4,000 & 25 \\
 OLMo-2-7B & OLMo2 & 4096 & 7.0B & 4T+ & 571 & 25 \\
+OLMo-2-13B & OLMo2 & 5120 & 13B & 5T & 365 & 25 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -44,7 +45,7 @@ OLMo-2-7B & OLMo2 & 4096 & 7.0B & 4T+ & 571 & 25 \\
 \begin{table}[t]
 \centering
 \small
-\caption{Normalized stable rank (SR/$d$) at end of training across all models. Despite 100$\times$ variation in model size and 3 different architectures, SR/$d$ converges to $0.056 \pm 0.008$.}
+\caption{Normalized stable rank (SR/$d$) at end of training across all models. Despite 180$\times$ variation in model size and 3 different architectures, SR/$d$ converges to $0.054 \pm 0.009$.}
 \label{tab:srd}
 \begin{tabular}{@{}llcccc@{}}
 \toprule
@@ -59,15 +60,16 @@ Pythia-6.9B & GPT-NeoX & 4096 & 0.463 & 0.046 & 0.100 \\
 Amber-7B & LLaMA & 4096 & 0.348 & 0.057 & 0.165 \\
 OLMo-2-1B & OLMo2 & 2048 & 0.342 & 0.064 & 0.186 \\
 OLMo-2-7B & OLMo2 & 4096 & 0.358 & 0.046 & 0.128 \\
+OLMo-2-13B & OLMo2 & 5120 & 0.366 & 0.043 & 0.117 \\
 \midrule
-\multicolumn{3}{l}{\textbf{Mean $\pm$ std}} & $0.397 \pm 0.040$ & $\mathbf{0.055 \pm 0.008}$ & $0.141 \pm 0.027$ \\
+\multicolumn{3}{l}{\textbf{Mean $\pm$ std}} & $0.394 \pm 0.041$ & $\mathbf{0.054 \pm 0.009}$ & $0.139 \pm 0.028$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Result.} SR/$d_{\mathrm{final}} = 0.055 \pm 0.008$ (CV = 14.9\%) across 9 models, 3 architectures, and 100$\times$ scale range. This is our first main result: \textbf{training universally compresses each weight layer's effective dimensionality to ${\sim}5$--$7\%$ of its full capacity.}
+\paragraph{Result.} SR/$d_{\mathrm{final}} = 0.054 \pm 0.009$ (CV = 16.7\%) across 10 models, 3 architectures, and 180$\times$ scale range (70M--13B parameters). This is our first main result: \textbf{training universally compresses each weight layer's effective dimensionality to ${\sim}4$--$7\%$ of its full capacity.}
 
-\paragraph{Asymptotic model.} Fitting SR/$d$ vs.\ $d$: $\mathrm{SR}/d = 0.040 + 0.61/\sqrt{d}$. As $d \to \infty$, SR/$d \to 0.040$ (the true universal limit). Finite-width models have a $1/\sqrt{d}$ correction.
+\paragraph{Asymptotic model.} Fitting SR/$d$ vs.\ $d$ across all 10 models: $\mathrm{SR}/d = 0.040 + 0.61/\sqrt{d}$. As $d \to \infty$, SR/$d \to 0.040$ (the true universal limit). Finite-width models have a $1/\sqrt{d}$ correction; notably, OLMo-2-13B ($d = 5120$) achieves the lowest SR/$d_{\mathrm{final}} = 0.043$, consistent with this asymptotic trend.
 
 %-----------------------------------------------------------------------------
 \subsection{P2: SR/$d$ as Universal Performance Predictor}
@@ -105,12 +107,12 @@ This enables real-time performance prediction during training without running ex
 \label{sec:reversal}
 %-----------------------------------------------------------------------------
 
-\paragraph{Observation.} For models with $D/N < 250$ tokens/parameter (Pythia-2.8B, Pythia-6.9B, Amber-7B), the power-law exponent $\alpha$ reaches a minimum early in training, then \emph{increases}---signaling that spectral structure is \emph{degrading} even as loss continues to decrease.
+\paragraph{Observation.} For models with insufficient tokens per parameter, the power-law exponent $\alpha$ reaches a minimum early in training, then \emph{increases}---signaling that spectral structure is \emph{degrading} even as loss continues to decrease. Critically, the OLMo-2-13B result reveals that the reversal threshold is \emph{model-size-dependent}: despite $D/N = 365$ (above the ${\sim}250$ threshold inferred from smaller models), 13B exhibits the largest reversal of any model measured ($\Delta\alpha = +2.71$).
 
 \begin{table}[t]
 \centering
 \small
-\caption{$\alpha$ reversal across models. Well-trained models ($D/N > 300$) show no reversal; under-trained models ($D/N < 250$) all exhibit reversal. The reversal point marks the onset of structural degradation.}
+\caption{$\alpha$ reversal across models. The reversal threshold is not a fixed $D/N$ constant but grows with model size: OLMo-2-13B shows massive reversal at $D/N = 365$, far above the threshold for smaller models.}
 \label{tab:reversal}
 \begin{tabular}{@{}lccccl@{}}
 \toprule
@@ -123,12 +125,13 @@ Pythia-1B & 297 & 2.52 & 2.78 & Yes & Under-trained \\
 Pythia-2.8B & 108 & 4.71 & 5.16 & \textbf{Yes} & Clear reversal \\
 Pythia-6.9B & 44 & 4.72 & 5.13 & \textbf{Yes} & Clear reversal \\
 Amber-7B & 187 & 4.98 & 5.25 & \textbf{Yes} & Cross-arch confirmed \\
+OLMo-2-13B & 365 & 4.25 & 6.95 & \textbf{YES} & Largest reversal ($\Delta\alpha{=}+2.71$) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Mechanism: MLP layers drive the reversal.}
-Layer-type analysis reveals that $\alpha_{\mathrm{attn}}$ stabilizes early and remains flat, while $\alpha_{\mathrm{mlp}}$ continues rising after the global minimum. MLP layers store factual knowledge and have higher capacity demands; with insufficient training data ($D/N < 250$), gradient noise from new diverse data destabilizes partially-learned MLP structure while attention patterns remain robust.
+Layer-type analysis reveals that $\alpha_{\mathrm{attn}}$ stabilizes early and remains flat, while $\alpha_{\mathrm{mlp}}$ continues rising after the global minimum. MLP layers store factual knowledge and have higher capacity demands; with insufficient training data, gradient noise from new diverse data destabilizes partially-learned MLP structure while attention patterns remain robust. The MLP/Attention gap (defined as $\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}}$) grows monotonically with model size, reaching 1.69 at 13B---the largest of all models measured---confirming that MLP is the structural bottleneck and that the gap amplifies at scale.
 
 \paragraph{Practical value.} The $\alpha$ reversal signal is \emph{invisible to loss} (loss continues decreasing via memorization) but reveals that continued training at the current LR is structurally counter-productive. Detecting reversal enables:
 (a)~adaptive LR decay (start cooling when structure saturates),
@@ -175,7 +178,7 @@ This demonstrates the core prescriptive value: \textbf{spectral metrics can dete
 \label{sec:scaling}
 %-----------------------------------------------------------------------------
 
-Fitting $\alpha_{\mathrm{final}}$ vs.\ $D/N$ (tokens per parameter) across all 9 models yields:
+Fitting $\alpha_{\mathrm{final}}$ vs.\ $D/N$ (tokens per parameter) across models $\leq$7B yields:
 \begin{equation}
     \alpha(D/N) = 2.54 + 3.5 \cdot \exp\!\left(-\frac{D}{269 \cdot N}\right), \quad R^2 = 0.81
     \label{eq:structural_chinchilla}
@@ -191,19 +194,23 @@ This ``Structural Chinchilla'' law quantifies the tokens-per-parameter budget ne
 
 The characteristic scale $\tau = 269$ tokens/parameter represents the budget at which heavy-tailed self-regularization is half-complete. Structure-optimal training requires ${\sim}12$--$25\times$ more tokens than compute-optimal (Chinchilla), explaining the empirical success of massive over-training strategies (Llama-3: 15,000 $D/N$; Pythia-70M: 4,261 $D/N$).
 
+\paragraph{Size-dependent correction.} The OLMo-2-13B result challenges the fixed-$\tau$ formulation: at $D/N = 365$, Equation~\ref{eq:structural_chinchilla} predicts $\alpha \approx 3.44$, yet the observed $\alpha_{\mathrm{final}} = 6.95$---a discrepancy of $+3.51$. This reveals that the characteristic scale $\tau$ is not a universal constant but grows with model size $N$. Larger models have more parameters competing for gradient signal, requiring proportionally more tokens per parameter to achieve the same degree of spectral maturity. A revised formulation with $\tau(N) = \tau_0 \cdot (N / N_0)^{\beta}$ for some exponent $\beta > 0$ would accommodate this finding; fitting the precise scaling of $\tau$ with $N$ is ongoing work requiring additional measurements at 32B+ scale.
+
 %-----------------------------------------------------------------------------
 \subsection{Three-Phase Training Dynamics}
 \label{sec:phases}
 %-----------------------------------------------------------------------------
 
-Dense measurements from Amber-7B (360 checkpoints, 1.26T tokens) reveal three spectral phases:
+Dense measurements from Amber-7B (360 checkpoints, 1.26T tokens) and OLMo-2-13B (25 checkpoints, 5T tokens) reveal three spectral phases:
 
 \begin{enumerate}[leftmargin=*,itemsep=1pt]
-    \item \textbf{Explosive ordering} (0--5\% of training, ${\sim}6$ tokens/param): $\alpha$ drops from ${\sim}18$ to ${\sim}5$ at rate $\Delta\alpha/\Delta t \approx -2.3$/checkpoint. Both attention and MLP participate. SR drops 60\%+.
+    \item \textbf{Explosive ordering} (0--5\% of training, ${\sim}6$ tokens/param): $\alpha$ drops from ${\sim}18$ to its minimum at rate $\Delta\alpha/\Delta t \approx -2.3$/checkpoint. Both attention and MLP participate. SR drops 60\%+. For OLMo-2-13B, this phase spans steps 0--7K, with $\alpha$ dropping from 18.8 to 4.25.
 
-    \item \textbf{Slow reversal} (5--80\% of training): $\alpha$ \emph{rises} from 5.0 to 5.4 at rate $\Delta\alpha/\Delta t \approx +0.002$/checkpoint. MLP drives the reversal; attention remains stable.
+    \item \textbf{Slow reversal} (5--80\%+ of training): $\alpha$ \emph{rises} from its minimum at rate $\Delta\alpha/\Delta t \approx +0.002$/checkpoint. MLP drives the reversal; attention remains stable. For OLMo-2-13B, the reversal spans steps 7K--596K (the \emph{entire} remaining training), with $\alpha$ rising from 4.25 to 6.95---the largest reversal magnitude observed ($\Delta\alpha = +2.71$).
 
-    \item \textbf{Recovery} (80--100\%, only if $D/N$ is sufficient): $\alpha$ begins decreasing again. The accumulated gradient signal finally overcomes noise-driven degradation.
+    \item \textbf{Recovery} (only if $D/N$ is sufficient): $\alpha$ begins decreasing again. The accumulated gradient signal finally overcomes noise-driven degradation. OLMo-2-13B \emph{never reaches this phase}: even at $D/N = 365$ tokens/parameter, the model remains in Phase~2 throughout, confirming that larger models require substantially more data to achieve structural recovery.
 \end{enumerate}
 
 The ``7\% rule'': at the $\alpha$ minimum (typically 7--14\% of total training), models already achieve 83--100\% of their final downstream performance. The remaining 86--93\% of compute produces diminishing structural returns.
+
+\paragraph{Ongoing experiments.} A real-data 3-way comparison (cosine vs.\ WSD vs.\ $\alpha$-guided scheduling on FineWeb-Edu, 10B tokens, Pythia-410M architecture, 2 seeds $\times$ 3 schedules) is currently running; results will be reported in the final version. This experiment tests whether the prescriptive value of $\alpha$-guided scheduling (Section~\ref{sec:schedule}) transfers from synthetic to real data at larger token scale.

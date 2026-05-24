@@ -20,13 +20,15 @@ Detect structural \emph{degradation} & $\times$ & \checkmark ($\alpha$ reversal)
 Adaptive schedule trigger & $\times$ & \checkmark ($d\alpha/dt = 0$) \\
 Predict downstream perf.\ without eval & $\times$ & \checkmark ($r = -0.92$) \\
 Compare across model sizes & $\times$ & \checkmark (normalized) \\
-Diagnose layer-specific issues & $\times$ & \checkmark ($\alpha_{\mathrm{attn}}$ vs.\ $\alpha_{\mathrm{mlp}}$) \\
+Detect layer-specific bottleneck & $\times$ & \checkmark ($\alpha_{\mathrm{mlp}} \gg \alpha_{\mathrm{attn}}$) \\
 Determine training sufficiency & $\times$ & \checkmark ($\alpha < 3$) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The fundamental asymmetry is: \emph{loss can decrease while structure degrades}. This occurs whenever the model reduces prediction error through memorization rather than compression. Only spectral metrics distinguish these cases.
+
+The layer-type decomposition is particularly diagnostic. At 13B scale, we observe $\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}} = 1.69$, indicating that MLP layers are structurally far less mature than attention layers despite identical token exposure. This gap signals an MLP capacity bottleneck---the model has insufficient MLP parameters to compress the representations that attention has already learned to route. Practitioners observing this pattern should consider MLP-width expansion or gated architectures that increase effective MLP capacity.
 
 \subsection{Connection to Over-Training and Chinchilla}
 
@@ -35,6 +37,22 @@ The Chinchilla scaling law~\citep{hoffmann2022} minimizes loss for a given compu
 The industry has empirically moved toward massive over-training: Llama-3 uses $D/N \approx 15{,}000$ (750$\times$ Chinchilla), and these models exhibit superior generalization, fine-tuning robustness, and emergent capabilities~\citep{llama3}. Our framework explains why: only at $D/N > 300$ does the spectral structure enter the heavy-tail regime ($\alpha < 4$), which corresponds to robust, transferable feature representations.
 
 This resolves the apparent paradox of ``compute-inefficient'' training being better: \textbf{Chinchilla minimizes loss per FLOP, but structural optimality requires a fundamentally different budget.}
+
+\subsection{Scale-Dependent Structural Maturity}
+
+Our OLMo-2-13B measurement reveals an unexpected finding: $\alpha = 6.95$ despite $D/N = 365$ tokens/parameter. The original Structural Chinchilla formula (Eq.~\ref{eq:structural_chinchilla}), fit on 70M--1B models with $\tau \approx 269$, predicts $\alpha = 3.44$ at this ratio. The 13B model is \emph{twice as structurally immature} as the formula predicts.
+
+This suggests that the structural maturation timescale $\tau$ is not constant but grows with model size. We hypothesize:
+\begin{equation}
+    \tau(N) \;=\; \tau_0 \cdot \left(\frac{N}{N_0}\right)^{\!\gamma}, \quad \gamma > 0,
+\end{equation}
+where small models ($N_0 \sim 100\text{M}$) achieve structural maturity at $\tau_0 \approx 269$ tokens/param, but larger models require progressively more. The 13B data point implies $\tau_{\text{eff}} \gg 269$ at that scale.
+
+This has stark implications for frontier training. Llama-3-8B was trained with ${\sim}15{,}000$ tokens/param and likely achieves deep structural maturity. But Llama-3-70B uses only ${\sim}2{,}100$ tokens/param---if $\tau$ grows super-linearly, the 70B model may be \emph{structurally undercooked} despite its massive absolute token count. The largest models, paradoxically, may be the most structurally starved relative to their needs.
+
+\subsection{Thermodynamic Interpretation}
+
+The stable rank is not merely analogous to a thermodynamic quantity---it \emph{is} one. $\text{SR}(\mathbf{W})$ equals $\exp(H_2(\hat{\boldsymbol{\sigma}}))$, the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution (Section~\ref{sec:theory}). The universal compression $\text{UCR} \approx 0.14$ therefore corresponds to a universal entropy reduction $\Delta H_2 \approx -2.0$ nats during training. This is reminiscent of Landauer's principle: erasure of information requires a minimum energy cost, and training ``erases'' ${\sim}86\%$ of the initial random degrees of freedom to encode task-relevant structure. That this entropy reduction is approximately constant across scales and architectures suggests a deep thermodynamic constraint on what it means for a transformer to ``learn.''
 
 \subsection{Practical Monitoring Protocol}
 
@@ -62,11 +80,13 @@ Based on our findings, we recommend a three-signal protocol for training teams:
 
 \subsection{Limitations}
 
-\paragraph{Scale ceiling.} Our measurements extend to 7B parameters. Whether SR/$d \approx 0.055$ holds at 70B+ remains unverified, though the asymptotic model (SR/$d = 0.04 + 0.61/\sqrt{d}$) predicts convergence to 0.04 for very large $d$.
+\paragraph{Scale ceiling.} Our measurements now extend to 13B parameters, with 32B and 70B measurements in progress. Whether SR/$d \approx 0.055$ holds at 70B+ remains unverified, though the asymptotic model (SR/$d = 0.04 + 0.61/\sqrt{d}$) predicts convergence to 0.04 for very large $d$.
 
-\paragraph{Architecture scope.} We validate across GPT-NeoX, LLaMA, and OLMo2---all dense decoder-only transformers. MoE and encoder-decoder architectures are untested.
+\paragraph{Architecture scope.} We validate across GPT-NeoX, LLaMA, and OLMo-2---all dense decoder-only transformers. MoE and encoder-decoder architectures are untested.
 
-\paragraph{Proxy training.} The $\alpha$-guided experiment (\S\ref{sec:schedule}) uses random tokens as a proxy. A definitive validation requires real data with downstream evaluation, which we plan as future work.
+\paragraph{Size-dependent $\tau$.} The Structural Chinchilla formula requires a model-size correction at 13B+ scale, which we are currently characterizing with additional measurements (32B, 70B). Until this correction is calibrated, the formula should be applied with caution above 7B parameters.
+
+\paragraph{Proxy training.} The $\alpha$-guided experiment (\S\ref{sec:schedule}) uses random tokens as a proxy. A real-data experiment is currently running to validate that the spectral dynamics and scheduling gains transfer to natural language with downstream evaluation.
 
 \paragraph{Correlation vs.\ causation.} SR/$d$ correlates with but does not provably cause good downstream performance. The causal mechanism---whether compression is a \emph{driver} or \emph{side effect} of learning---deserves further theoretical analysis.
 
