@@ -15,7 +15,18 @@ from typing import Any
 # Default domains matching our data preparation pipeline
 DEFAULT_DOMAINS = ["web", "code", "math", "books", "academic"]
 
-# Reference mixtures from published models (estimated from papers)
+# Approximate available unique tokens per domain (after initial quality filter)
+# Used to enforce the 4-epoch repetition ceiling (Muennighoff et al., 2023)
+DOMAIN_TOKEN_BUDGET = {
+    "web": 200_000_000_000,      # 200B (FineWeb-Edu, heavily filtered from CC)
+    "code": 50_000_000_000,      # 50B (StarCoder filtered)
+    "math": 15_000_000_000,      # 15B (OpenWebMath + synthetic)
+    "books": 10_000_000_000,     # 10B (books subset)
+    "academic": 8_000_000_000,   # 8B (academic papers)
+}
+
+# Reference mixtures from published models
+# Sources: OLMo-2 tech report, Llama-3 paper (estimated), DeepSeek-v3 report
 REFERENCE_MIXTURES = {
     "olmo2": {"web": 0.55, "code": 0.20, "math": 0.10, "books": 0.08, "academic": 0.07},
     "llama3": {"web": 0.58, "code": 0.25, "math": 0.10, "books": 0.04, "academic": 0.03},
@@ -23,6 +34,8 @@ REFERENCE_MIXTURES = {
     "uniform": {"web": 0.20, "code": 0.20, "math": 0.20, "books": 0.20, "academic": 0.20},
     "web_heavy": {"web": 0.75, "code": 0.10, "math": 0.05, "books": 0.05, "academic": 0.05},
     "reasoning_heavy": {"web": 0.30, "code": 0.30, "math": 0.25, "books": 0.05, "academic": 0.10},
+    # Blakeney et al. (2024) style: web first, then reason-heavy annealing
+    "late_annealing": {"web": 0.30, "code": 0.30, "math": 0.25, "books": 0.05, "academic": 0.10},
 }
 
 
@@ -145,6 +158,26 @@ class DataMixture:
         if name not in REFERENCE_MIXTURES:
             raise ValueError(f"Unknown reference: {name}. Available: {list(REFERENCE_MIXTURES)}")
         return cls(weights=dict(REFERENCE_MIXTURES[name]))
+
+    def clamp_by_repetition(
+        self, total_training_tokens: int, max_epochs: float = 4.0
+    ) -> DataMixture:
+        """Clamp domain weights to respect the repetition ceiling.
+
+        Per Muennighoff et al. (2023): beyond 4 epochs of a domain's unique data,
+        additional repetition yields diminishing returns. This method caps each
+        domain's weight such that it won't exceed max_epochs of its available data.
+        """
+        max_weights = {}
+        for domain, weight in self.weights.items():
+            available = DOMAIN_TOKEN_BUDGET.get(domain, float("inf"))
+            # Max tokens we'd sample from this domain
+            max_tokens_for_domain = available * max_epochs
+            # Max weight this domain can have
+            max_w = max_tokens_for_domain / total_training_tokens if total_training_tokens > 0 else 1.0
+            max_weights[domain] = min(weight, max_w)
+
+        return DataMixture(weights=max_weights, filter_config=copy.deepcopy(self.filter_config))
 
     def __repr__(self) -> str:
         parts = [f"{d}={w:.1%}" for d, w in sorted(self.weights.items(), key=lambda x: -x[1])]
