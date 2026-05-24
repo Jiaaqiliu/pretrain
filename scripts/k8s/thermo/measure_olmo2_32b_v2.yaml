@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-measure-olmo2-32b-v2
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: measure
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          echo "=== Measuring OLMo-2-32B with V2 metrics ==="
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            scripts/thermo/measure_olmo2_v2.py \
+            --model-size 32B \
+            --output /fsx/dev/jiaqi/thermo_results/olmo2_v2/olmo2_32b.jsonl \
+            --max-checkpoints 25
+
+          echo "=== OLMo-2-32B V2 COMPLETE ==="
+          cat /fsx/dev/jiaqi/thermo_results/olmo2_v2/olmo2_32b.jsonl
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"

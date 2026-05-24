@@ -1,10 +1,10 @@
-"""Measure V2 thermodynamic metrics from OLMo-2 checkpoints.
+"""Measure V2 spectral metrics from LLM360/K2-V2 (70B) checkpoints.
 
-Reuses the V2 measurement functions for OLMo-2 models on HuggingFace.
+K2-V2 is a 70B dense LLaMA-architecture model with 54 intermediate checkpoints.
 
 Usage:
-    torchrun --nproc_per_node=8 scripts/thermo/measure_olmo2_v2.py \
-        --model-size 1B --output results/olmo2_v2/olmo2_1b.jsonl
+    torchrun --nproc_per_node=8 scripts/thermo/measure_k2_v2.py \
+        --output results/k2_v2/k2_70b.jsonl --max-checkpoints 25
 """
 
 import argparse
@@ -18,49 +18,24 @@ from pathlib import Path
 import numpy as np
 import torch
 
-OLMO2_CONFIGS = {
-    "1B": {
-        "hf_repo": "allenai/OLMo-2-0425-1B",
-        "num_params": 1_000_000_000,
-        "hidden_dim": 2048,
-        "num_layers": 16,
-        "weight_decay": 0.1,
-        "peak_lr": 4e-4,
-    },
-    "7B": {
-        "hf_repo": "allenai/OLMo-2-1124-7B",
-        "num_params": 7_000_000_000,
-        "hidden_dim": 4096,
-        "num_layers": 32,
-        "weight_decay": 0.1,
-        "peak_lr": 3e-4,
-    },
-    "13B": {
-        "hf_repo": "allenai/OLMo-2-1124-13B",
-        "num_params": 13_000_000_000,
-        "hidden_dim": 5120,
-        "num_layers": 40,
-        "weight_decay": 0.1,
-        "peak_lr": 3e-4,
-    },
-    "32B": {
-        "hf_repo": "allenai/OLMo-2-0325-32B",
-        "num_params": 32_000_000_000,
-        "hidden_dim": 5120,
-        "num_layers": 64,
-        "weight_decay": 0.1,
-        "peak_lr": 2e-4,
-    },
+K2_CONFIG = {
+    "hf_repo": "LLM360/K2-V2",
+    "num_params": 70_000_000_000,
+    "hidden_dim": 8192,
+    "num_layers": 80,
+    "num_heads": 64,
+    "num_kv_heads": 8,
+    "intermediate_size": 28672,
 }
 
 
 def discover_revisions(repo_id: str, max_count: int = 25) -> list[dict]:
-    """Discover checkpoint revisions, sample evenly."""
+    """Discover checkpoint branches for K2-V2."""
     from huggingface_hub import list_repo_refs
 
     refs = list_repo_refs(repo_id)
     checkpoints = []
-    step_pattern = re.compile(r"step(\d+)")
+    step_pattern = re.compile(r"base_(\d+)")
 
     for branch in refs.branches:
         match = step_pattern.search(branch.name)
@@ -115,12 +90,11 @@ def fit_power_law_alpha(singular_values: np.ndarray) -> dict:
 
 
 @torch.no_grad()
-def measure_model_v2(model, svd_k: int = 256) -> dict:
-    """Compute V2 metrics."""
+def measure_model_v2(model, svd_k: int = 256, hidden_dim: int = 8192) -> dict:
+    """Compute V2 metrics layer-by-layer to minimize memory."""
     layer_alphas = []
     layer_stable_ranks = []
     layer_concentrations_10 = []
-    layer_n_params = []
     attn_alphas = []
     mlp_alphas = []
     total_params = 0
@@ -169,8 +143,6 @@ def measure_model_v2(model, svd_k: int = 256) -> dict:
         if total_var > 0 and len(sv_sq) >= 10:
             layer_concentrations_10.append(float(sv_sq[:10].sum() / total_var))
 
-        layer_n_params.append(m * n)
-
         if "self_attn" in name or "q_proj" in name or "k_proj" in name or "v_proj" in name:
             attn_alphas.append(pl["alpha"])
         elif "mlp" in name or "gate_proj" in name or "up_proj" in name or "down_proj" in name:
@@ -182,6 +154,7 @@ def measure_model_v2(model, svd_k: int = 256) -> dict:
         "alpha_mean": float(np.mean(layer_alphas)) if layer_alphas else 0.0,
         "alpha_median": float(np.median(layer_alphas)) if layer_alphas else 0.0,
         "stable_rank_mean": float(np.mean(layer_stable_ranks)) if layer_stable_ranks else 0.0,
+        "sr_over_d": float(np.mean(layer_stable_ranks)) / hidden_dim if layer_stable_ranks else 0.0,
         "concentration_top10": float(np.mean(layer_concentrations_10)) if layer_concentrations_10 else 0.0,
         "alpha_attn": float(np.mean(attn_alphas)) if attn_alphas else 0.0,
         "alpha_mlp": float(np.mean(mlp_alphas)) if mlp_alphas else 0.0,
@@ -199,13 +172,12 @@ def cleanup_hf_cache(repo_id: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-size", required=True, choices=list(OLMO2_CONFIGS.keys()))
     parser.add_argument("--output", required=True)
     parser.add_argument("--svd-k", type=int, default=256)
     parser.add_argument("--max-checkpoints", type=int, default=25)
     args = parser.parse_args()
 
-    config = OLMO2_CONFIGS[args.model_size]
+    config = K2_CONFIG
     repo_id = config["hf_repo"]
 
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -217,12 +189,14 @@ def main():
     Path(per_gpu_hf_home).mkdir(parents=True, exist_ok=True)
 
     if local_rank == 0:
-        print(f"[V2] Measuring OLMo-2-{args.model_size} from {repo_id}")
+        print(f"[V2] Measuring K2-V2 70B from {repo_id}")
         print(f"Discovering revisions...")
 
     checkpoints = discover_revisions(repo_id, max_count=args.max_checkpoints)
     if local_rank == 0:
         print(f"Found {len(checkpoints)} checkpoints to measure")
+        for c in checkpoints[:5]:
+            print(f"  {c}")
 
     my_ckpts = checkpoints[local_rank::world_size]
     output_path = Path(args.output)
@@ -230,6 +204,8 @@ def main():
         output_path = output_path.with_suffix(f".rank{local_rank}.jsonl")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # For 70B: use device_map="auto" to shard across available GPUs
+    # Each rank gets its own checkpoints but uses only its own GPU
     device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
 
     print(f"[GPU {local_rank}] Processing {len(my_ckpts)} checkpoints")
@@ -238,22 +214,28 @@ def main():
         for i, ckpt in enumerate(my_ckpts):
             step = ckpt["step"]
             revision = ckpt["revision"]
-            print(f"[GPU {local_rank}] [{i+1}/{len(my_ckpts)}] step={step}")
+            print(f"[GPU {local_rank}] [{i+1}/{len(my_ckpts)}] step={step} rev={revision}")
             t0 = time.time()
 
             try:
                 from transformers import AutoModelForCausalLM
+
+                # 70B in fp32 = 280GB, too large for single GPU
+                # Load in fp16 (140GB = 2 GPUs) then convert layers to fp32 during measurement
+                # Actually: load with device_map to single GPU in fp16, measure layer-by-layer in fp32
                 model = AutoModelForCausalLM.from_pretrained(
                     repo_id, revision=revision,
-                    torch_dtype=torch.float32,
-                    device_map=device, trust_remote_code=True,
+                    torch_dtype=torch.float16,
+                    device_map=device,
+                    trust_remote_code=True,
                 )
 
-                measurements = measure_model_v2(model, svd_k=args.svd_k)
+                measurements = measure_model_v2(model, svd_k=args.svd_k,
+                                                hidden_dim=config["hidden_dim"])
                 record = {
                     "step": step,
                     "revision": revision,
-                    "model_name": f"OLMo-2-{args.model_size}",
+                    "model_name": "K2-V2-70B",
                     "hidden_dim": config["hidden_dim"],
                     **measurements,
                 }
@@ -263,6 +245,7 @@ def main():
                 elapsed = time.time() - t0
                 print(f"  α={measurements['alpha_mean']:.2f} "
                       f"SR={measurements['stable_rank_mean']:.0f} "
+                      f"SR/d={measurements['sr_over_d']:.4f} "
                       f"C₁₀={measurements['concentration_top10']:.3f} "
                       f"({elapsed:.1f}s)")
 
