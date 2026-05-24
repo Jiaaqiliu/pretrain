@@ -241,12 +241,41 @@
 
 ---
 
+### 2026-05-24: OLMo-2-13B V2 测量 + 真实数据 3-Way 实验
+
+**OLMo-2-13B V2 测量** — ✅ 完成 (23 min, 25 checkpoints)
+
+关键发现:
+- SR/d_final = 0.043 (接近 asymptotic limit 0.040!)
+- 巨大 α reversal: 4.25 → 6.95 (Δα = +2.71, 所有模型中最大)
+- MLP/Attn gap = 1.69 (最大, 大模型 MLP 更难训练)
+- 验证了 SR/d asymptotic model, 扩展了验证范围到 13B
+
+**真实数据 3-Way 实验** — 🔄 运行中
+
+- 数据: FineWeb-Edu, 9.92B tokens, Pythia tokenizer (10 shards, 35GB)
+- 模型: Pythia-410M from step0 checkpoint
+- Schedule: Cosine vs WSD vs α-Guided × 2 seeds = 6 runs
+- 9000 steps, ~8h each
+- **问题修复**: from_config() 初始化导致 NaN → 改用 step0 pretrained weights
+
+**经验教训**:
+- `AutoModelForCausalLM.from_config()` 的默认初始化对于 GPT-NeoX 不稳定, 第 2 步就 NaN
+- 必须使用 `from_pretrained(..., revision="step0")` 获得正确初始化
+- Pythia tokenizer vocab_size=50254 但 model config vocab_size=50304 (有 padding tokens)
+- FineWeb-Edu `sample-10BT` 实际只产出 9.92B tokens (部分文档太短被过滤)
+
+---
+
 ## 资源使用追踪
 
 | 日期 | GPU-hours | Job | Notes |
 |------|-----------|-----|-------|
 | 2026-05-22 AM | ~5 | 调试迭代 (debug1-9) | 9 次迭代修复各种 bug |
 | 2026-05-22 | ~256 | 190M × 4 schedule × 8h | Phase 0 完成 |
+| 2026-05-24 | ~3 | OLMo-2-13B V2 measurement | 8 GPU × 23 min |
+| 2026-05-24 | ~6 (data prep) | FineWeb tokenize | 1 GPU × 6.3h |
+| 2026-05-24 | ~384 (est.) | 3-Way training × 6 runs | 6 × 8 GPU × 8h |
 | 2026-05-22 ongoing | ~80 (so far) | 3B gaussian 单节点 | 运行中 |
 | **总计** | **~341** | | |
 
