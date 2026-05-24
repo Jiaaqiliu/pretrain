@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--steps-per-trial", type=int, default=5000, help="Training steps per trial")
     parser.add_argument("--model", type=str, default="olmo2_190M", help="Proxy model factory")
     parser.add_argument("--output-dir", type=str, default="./results/autopretrain_search", help="Output directory")
-    parser.add_argument("--initial-mix", type=str, default="olmo2", help="Starting mixture reference")
+    parser.add_argument("--initial-mix", type=str, default="olmo2_stage1", help="Starting mixture reference")
     parser.add_argument("--data-root", type=str, default="/fsx/dev/jiaqi/data/olmo-3b-pretrain")
     parser.add_argument("--gpus", type=int, default=8, help="GPUs to use")
     parser.add_argument("--exploration-c", type=float, default=1.4, help="UCT exploration constant")

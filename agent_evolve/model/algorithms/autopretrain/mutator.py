@@ -144,10 +144,16 @@ class MixtureMutator:
         # If we have feedback, boost domains correlated with weak performance
         if feedback and "domain_losses" in feedback:
             domain_losses = feedback["domain_losses"]
-            # Boost domain with highest loss (it needs more data)
-            domain = max(domain_losses, key=domain_losses.get)
-            delta = random.uniform(0.03, 0.12)
-            reasoning = f"Domain '{domain}' has highest loss ({domain_losses[domain]:.4f}), boosting"
+            # Only consider domains that are actually in the mixture
+            valid_domains = {k: v for k, v in domain_losses.items() if k in phase.mixture.weights}
+            if valid_domains:
+                domain = max(valid_domains, key=valid_domains.get)
+                delta = random.uniform(0.03, 0.12)
+                reasoning = f"Domain '{domain}' has highest loss ({valid_domains[domain]:.4f}), boosting"
+            else:
+                domain = random.choice(phase.mixture.domains)
+                delta = random.choice([-1, 1]) * random.uniform(0.05, 0.15)
+                reasoning = "Feedback domains don't match mixture, random boost"
         else:
             # Random domain with larger delta
             domain = random.choice(phase.mixture.domains)

@@ -27,6 +27,7 @@ from .eval_harness import EvalResult, PretrainEvalHarness
 from .mixture import CurriculumSchedule, DataMixture
 from .mutator import MixtureMutator, MutationRecord
 from .reward import PretrainRewardPolicy
+from .workspace_bridge import WorkspaceBridge
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class SearchConfig:
     output_dir: str = "./autopretrain_search"
 
     # Starting point
-    initial_mixture: str = "olmo2"  # Reference mixture name
+    initial_mixture: str = "olmo2_stage1"  # Reference mixture name
 
 
 @dataclass
@@ -112,6 +113,8 @@ class ProxySearchLoop:
     mutator: MixtureMutator = field(default_factory=MixtureMutator)
     reward_policy: PretrainRewardPolicy = field(default_factory=PretrainRewardPolicy)
     eval_harness: PretrainEvalHarness = field(default_factory=PretrainEvalHarness)
+    workspace_bridge: WorkspaceBridge | None = None
+    _backend: Any = None
 
     # Search state
     nodes: dict[str, SearchNode] = field(default_factory=dict)
@@ -259,21 +262,96 @@ class ProxySearchLoop:
     def _run_trial(self, node: SearchNode) -> EvalResult:
         """Run a proxy-scale training trial for a given recipe.
 
-        This is where the OLMoCoreBackend gets called. For now,
-        generates workspace config → launches training → evaluates.
+        Pipeline:
+        1. WorkspaceBridge creates a workspace directory from the curriculum
+        2. OLMoCoreBackend translates workspace → script → launches training
+        3. EvalHarness reads metrics from the completed trial
         """
-        # TODO: Wire to OLMoCoreBackend.run_trial()
-        # For now, use eval_harness placeholder
-
-        # In the real implementation:
-        # 1. Generate workspace YAML from node.curriculum
-        # 2. Call OLMoCoreBackend.run_trial(workspace, ...)
-        # 3. Evaluate the resulting checkpoint
-
-        return self.eval_harness.evaluate(
-            checkpoint_path=f"/tmp/autopretrain/{node.node_id}",
-            step=self.config.proxy_steps_per_trial,
+        bridge = self._get_workspace_bridge()
+        trial_dir = bridge.create_trial_workspace(
+            node_id=node.node_id,
+            curriculum=node.curriculum,
+            model_factory=self.config.proxy_model_factory,
+            max_steps=self.config.proxy_steps_per_trial,
+            batch_size=self.config.proxy_batch_size,
+            sequence_length=self.config.proxy_sequence_length,
         )
+
+        backend = self._get_backend()
+        if backend is not None:
+            from agent_evolve.model.types import TrainingSearchNode, TrialBudget
+
+            search_node = TrainingSearchNode(
+                node_id=node.node_id,
+                parent_id=node.parent_id,
+                branch_id=0,
+            )
+            budget = TrialBudget(
+                steps=self.config.proxy_steps_per_trial,
+                seconds=3600.0,
+            )
+
+            # Create a minimal workspace object with .root attribute
+            class _Workspace:
+                def __init__(self, root): self.root = root
+            workspace = _Workspace(trial_dir)
+
+            trial_result = backend.run_trial(workspace, search_node, budget, benchmark=None)
+
+            if trial_result.status == "success" and trial_result.train_metrics:
+                loss = trial_result.train_metrics.get(
+                    "final_loss", trial_result.train_metrics.get("loss", 4.0)
+                )
+                return EvalResult(
+                    val_loss=float(loss),
+                    val_perplexity=2 ** float(loss),
+                    domain_losses={"overall": float(loss)},
+                    composite_score=-float(loss),
+                    checkpoint_path=trial_result.checkpoint.path if trial_result.checkpoint else "",
+                    step=self.config.proxy_steps_per_trial,
+                )
+            else:
+                logger.warning(
+                    "Trial %s failed (status=%s): %s",
+                    node.node_id, trial_result.status, trial_result.train_metrics.get("error", ""),
+                )
+
+        # Fallback: use eval_harness to read metrics from trial_dir
+        return self.eval_harness.evaluate(
+            checkpoint_path=str(trial_dir / "checkpoints"),
+            step=self.config.proxy_steps_per_trial,
+            trial_dir=trial_dir,
+        )
+
+    def _get_workspace_bridge(self) -> WorkspaceBridge:
+        if self.workspace_bridge is None:
+            self.workspace_bridge = WorkspaceBridge(
+                trials_root=Path(self.config.output_dir) / "trials",
+                data_root=self.config.data_root,
+            )
+        return self.workspace_bridge
+
+    def _get_backend(self):
+        """Lazy-initialize the OLMoCoreBackend.
+
+        Uses mock=True if torchrun is not available (local dev without GPU).
+        """
+        if self._backend is None:
+            try:
+                import shutil
+                from agent_evolve.backends.olmo_core import OLMoCoreBackend
+                has_torchrun = shutil.which("torchrun") is not None
+                self._backend = OLMoCoreBackend(
+                    gpus_per_node=self.config.proxy_gpus,
+                    num_nodes=1,
+                    mock=not has_torchrun,
+                )
+                mode = "real" if has_torchrun else "mock"
+                logger.info("OLMoCoreBackend initialized (%s, gpus=%d)", mode, self.config.proxy_gpus)
+            except ImportError:
+                logger.warning("OLMoCoreBackend not available, running in eval-only mode")
+                self._backend = None
+        return self._backend
 
     def _backpropagate(self, node_id: str, reward: float):
         """Backpropagate reward up the tree."""
