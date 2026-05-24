@@ -243,9 +243,12 @@ def main():
 
             try:
                 from transformers import AutoModelForCausalLM
+                # Use fp16 for 32B+ to fit in single GPU memory (140GB H200)
+                # measure_model_v2 converts each layer to fp32 during measurement
+                load_dtype = torch.float16 if config["num_params"] >= 30_000_000_000 else torch.float32
                 model = AutoModelForCausalLM.from_pretrained(
                     repo_id, revision=revision,
-                    torch_dtype=torch.float32,
+                    torch_dtype=load_dtype,
                     device_map=device, trust_remote_code=True,
                 )
 
