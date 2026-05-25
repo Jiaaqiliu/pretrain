@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: luhanqin-measure-k2-70b-v2
+  name: luhanqin-measure-k2-65b-v2
   namespace: default
 spec:
   ttlSecondsAfterFinished: 172800
@@ -24,15 +24,15 @@ spec:
           pip install transformers huggingface_hub numpy scipy > /dev/null 2>&1 || true
           set -e
 
-          echo "=== Measuring K2-V2 70B with V2 metrics ==="
+          echo "=== Measuring LLM360/K2 65B with V2 metrics ==="
           torchrun --nproc_per_node=8 --nnodes=1 \
             --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
             scripts/thermo/measure_k2_v2.py \
-            --output /fsx/dev/jiaqi/thermo_results/k2_v2/k2_70b.jsonl \
+            --output /fsx/dev/jiaqi/thermo_results/k2_v2/k2_65b.jsonl \
             --max-checkpoints 25
 
-          echo "=== K2-V2 70B COMPLETE ==="
-          cat /fsx/dev/jiaqi/thermo_results/k2_v2/k2_70b.jsonl
+          echo "=== K2 65B COMPLETE ==="
+          cat /fsx/dev/jiaqi/thermo_results/k2_v2/k2_65b.jsonl
         env:
         - name: HF_HOME
           value: "/fsx/dev/jiaqi/.cache/huggingface"

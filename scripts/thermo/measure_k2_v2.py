@@ -19,23 +19,23 @@ import numpy as np
 import torch
 
 K2_CONFIG = {
-    "hf_repo": "LLM360/K2-V2",
-    "num_params": 70_000_000_000,
+    "hf_repo": "LLM360/K2",
+    "num_params": 65_000_000_000,
     "hidden_dim": 8192,
     "num_layers": 80,
     "num_heads": 64,
-    "num_kv_heads": 8,
-    "intermediate_size": 28672,
+    "intermediate_size": 22016,
+    "vocab_size": 32032,
 }
 
 
 def discover_revisions(repo_id: str, max_count: int = 25) -> list[dict]:
-    """Discover checkpoint branches for K2-V2."""
+    """Discover checkpoint branches for K2 (ckpt_XXX format)."""
     from huggingface_hub import list_repo_refs
 
     refs = list_repo_refs(repo_id)
     checkpoints = []
-    step_pattern = re.compile(r"base_(\d+)")
+    step_pattern = re.compile(r"ckpt_(\d+)")
 
     for branch in refs.branches:
         match = step_pattern.search(branch.name)
@@ -235,7 +235,7 @@ def main():
                 record = {
                     "step": step,
                     "revision": revision,
-                    "model_name": "K2-V2-70B",
+                    "model_name": "K2-65B",
                     "hidden_dim": config["hidden_dim"],
                     **measurements,
                 }
