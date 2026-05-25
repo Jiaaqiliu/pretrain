@@ -43,12 +43,12 @@ from olmo_core.train.train_module import TransformerTrainModuleConfig
 from olmo_core.train.train_module.transformer import TransformerDataParallelConfig
 
 
-# Data paths on FSx
+# Data paths on FSx (glob patterns for olmo-core NumpyFSLDatasetConfig)
 DOMAIN_PATHS = {
-    "web": "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web",
-    "code": "/fsx/dev/jiaqi/data/olmo-pretrain/code",
-    "math": "/fsx/dev/jiaqi/data/olmo-pretrain/math",
-    "academic": "/fsx/dev/jiaqi/data/olmo-pretrain/fineweb_edu",
+    "web": "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web/*.npy",
+    "code": "/fsx/dev/jiaqi/data/olmo-pretrain/code/*.npy",
+    "math": "/fsx/dev/jiaqi/data/olmo-pretrain/math/*.npy",
+    "academic": "/fsx/dev/jiaqi/data/olmo-pretrain/fineweb_edu/*.npy",
 }
 
 # 3 trial mixes (must sum to 1.0)
@@ -73,11 +73,12 @@ def parse_args():
 
 
 def build_data_paths(mix: dict[str, float]) -> list[str]:
-    """Select data paths weighted by mix — for now, include all domains and rely on
-    the sampling to approximate the mix ratios."""
-    # olmo-core's NumpyFSLDatasetConfig with multiple paths samples round-robin.
-    # For proper mixing, we'd use SourceMixtureDatasetConfig. For MVP, we concatenate
-    # all paths and the actual mix is approximate. Phase 1 full search will use proper mixing.
+    """Build data paths as glob patterns for olmo-core.
+
+    For MVP, include all domains. The actual mix ratio is approximated by
+    the relative number of shards (web has 3759, code 967, math 350, academic 3759).
+    Phase 1 full search will use SourceMixtureDatasetConfig for precise mixing.
+    """
     paths = []
     for domain in mix.keys():
         if domain in DOMAIN_PATHS:
@@ -99,8 +100,11 @@ def main():
     model = model_config.build(init_device="meta")
 
     # Train module
+    # rank_microbatch_size = tokens processed per GPU per microbatch step
+    # 4 seq × 4096 = 16384 tokens per GPU (conservative for 1.6B on H200)
+    # With global_batch=128 seq and 8 GPUs: 128/8=16 seq/GPU, split into 4 microbatches
     train_module_config = TransformerTrainModuleConfig(
-        rank_microbatch_size=16 * SEQUENCE_LENGTH,
+        rank_microbatch_size=4 * SEQUENCE_LENGTH,
         max_sequence_length=SEQUENCE_LENGTH,
         optim=AdamWConfig(lr=3e-4, weight_decay=0.1, betas=(0.9, 0.95)),
         scheduler=CosWithWarmup(warmup=500),
@@ -119,10 +123,12 @@ def main():
         paths=data_paths,
         sequence_length=SEQUENCE_LENGTH,
         tokenizer=tokenizer,
+        expand_glob=True,
     )
     loader_config = NumpyDataLoaderConfig(
         global_batch_size=GLOBAL_BATCH_SIZE,
         seed=42,
+        ignore_fingerprint_mismatch=True,
     )
     dataset = dataset_config.build()
     data_loader = loader_config.build(dataset, dp_process_group=train_module.dp_process_group)
@@ -131,6 +137,7 @@ def main():
     trainer_config = (
         TrainerConfig(
             save_folder=save_folder,
+            save_overwrite=True,
             max_duration=Duration.steps(args.steps),
             metrics_collect_interval=50,
         )
