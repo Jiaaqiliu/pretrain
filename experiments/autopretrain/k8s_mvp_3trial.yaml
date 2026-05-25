@@ -1,13 +1,13 @@
-# Submit all 3 MVP trials to the cluster:
+# MVP 3-trial validation: submit all 3 in parallel
 #
 #   kubectl apply -f experiments/autopretrain/k8s_mvp_3trial.yaml \
 #     -n default --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
 #
 # Monitor:
 #   kubectl get jobs | grep luhanqin-autopretrain
-#   kubectl logs luhanqin-autopretrain-llama3-xxxxx --follow
+#   kubectl logs job/luhanqin-autopretrain-llama3 --follow
 #
-# Expected: ~1.5 hours per trial, all 3 run in parallel
+# Code is already on FSx at /fsx/dev/jiaqi/A-EVOLVE-V2/ (no git pull needed)
 ---
 apiVersion: batch/v1
 kind: Job
@@ -29,9 +29,6 @@ spec:
         - |
           set -uxo pipefail
           cd /fsx/dev/jiaqi/A-EVOLVE-V2
-          git fetch origin autopretrain-option-b 2>/dev/null || true
-          git checkout autopretrain-option-b 2>/dev/null || true
-          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
           pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
           set -e
 
@@ -88,9 +85,6 @@ spec:
         - |
           set -uxo pipefail
           cd /fsx/dev/jiaqi/A-EVOLVE-V2
-          git fetch origin autopretrain-option-b 2>/dev/null || true
-          git checkout autopretrain-option-b 2>/dev/null || true
-          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
           pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
           set -e
 
@@ -147,9 +141,6 @@ spec:
         - |
           set -uxo pipefail
           cd /fsx/dev/jiaqi/A-EVOLVE-V2
-          git fetch origin autopretrain-option-b 2>/dev/null || true
-          git checkout autopretrain-option-b 2>/dev/null || true
-          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
           pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
           set -e
 
