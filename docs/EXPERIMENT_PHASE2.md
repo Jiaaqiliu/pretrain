@@ -27,6 +27,25 @@
 
 **Additional discovery**: Mistral's MLP/Attn gap (5.43) is the largest we've measured — larger than OLMo-2-32B (4.15). This further confirms that MLP layers are the structural bottleneck at 7B scale, even for one of the best-performing 7B models.
 
+### 2025-05-25: Experiment 2 — 410M Downstream Eval (COMPLETED)
+
+**Result**: All 6 checkpoints (3 schedules × 2 seeds) evaluated on 5 benchmarks.
+
+| Schedule | ARC-E | HellaSwag | LAMBADA | PIQA | WinoGrande | **Average** |
+|----------|-------|-----------|---------|------|------------|-----------|
+| Cosine (mean) | 0.550 | 0.307 | 0.284 | 0.645 | 0.510 | **0.459** |
+| WSD (mean) | 0.567 | 0.314 | 0.293 | 0.659 | 0.504 | **0.467** |
+| α-Guided (mean) | 0.574 | 0.313 | 0.302 | 0.655 | 0.498 | **0.468** |
+
+**Key Finding**: The loss improvement translates to measurable downstream gains:
+- **WSD vs Cosine: +1.71%** average benchmark score
+- **α-Guided vs Cosine: +1.95%** average benchmark score
+- **α-Guided vs WSD: +0.11%** (essentially equivalent, as expected from Δloss=0.004)
+
+**Implication for paper**: The prescriptive claim is now validated with downstream evidence. The -0.054 loss difference translates to a ~2% average benchmark improvement. This directly addresses the reviewer concern "lower loss ≠ better model".
+
+**Notable**: α-Guided achieves the best LAMBADA score (0.302 vs 0.284 for cosine, +6.3%), suggesting the spectral-guided schedule produces better language modeling quality specifically.
+
 ### 2025-05-25: Cluster Debugging (COMPLETED)
 
 - All 4 scripts verified end-to-end on `luhanqin-lora-debug` pod (4× H200)
