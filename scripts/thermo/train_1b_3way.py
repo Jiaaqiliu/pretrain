@@ -336,11 +336,23 @@ def main():
                         decay_start_step = step
                         print(f"  >>> ALPHA REVERSAL at step {step}! history={[f'{a:.3f}' for a in recent]}")
                         log_file.write(f"  >>> ALPHA REVERSAL at step {step}!\n")
+                        if args.save_dir:
+                            fork_path = Path(args.save_dir) / f"fork_step_{step}"
+                            fork_path.mkdir(parents=True, exist_ok=True)
+                            m = model.module if hasattr(model, 'module') else model
+                            m.save_pretrained(fork_path)
+                            print(f"  [FORK SAVE] {fork_path}")
 
                 if step >= int(cfg["total_steps"] * cfg["fallback_decay_start"]):
                     decay_start_step = step
                     print(f"  >>> Fallback: decay at step {step} (80%)")
                     log_file.write(f"  >>> Fallback decay at step {step}\n")
+                    if args.save_dir:
+                        fork_path = Path(args.save_dir) / f"fork_step_{step}"
+                        fork_path.mkdir(parents=True, exist_ok=True)
+                        m = model.module if hasattr(model, 'module') else model
+                        m.save_pretrained(fork_path)
+                        print(f"  [FORK SAVE] {fork_path}")
 
             msg = f"  [SPECTRAL] step {step}: α={alpha:.3f}, SR/d={sr_d:.4f}"
             print(msg)

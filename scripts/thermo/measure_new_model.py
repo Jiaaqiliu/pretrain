@@ -129,7 +129,9 @@ def measure_model(model, hidden_dim=None):
             print(f"    Layer {i+1}/{len(layers_2d)}: {name} ({param.shape[0]}x{param.shape[1]})")
 
         w = param.data.float()
-        if w.device.type != 'cuda' and torch.cuda.is_available():
+        if w.device.type == 'meta':
+            continue
+        if w.device.type == 'cpu' and torch.cuda.is_available():
             w = w.cuda()
 
         metrics = compute_layer_metrics(w)
