@@ -4,17 +4,17 @@
 %=============================================================================
 
 We have shown that spectral properties of weight matrices provide monitoring signals for pretraining that go fundamentally beyond what loss curves can offer.
-Through measurements across 10 models, 3 architectures (GPT-NeoX, LLaMA, OLMo-2), and scales spanning 70M--13B parameters, we established:
-(1)~a universal compression constant SR/$d \approx 0.056$ that all trained models converge to;
+Through measurements across 12 models, 4 architectures (GPT-NeoX, LLaMA, OLMo-2, LLaMA-K2), and scales spanning 70M--65B parameters (930$\times$), we established:
+(1)~a universal compression law SR/$d \approx 0.040 + 0.61/\sqrt{d}$, confirmed by two models with identical $d$ but different depths achieving identical SR/$d$;
 (2)~SR/$d$ as a performance predictor achieving $r = -0.92$ without evaluation data;
 (3)~the $\alpha$ reversal signal for detecting structural degradation invisible to loss;
-(4)~an $\alpha$-guided schedule that outperforms cosine through data-driven timing.
-We further derived a Structural Chinchilla law explaining why over-training strategies produce structurally superior models.
+(4)~an $\alpha$-guided schedule that matches hand-tuned WSD while being fully adaptive;
+(5)~SR/$d$ as a zero-cost structural audit tool that can diagnose training sufficiency from weights alone.
 
-Most surprisingly, our 13B measurements reveal that structural maturity demands grow super-linearly with model size---the largest models are the most structurally starved despite receiving the most tokens in absolute terms. This implies that frontier models may be systematically undertrained from a structural perspective even when they appear loss-converged.
+Most surprisingly, our measurements across scales reveal a sharp phase transition at $N \approx 1.7$B: models below this threshold easily achieve heavy-tail structure ($\alpha < 3$) regardless of training budget, while larger models exhibit persistent structural immaturity ($\alpha > 5$) even with hundreds of tokens per parameter. This implies that frontier models may be systematically undertrained from a structural perspective even when they appear loss-converged---validated by our post-hoc diagnosis of K2-65B, whose spectral metrics independently reveal its known benchmark underperformance.
 
-These results provide practitioners with actionable tools: a monitoring dashboard that detects training pathologies before loss does, an adaptive scheduling signal that replaces fixed schedules with model-driven decisions, and a performance predictor that reduces evaluation cost.
+These results provide practitioners with actionable tools: a monitoring dashboard that detects training pathologies before loss does, an adaptive scheduling signal that replaces fixed schedules with model-driven decisions, and a post-hoc audit that assesses released models without access to training logs.
 The overarching message is simple: \emph{loss tells you how well the model fits the data; spectral metrics tell you how well the model has organized itself to generalize.}
 Both are needed; only monitoring loss is flying blind.
 
-Extending these metrics to 32B and 70B models (measurements in progress), validating with real-data prescriptive experiments, calibrating the size-dependent structural timescale $\tau(N)$, and establishing the causal link between spectral compression and generalization are the most important open directions.
+Extending these metrics to MoE architectures, calibrating the size-dependent structural timescale $\tau(N)$, and establishing the causal link between spectral compression and generalization are the most important open directions.

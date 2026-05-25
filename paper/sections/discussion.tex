@@ -80,13 +80,13 @@ Based on our findings, we recommend a three-signal protocol for training teams:
 
 \subsection{Limitations}
 
-\paragraph{Scale ceiling.} Our measurements now extend to 13B parameters, with 32B and 70B measurements in progress. Whether SR/$d \approx 0.055$ holds at 70B+ remains unverified, though the asymptotic model (SR/$d = 0.04 + 0.61/\sqrt{d}$) predicts convergence to 0.04 for very large $d$.
+\paragraph{Scale ceiling.} Our measurements extend to 65B parameters ($d = 8192$). However, K2-65B has not converged due to limited training ($D/N = 21$), so its SR/$d = 0.036$ reflects training insufficiency rather than the true asymptotic value for $d = 8192$. Verifying the $1/\sqrt{d}$ correction at the largest dimensions requires a sufficiently-trained 65B+ model.
 
 \paragraph{Architecture scope.} We validate across GPT-NeoX, LLaMA, and OLMo-2---all dense decoder-only transformers. MoE and encoder-decoder architectures are untested.
 
-\paragraph{Size-dependent $\tau$.} The Structural Chinchilla formula requires a model-size correction at 13B+ scale, which we are currently characterizing with additional measurements (32B, 70B). Until this correction is calibrated, the formula should be applied with caution above 7B parameters.
+\paragraph{Phase transition mechanism.} The sharp sigmoid transition at $N \approx 1.7$B is empirical; we do not have a first-principles derivation of why this threshold exists or whether it is architecture-dependent. The Landau theory in Section~\ref{sec:thermo} provides a qualitative framework ($T_c(N)$ decreasing with $N$) but does not predict the specific threshold.
 
-\paragraph{Proxy training.} The $\alpha$-guided experiment (\S\ref{sec:schedule}) uses random tokens as a proxy. A real-data experiment is currently running to validate that the spectral dynamics and scheduling gains transfer to natural language with downstream evaluation.
+\paragraph{Downstream evaluation.} The 3-way schedule comparison (\S\ref{sec:schedule}) uses training loss as the metric. Full downstream benchmark evaluation (MMLU, HellaSwag, etc.) on the resulting checkpoints would strengthen the prescriptive claim but is not included in the current version.
 
 \paragraph{Correlation vs.\ causation.} SR/$d$ correlates with but does not provably cause good downstream performance. The causal mechanism---whether compression is a \emph{driver} or \emph{side effect} of learning---deserves further theoretical analysis.
 
