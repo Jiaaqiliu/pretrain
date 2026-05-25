@@ -1,0 +1,187 @@
+# Submit all 3 MVP trials to the cluster:
+#
+#   kubectl apply -f experiments/autopretrain/k8s_mvp_3trial.yaml \
+#     -n default --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+# Monitor:
+#   kubectl get jobs | grep luhanqin-autopretrain
+#   kubectl logs luhanqin-autopretrain-llama3-xxxxx --follow
+#
+# Expected: ~1.5 hours per trial, all 3 run in parallel
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-autopretrain-llama3
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: worker
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin autopretrain-option-b 2>/dev/null || true
+          git checkout autopretrain-option-b 2>/dev/null || true
+          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
+          pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
+          set -e
+
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            experiments/autopretrain/mvp_3trial.py --trial llama3
+
+          echo "Trial llama3 DONE"
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-autopretrain-reasoning
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: worker
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin autopretrain-option-b 2>/dev/null || true
+          git checkout autopretrain-option-b 2>/dev/null || true
+          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
+          pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
+          set -e
+
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            experiments/autopretrain/mvp_3trial.py --trial reasoning_heavy
+
+          echo "Trial reasoning_heavy DONE"
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-autopretrain-uniform
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: worker
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin autopretrain-option-b 2>/dev/null || true
+          git checkout autopretrain-option-b 2>/dev/null || true
+          git reset --hard origin/autopretrain-option-b 2>/dev/null || true
+          pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
+          set -e
+
+          torchrun --nproc_per_node=8 --nnodes=1 \
+            --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+            experiments/autopretrain/mvp_3trial.py --trial uniform
+
+          echo "Trial uniform DONE"
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"

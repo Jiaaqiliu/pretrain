@@ -12,40 +12,41 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Default domains matching our data preparation pipeline
-DEFAULT_DOMAINS = ["web", "code", "math", "books", "academic"]
+# Default domains — maps to actual data on FSx:
+#   web → /fsx/dev/jiaqi/data/olmo-pretrain/dclm_web (38.5B tokens)
+#   code → /fsx/dev/jiaqi/data/olmo-pretrain/code (9.7B tokens)
+#   math → /fsx/dev/jiaqi/data/olmo-pretrain/math (7.0B tokens)
+#   academic → /fsx/dev/jiaqi/data/olmo-pretrain/fineweb_edu (38.5B tokens)
+DEFAULT_DOMAINS = ["web", "code", "math", "academic"]
 
-# Approximate available unique tokens per domain (after initial quality filter)
+# Actual available tokens on FSx cluster (measured May 2026)
 # Used to enforce the 4-epoch repetition ceiling (Muennighoff et al., 2023)
-# Sources: DCLM pool (240T raw), OLMo-2 (3.9T filtered), StarCoder, OpenWebMath
 DOMAIN_TOKEN_BUDGET = {
-    "web": 3_800_000_000_000,    # 3.8T (DCLM-Baseline level filtering of 240T CC)
-    "code": 83_000_000_000,      # 83B (StarCoder, repos with >= 2 GitHub stars)
-    "math": 24_000_000_000,      # 24B (OpenWebMath 12.2B + Algebraic Stack 11.8B)
-    "books": 6_000_000_000,      # 6B (Project Gutenberg + curated)
-    "academic": 79_000_000_000,  # 79B (peS2o 58.6B + arXiv 20.8B)
+    "web": 38_501_000_000,       # 38.5B (dclm_web on FSx)
+    "code": 9_679_000_000,       # 9.7B (code on FSx)
+    "math": 7_016_000_000,       # 7.0B (math on FSx)
+    "academic": 38_501_000_000,  # 38.5B (fineweb_edu on FSx)
 }
 
-# Reference mixtures from published models (from technical reports)
+# Reference mixtures (4-domain: web, code, math, academic)
+# Adapted from published technical reports to our domain mapping
 REFERENCE_MIXTURES = {
-    # OLMo-2 Stage 1: 3.9T tokens (Jan 2025 tech report)
-    # web=95.1%, code=2.1%, academic=2.0%, math=0.6%, books=0.1%
-    "olmo2_stage1": {"web": 0.951, "code": 0.021, "math": 0.006, "books": 0.001, "academic": 0.020},
-    # OLMo-2 Mid-training (50B mix for 7B model) — the "annealing" phase
-    # High-quality web 47.2%, math 19.6%, FLAN 16.6%, academic 5.15%, wiki 7.11%
-    "olmo2_midtrain": {"web": 0.472, "code": 0.025, "math": 0.196, "books": 0.071, "academic": 0.052},
-    # Llama-3 final mix (405B): general=50%, math+reasoning=25%, code=17%, multilingual=8%
-    "llama3": {"web": 0.50, "code": 0.17, "math": 0.25, "books": 0.04, "academic": 0.04},
-    # DeepSeek-v3: "enhanced ratio of math and programming vs V2" (estimated)
-    "deepseek_v3": {"web": 0.45, "code": 0.25, "math": 0.20, "books": 0.05, "academic": 0.05},
-    # DoReMi optimized weights for Pile-CC dominant mix
-    "doremi": {"web": 0.606, "code": 0.018, "math": 0.004, "books": 0.022, "academic": 0.035},
+    # OLMo-2 Stage 1 proportional (Jan 2025): overwhelmingly web
+    "olmo2_stage1": {"web": 0.95, "code": 0.02, "math": 0.01, "academic": 0.02},
+    # OLMo-2 Mid-training: shifts heavily toward math+academic
+    "olmo2_midtrain": {"web": 0.50, "code": 0.03, "math": 0.25, "academic": 0.22},
+    # Llama-3 final (general=50%, math+reasoning=25%, code=17%, other=8%)
+    "llama3": {"web": 0.52, "code": 0.18, "math": 0.26, "academic": 0.04},
+    # DeepSeek-v3 estimated: heavy on code+math
+    "deepseek_v3": {"web": 0.47, "code": 0.26, "math": 0.21, "academic": 0.06},
+    # DoReMi: DRO pushes toward web dominance
+    "doremi": {"web": 0.88, "code": 0.03, "math": 0.01, "academic": 0.08},
     # Uniform (control)
-    "uniform": {"web": 0.20, "code": 0.20, "math": 0.20, "books": 0.20, "academic": 0.20},
-    # Our hypothesis: reasoning-heavy mix for downstream tasks
-    "reasoning_heavy": {"web": 0.30, "code": 0.30, "math": 0.25, "books": 0.05, "academic": 0.10},
-    # Blakeney et al. (2024): annealing-phase mixture (code+math heavy)
-    "late_annealing": {"web": 0.25, "code": 0.30, "math": 0.30, "books": 0.05, "academic": 0.10},
+    "uniform": {"web": 0.25, "code": 0.25, "math": 0.25, "academic": 0.25},
+    # Our hypothesis: maximize reasoning signal
+    "reasoning_heavy": {"web": 0.25, "code": 0.30, "math": 0.30, "academic": 0.15},
+    # Blakeney et al.: annealing-phase style (code+math dominant)
+    "late_annealing": {"web": 0.20, "code": 0.30, "math": 0.35, "academic": 0.15},
 }
 
 
@@ -62,7 +63,6 @@ class FilterConfig:
         "web": 0.20,
         "code": 0.50,
         "math": 0.80,
-        "books": 0.90,
         "academic": 0.70,
     })
 

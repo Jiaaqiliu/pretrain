@@ -78,6 +78,8 @@ class OLMoCoreScriptGenerator:
                 SpeedMonitorCallback,
                 WandBCallback,
             )
+            from olmo_core.config import DType
+            from olmo_core.distributed.parallel import DataParallelType
             from olmo_core.train.train_module import TransformerTrainModuleConfig
             from olmo_core.train.train_module.transformer import TransformerDataParallelConfig
         ''')
@@ -122,7 +124,11 @@ class OLMoCoreScriptGenerator:
                     ),
                     scheduler=CosWithWarmup(warmup={config.warmup_steps}),
                     max_grad_norm={config.max_grad_norm},
-                    dp_config=TransformerDataParallelConfig(),
+                    dp_config=TransformerDataParallelConfig(
+                        name=DataParallelType.fsdp,
+                        param_dtype=DType.bfloat16,
+                        reduce_dtype=DType.float32,
+                    ),
                 )
         ''')
 

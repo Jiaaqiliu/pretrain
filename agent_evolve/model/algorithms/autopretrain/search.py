@@ -79,14 +79,14 @@ class SearchConfig:
     exploration_c: float = 1.4  # UCT exploration constant
 
     # Proxy model configuration
-    proxy_model_factory: str = "olmo2_190M"
+    proxy_model_factory: str = "olmo2_1B"
     proxy_steps_per_trial: int = 5000
     proxy_sequence_length: int = 4096
-    proxy_batch_size: int = 64  # sequences per step (smaller for fast iteration)
+    proxy_batch_size: int = 128  # sequences per step (1B model fits larger batch on H200)
     proxy_gpus: int = 8
 
     # Data configuration
-    data_root: str = "/fsx/dev/jiaqi/data/olmo-3b-pretrain"
+    data_root: str = "/fsx/dev/jiaqi/data/olmo-pretrain"
 
     # Eval configuration
     fast_eval: bool = True
@@ -95,7 +95,7 @@ class SearchConfig:
     output_dir: str = "./autopretrain_search"
 
     # Starting point
-    initial_mixture: str = "olmo2_stage1"  # Reference mixture name
+    initial_mixture: str = "llama3"  # Start from Llama-3 mix (strongest baseline for reasoning)
 
 
 @dataclass

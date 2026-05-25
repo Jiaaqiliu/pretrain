@@ -23,12 +23,21 @@ WORKSPACE_TEMPLATE = "olmo_core_pretrain"
 class WorkspaceBridge:
     """Creates ephemeral workspace directories for each search trial."""
 
+    # Map from logical domain names to actual data paths on FSx
+    DOMAIN_PATHS = {
+        "web": "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web",
+        "code": "/fsx/dev/jiaqi/data/olmo-pretrain/code",
+        "math": "/fsx/dev/jiaqi/data/olmo-pretrain/math",
+        "academic": "/fsx/dev/jiaqi/data/olmo-pretrain/fineweb_edu",
+    }
+
     def __init__(
         self,
         *,
         template_workspace: Path | None = None,
         trials_root: Path = Path("./autopretrain_trials"),
-        data_root: str = "/fsx/dev/jiaqi/data/olmo-3b-pretrain",
+        data_root: str = "/fsx/dev/jiaqi/data/olmo-pretrain",
+        domain_paths: dict[str, str] | None = None,
     ):
         if template_workspace is None:
             template_workspace = (
@@ -39,6 +48,7 @@ class WorkspaceBridge:
         self.template = template_workspace
         self.trials_root = trials_root
         self.data_root = data_root
+        self.domain_paths = domain_paths or self.DOMAIN_PATHS
 
     def create_trial_workspace(
         self,
@@ -103,12 +113,12 @@ class WorkspaceBridge:
         )
 
     def _write_data_sources(self, trial_dir: Path, curriculum: CurriculumSchedule):
-        # Use domains from the curriculum
         mixture = curriculum.phases[0].mixture
         sources = []
         for domain in mixture.domains:
+            path = self.domain_paths.get(domain, f"{self.data_root}/{domain}")
             sources.append({
-                "path": f"{self.data_root}/{domain}",
+                "path": path,
                 "split": "train",
                 "format": "numpy_uint32",
                 "domain": domain,
