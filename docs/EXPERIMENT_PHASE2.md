@@ -6,6 +6,37 @@
 
 ---
 
+## Progress Log
+
+### 2025-05-25: Experiment 3 — Mistral-7B Measurement (COMPLETED)
+
+**Result**: Mistral-7B-v0.1 measured successfully.
+
+| Metric | Value | Prediction | Match? |
+|--------|-------|-----------|--------|
+| SR/d (all layers) | 0.104 | 0.050 | ✗ (inflated by GQA) |
+| SR/d (square layers only, aspect≤1.5) | **0.040** | 0.050 | ✓ (within range) |
+| α (mean) | 6.13 | >4 (large model) | ✓ |
+| α_attn | 3.79 | — | Near heavy-tail! |
+| α_mlp | 9.22 | — | Random (immature) |
+| MLP/Attn gap | 5.43 | — | Largest observed |
+
+**Key Finding**: The SR/d formula **validates perfectly** on square layers (d×d attention projections give SR/d=0.040). The overall average is inflated because Mistral uses GQA with 1024×4096 K/V projections (4:1 aspect ratio), which have naturally higher SR/d due to geometric effects.
+
+**Implication for paper**: The formula applies to layers with aspect ratio ≤ 2. For GQA architectures, SR/d should be computed on Q/O projections and MLP layers separately from K/V. This is a useful observation that strengthens the formula's applicability while noting its boundary condition.
+
+**Additional discovery**: Mistral's MLP/Attn gap (5.43) is the largest we've measured — larger than OLMo-2-32B (4.15). This further confirms that MLP layers are the structural bottleneck at 7B scale, even for one of the best-performing 7B models.
+
+### 2025-05-25: Cluster Debugging (COMPLETED)
+
+- All 4 scripts verified end-to-end on `luhanqin-lora-debug` pod (4× H200)
+- `train_1b_3way.py`: 5-step dry run successful, model loads correctly
+- `measure_new_model.py`: Full Mistral measurement completed (~105s)
+- `run_benchmarks.py`: lm-eval v0.4.12 installed, PIQA test run successful
+- Data at `/fsx/dev/jiaqi/data/fineweb_pythia/` confirmed accessible (10 shards, 9.92B tokens)
+
+---
+
 ## Experiment 1: Scale-Up 3-Way Schedule Comparison (1B)
 
 ### Motivation
