@@ -43,12 +43,13 @@ from olmo_core.train.train_module import TransformerTrainModuleConfig
 from olmo_core.train.train_module.transformer import TransformerDataParallelConfig
 
 
-# Data paths on FSx (glob patterns for olmo-core NumpyFSLDatasetConfig)
+# Data paths on FSx — raw binary format (no .npy header)
+# olmo-core reads files via raw byte offset, expects headerless uint32 arrays
 DOMAIN_PATHS = {
-    "web": "/fsx/dev/jiaqi/data/olmo-pretrain/dclm_web/*.npy",
-    "code": "/fsx/dev/jiaqi/data/olmo-pretrain/code/*.npy",
-    "math": "/fsx/dev/jiaqi/data/olmo-pretrain/math/*.npy",
-    "academic": "/fsx/dev/jiaqi/data/olmo-pretrain/fineweb_edu/*.npy",
+    "web": "/fsx/dev/jiaqi/data/olmo-pretrain-raw/dclm_web/*.bin",
+    "code": "/fsx/dev/jiaqi/data/olmo-pretrain-raw/code/*.bin",
+    "math": "/fsx/dev/jiaqi/data/olmo-pretrain-raw/math/*.bin",
+    "academic": "/fsx/dev/jiaqi/data/olmo-pretrain-raw/fineweb_edu/*.bin",
 }
 
 # 3 trial mixes (must sum to 1.0)
