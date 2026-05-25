@@ -73,18 +73,37 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_data_paths(mix: dict[str, float]) -> list[str]:
-    """Build data paths as glob patterns for olmo-core.
+def build_source_mixture(mix: dict[str, float]):
+    """Build SourceMixtureDatasetConfig with per-domain weights.
 
-    For MVP, include all domains. The actual mix ratio is approximated by
-    the relative number of shards (web has 3759, code 967, math 350, academic 3759).
-    Phase 1 full search will use SourceMixtureDatasetConfig for precise mixing.
+    This is the correct way to control data mix ratios in olmo-core:
+    each domain gets a target_ratio that controls its sampling probability.
     """
-    paths = []
-    for domain in mix.keys():
-        if domain in DOMAIN_PATHS:
-            paths.append(DOMAIN_PATHS[domain])
-    return paths
+    from olmo_core.data.source_mixture import (
+        SourceMixtureDatasetConfig,
+        SourceMixtureConfig,
+        SourceMixtureList,
+    )
+
+    sources = []
+    for domain, ratio in mix.items():
+        if domain in DOMAIN_PATHS and ratio > 0:
+            sources.append(SourceMixtureConfig(
+                source_name=domain,
+                target_ratio=ratio,
+                paths=[DOMAIN_PATHS[domain]],
+                max_repetition_ratio=4.0,  # Muennighoff et al. ceiling
+            ))
+
+    requested_tokens = MAX_STEPS * GLOBAL_BATCH_SIZE
+
+    return SourceMixtureDatasetConfig(
+        source_list=SourceMixtureList(sources=sources),
+        requested_tokens=requested_tokens,
+        global_batch_size=GLOBAL_BATCH_SIZE,
+        seed=42,
+        quiet=True,
+    )
 
 
 def main():
@@ -118,13 +137,12 @@ def main():
     )
     train_module = train_module_config.build(model)
 
-    # Data
-    data_paths = build_data_paths(mix)
+    # Data — use SourceMixture for proper per-domain ratio control
+    source_mixture_config = build_source_mixture(mix)
     dataset_config = NumpyFSLDatasetConfig(
-        paths=data_paths,
+        source_mixture_config=source_mixture_config,
         sequence_length=SEQUENCE_LENGTH,
         tokenizer=tokenizer,
-        expand_glob=True,
     )
     loader_config = NumpyDataLoaderConfig(
         global_batch_size=GLOBAL_BATCH_SIZE,
