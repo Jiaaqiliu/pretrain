@@ -34,7 +34,7 @@ The layer-type decomposition is particularly diagnostic. At 13B scale, we observ
 
 The Chinchilla scaling law~\citep{hoffmann2022} minimizes loss for a given compute budget, yielding $D/N \approx 20$ tokens/parameter. Our Structural Chinchilla law (Eq.~\ref{eq:structural_chinchilla}) reveals that this produces $\alpha \approx 5.8$---models that are \emph{compute-optimal but structurally immature}.
 
-The industry has empirically moved toward massive over-training: Llama-3 uses $D/N \approx 15{,}000$ (750$\times$ Chinchilla), and these models exhibit superior generalization, fine-tuning robustness, and emergent capabilities~\citep{llama3}. Our framework explains why: only at $D/N > 300$ does the spectral structure enter the heavy-tail regime ($\alpha < 4$), which corresponds to robust, transferable feature representations.
+The industry has empirically moved toward massive over-training: Llama-3 uses $D/N \approx 15{,}000$ (750$\times$ Chinchilla), and these models exhibit superior generalization, fine-tuning robustness, and emergent capabilities~\citep{llama3}. Our framework explains why: for small models ($\leq$1B), $D/N > 300$ suffices to enter the heavy-tail regime ($\alpha < 4$), but larger models require substantially more---the maturation timescale grows with model size. Heavy-tail structure corresponds to robust, transferable feature representations.
 
 This resolves the apparent paradox of ``compute-inefficient'' training being better: \textbf{Chinchilla minimizes loss per FLOP, but structural optimality requires a fundamentally different budget.}
 
@@ -52,7 +52,7 @@ This has stark implications for frontier training. Llama-3-8B was trained with $
 
 \subsection{Thermodynamic Interpretation}
 
-The stable rank is not merely analogous to a thermodynamic quantity---it \emph{is} one. $\text{SR}(\mathbf{W})$ equals $\exp(H_2(\hat{\boldsymbol{\sigma}}))$, the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution (Section~\ref{sec:theory}). The universal compression $\text{UCR} \approx 0.14$ therefore corresponds to a universal entropy reduction $\Delta H_2 \approx -2.0$ nats during training. This is reminiscent of Landauer's principle: erasure of information requires a minimum energy cost, and training ``erases'' ${\sim}86\%$ of the initial random degrees of freedom to encode task-relevant structure. That this entropy reduction is approximately constant across scales and architectures suggests a deep thermodynamic constraint on what it means for a transformer to ``learn.''
+The stable rank is not merely analogous to a thermodynamic quantity---it \emph{is} one. $\text{SR}(\mathbf{W})$ equals $\exp(H_2(\hat{\boldsymbol{\sigma}}))$, the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution (Section~\ref{sec:theory}). The universal compression $\text{UCR} \approx 0.13$ therefore corresponds to a universal entropy reduction $\Delta H_2 \approx -2.0$ nats during training. This is reminiscent of Landauer's principle: erasure of information requires a minimum energy cost, and training ``erases'' ${\sim}87\%$ of the initial random degrees of freedom to encode task-relevant structure. That this entropy reduction is approximately constant across scales and architectures suggests a deep thermodynamic constraint on what it means for a transformer to ``learn.''
 
 \subsection{Practical Monitoring Protocol}
 

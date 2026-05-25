@@ -118,8 +118,8 @@ def fig1_srd_convergence():
             sr_d = [r["stable_rank_mean"] / d for r in records]
             ax.plot(steps, sr_d, color=colors[i], label=f"{label}", linewidth=1.3, alpha=0.9)
 
-    ax.axhline(y=0.055, color=ACCENT, linestyle='--', linewidth=0.8, alpha=0.7, zorder=0)
-    ax.text(105, 0.065, r"SR/$d$ $\approx$ 0.055", fontsize=7, color=ACCENT)
+    ax.axhspan(0.046, 0.074, alpha=0.06, color=ACCENT, zorder=0)
+    ax.text(105, 0.065, r"SR/$d$ $\in$ [0.046, 0.074]", fontsize=7, color=ACCENT)
 
     ax.set_xlabel("Training Step (×10³)")
     ax.set_ylabel(r"SR/$d$")
@@ -287,8 +287,8 @@ def fig5_mlp_attn_gap():
     fig, ax = plt.subplots(figsize=(COL_WIDTH, 2.6))
 
     models = ["2.8B", "6.9B", "13B", "32B", "65B"]
-    attn = [4.71, 4.99, 6.25, 3.44, 4.50]
-    mlp = [5.16, 5.13, 7.94, 7.59, 5.89]
+    attn = [4.79, 5.16, 6.25, 3.44, 4.50]
+    mlp = [5.53, 5.13, 7.94, 7.59, 5.89]
     gaps = [m - a for m, a in zip(mlp, attn)]
 
     x = np.arange(len(models))

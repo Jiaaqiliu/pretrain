@@ -4,14 +4,14 @@
 
 ## Key Results
 
-Measuring 12 models across 4 architectures (GPT-NeoX, LLaMA, OLMo2) spanning 70M--65B parameters:
+Measuring 12 models across 3 architectures (GPT-NeoX, LLaMA, OLMo2) spanning 70M--65B parameters:
 
 | # | Finding | Evidence |
 |---|---------|----------|
-| 1 | **Universal compression law**: SR/d ≈ 0.040 + 0.61/√d | 12 models, 4 archs; two models with same d but different N achieve identical SR/d |
-| 2 | **Performance predictor**: SR/d achieves r = -0.92 with downstream benchmarks | N=143 checkpoints, p < 10⁻⁵⁸ |
+| 1 | **Universal compression law**: SR/d ≈ 0.040 + 0.61/√d | 12 models, 3 archs; two models with same d but different N achieve identical SR/d |
+| 2 | **Performance predictor**: SR/d achieves r = -0.92 with downstream benchmarks | N=102 checkpoint–benchmark pairs, p < 10⁻⁴¹ |
 | 3 | **α reversal = structural degradation**: invisible to loss | OLMo-2-13B shows Δα = +2.71; larger models are more fragile |
-| 4 | **α-guided schedule**: matches hand-tuned WSD, outperforms cosine by -0.055 loss | Real data (FineWeb-Edu, 10B tokens), 2 seeds |
+| 4 | **α-guided schedule**: matches hand-tuned WSD, outperforms cosine by -0.054 loss | Real data (FineWeb-Edu, 10B tokens), 2 seeds |
 | 5 | **Training sufficiency audit**: SR/d diagnoses K2-65B as under-trained | Corroborated by benchmark data + authors' acknowledgment |
 
 ## Phase Transition at N ≈ 1.7B
@@ -73,8 +73,8 @@ docs/
 | Pythia-6.9B | GPT-NeoX | 4096 | 6.9B | 44 | 0.046 | 5.13 |
 | Amber-7B | LLaMA | 4096 | 6.7B | 187 | 0.057 | 5.25 |
 | K2-65B | LLaMA | 8192 | 65B | 21 | 0.036* | 5.09 |
-| OLMo-2-1B | OLMo2 | 2048 | 1.0B | 4000 | 0.064 | — |
-| OLMo-2-7B | OLMo2 | 4096 | 7.0B | 571 | 0.046 | — |
+| OLMo-2-1B | OLMo2 | 2048 | 1.0B | 4000 | 0.064 | 2.37 |
+| OLMo-2-7B | OLMo2 | 4096 | 7.0B | 571 | 0.046 | 6.08 |
 | OLMo-2-13B | OLMo2 | 5120 | 13B | 365 | 0.043 | 6.95 |
 | OLMo-2-32B | OLMo2 | 5120 | 32B | 189 | 0.043 | 5.25 |
 

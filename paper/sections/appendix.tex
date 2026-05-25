@@ -46,12 +46,12 @@ For $\rho < 0.5$ (typical of trained transformers where the spectrum decays rapi
 
 The Universal Compression Ratio is:
 \begin{equation}
-    \mathrm{UCR} = \frac{\mathrm{SR}_{\mathrm{final}}}{\mathrm{SR}_{\mathrm{init}}} \approx 0.14.
+    \mathrm{UCR} = \frac{\mathrm{SR}_{\mathrm{final}}}{\mathrm{SR}_{\mathrm{init}}} \approx 0.13.
 \end{equation}
 
 Since $\mathrm{SR} \approx \exp(H_2)$:
 \begin{equation}
-    \Delta H_2 = \log(\mathrm{UCR}) = \log(0.14) \approx -2.0 \;\text{nats}.
+    \Delta H_2 = \log(\mathrm{UCR}) = \log(0.13) \approx -2.0 \;\text{nats}.
 \end{equation}
 
 At initialization (Marchenko-Pastur), for an $m \times n$ matrix with $m > n$:
@@ -240,13 +240,12 @@ For the SR/$d$--performance correlation (Section~\ref{sec:predictor}), we use th
 \textbf{Experiment} & \textbf{Hardware} & \textbf{GPU-hours} \\
 \midrule
 Pythia spectral measurements (6 scales) & 8$\times$H100 & 6 \\
-OLMo-2 measurements (1B/7B/13B) & 8$\times$H100 & 8 \\
+OLMo-2 measurements (1B/7B/13B/32B) & 8$\times$H100 & 12 \\
+K2-65B measurements & 8$\times$H100 & 4 \\
 Amber-7B measurements & 8$\times$H100 & 4 \\
-$\alpha$-guided vs.\ cosine (proxy, 4 runs) & 8$\times$H100 & 32 \\
-190M schedule comparison (Phase 0/0.5) & 8$\times$H200 & 256 \\
-Real-data 3-way (6 runs, in progress) & 8$\times$H100 & ${\sim}384$ \\
+Real-data 3-way (410M, 6 runs) & 8$\times$H100 & ${\sim}192$ \\
 \midrule
-\textbf{Total} & & ${\sim}690$ \\
+\textbf{Total} & & ${\sim}218$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -264,7 +263,7 @@ The full $\alpha$ trajectory for each Pythia model shows a clear pattern:
 \begin{itemize}[leftmargin=*,itemsep=0pt]
     \item \textbf{70M--410M} ($D/N > 700$): $\alpha$ monotonically decreases throughout training, reaching $\alpha < 3$ (heavy-tail regime).
     \item \textbf{1B} ($D/N = 297$): $\alpha$ reaches minimum at ${\sim}2.52$, then slowly rises to 2.78 (marginal reversal, $\Delta\alpha = 0.26$).
-    \item \textbf{2.8B--6.9B} ($D/N < 110$): $\alpha$ reaches minimum at ${\sim}5$ by step 10K, then rises to ${\sim}5.2$ (clear reversal).
+    \item \textbf{2.8B--6.9B} ($D/N < 110$): $\alpha$ reaches minimum at ${\sim}4.7$ by step 10--20K, then rises to ${\sim}5.1$--$5.2$ (clear reversal, $\Delta\alpha \approx 0.4$).
     \item \textbf{OLMo-2-13B} ($D/N = 365$): $\alpha$ reaches minimum 4.25 at step 7K, then rises continuously to 6.95 by step 596K ($\Delta\alpha = 2.71$, largest observed).
 \end{itemize}
 
@@ -273,22 +272,22 @@ The full $\alpha$ trajectory for each Pythia model shows a clear pattern:
 \begin{table}[h]
 \centering
 \small
-\caption{$\alpha_{\mathrm{attn}}$ vs.\ $\alpha_{\mathrm{mlp}}$ at end of training. The MLP/Attn gap grows monotonically with model size.}
+\caption{$\alpha_{\mathrm{attn}}$ vs.\ $\alpha_{\mathrm{mlp}}$ at end of training. The MLP/Attn gap amplifies dramatically at scale ($\geq$13B), indicating MLP layers are the structural bottleneck.}
 \begin{tabular}{@{}lcccr@{}}
 \toprule
 \textbf{Model} & $\alpha_{\mathrm{attn}}$ & $\alpha_{\mathrm{mlp}}$ & \textbf{Gap} & $d$ \\
 \midrule
-Pythia-70M & 1.62 & 3.40 & 1.78 & 512 \\
-Pythia-410M & 2.10 & 3.20 & 1.10 & 1024 \\
-Pythia-2.8B & 4.90 & 5.35 & 0.45 & 2560 \\
-Pythia-6.9B & 5.00 & 5.14 & 0.14 & 4096 \\
-Amber-7B & 5.00 & 5.70 & 0.70 & 4096 \\
+Pythia-2.8B & 4.79 & 5.53 & 0.74 & 2560 \\
+Pythia-6.9B & 5.16 & 5.13 & $-0.03$ & 4096 \\
+Amber-7B & 4.98 & 5.66 & 0.67 & 4096 \\
 OLMo-2-13B & 6.25 & 7.94 & \textbf{1.69} & 5120 \\
+OLMo-2-32B & 3.44 & 7.59 & \textbf{4.15} & 5120 \\
+K2-65B & 4.50 & 5.89 & 1.39 & 8192 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The large gap at 13B (1.69) confirms that MLP layers are the structural bottleneck at scale. While attention layers achieve moderate structure ($\alpha_{\mathrm{attn}} = 6.25$), MLP layers remain deep in the bulk+spikes regime ($\alpha_{\mathrm{mlp}} = 7.94$), indicating they require substantially more data to develop heavy-tailed self-regularization.
+The gap amplifies dramatically at scale: 1.69 at 13B and 4.15 at 32B. Notably, OLMo-2-32B's attention layers have already entered the heavy-tail regime ($\alpha_{\mathrm{attn}} = 3.44 < 4$) while its MLP layers remain structurally random ($\alpha_{\mathrm{mlp}} = 7.59$), indicating that MLP layers are the dominant structural bottleneck at frontier scale. The anomalous negative gap at 6.9B ($-0.03$) suggests that at intermediate scales with extremely low $D/N = 44$, both layer types are equally starved for data.
 
 \subsection{Finite-Width Correction Validation}
 

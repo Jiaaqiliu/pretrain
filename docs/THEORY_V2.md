@@ -826,7 +826,7 @@ K2 论文 Figure 12 显示 MMLU、ARC、GSM8K 等指标在最终 checkpoint 仍�
 
 *K2 未收敛 (D/N=21)，不代表 d=8192 的 asymptotic limit
 
-**覆盖范围**: 12 models, 4 architectures (GPT-NeoX, LLaMA, OLMo2, LLaMA-K2), 70M-65B (930×), d=512-8192
+**覆盖范围**: 12 models, 3 architecture families (GPT-NeoX, LLaMA, OLMo2), 70M-65B (930×), d=512-8192
 
 ---
 

@@ -56,12 +56,12 @@ The stable rank relates to PR via the inequality chain:
 where $H_1 = -\sum_i p_i \log p_i$ is the Shannon entropy of $\{p_i\}$. Thus $\log(\mathrm{SR})$ provides a \emph{lower bound} on the spectral Shannon entropy. Equality $\mathrm{SR} = \mathrm{PR}$ holds when the spectrum follows a geometric decay---precisely the regime trained transformers occupy.
 
 \paragraph{Universal compression as entropy reduction.}
-At initialization, Marchenko-Pastur theory gives $\mathrm{SR}_{\mathrm{init}} \approx mn/(\sqrt{m}+\sqrt{n})^2 \approx 0.4d$. The empirical convergence $\mathrm{SR}_{\mathrm{final}} \approx 0.055d$ (Section~\ref{sec:results}) implies:
+At initialization, Marchenko-Pastur theory gives $\mathrm{SR}_{\mathrm{init}} \approx mn/(\sqrt{m}+\sqrt{n})^2 \approx 0.4d$. The empirical convergence to SR/$d \in [0.043, 0.074]$ (Section~\ref{sec:universal}) implies:
 \begin{equation}
-    \Delta H_2 \;\approx\; \log\!\bigl(\mathrm{SR}_{\mathrm{final}}/\mathrm{SR}_{\mathrm{init}}\bigr) \;=\; \log(0.055/0.4) \;\approx\; -2.0 \;\text{nats}.
+    \Delta H_2 \;\approx\; \log\!\bigl(\mathrm{SR}_{\mathrm{final}}/\mathrm{SR}_{\mathrm{init}}\bigr) \;=\; \log(\mathrm{UCR}) \;\approx\; -2.0 \;\text{nats}.
     \label{eq:delta_entropy}
 \end{equation}
-This is not a metaphor: training universally removes ${\approx}2$ nats of R\'{e}nyi-2 spectral entropy per layer, regardless of model scale (190M--32B) or architecture family. The Universal Compression Ratio $\mathrm{UCR} = \mathrm{SR}_{\mathrm{final}}/\mathrm{SR}_{\mathrm{init}} \approx 0.14$ is the fraction of initial spectral entropy retained.
+This is not a metaphor: training universally removes ${\approx}2$ nats of R\'{e}nyi-2 spectral entropy per layer, regardless of model scale or architecture family (verified across 70M--6.9B; larger models that have not converged show smaller compression, consistent with training insufficiency rather than a different asymptote). The Universal Compression Ratio $\mathrm{UCR} = \mathrm{SR}_{\mathrm{final}}/\mathrm{SR}_{\mathrm{init}} \approx 0.13$ is the fraction of initial spectral dimensionality retained.
 
 \subsection{Thermodynamic Grounding}
 \label{sec:thermo}
@@ -85,7 +85,7 @@ Define the order parameter $\varphi = (\alpha_{\mathrm{rand}} - \alpha)/(\alpha_
     \frac{d\varphi}{dt} \;\propto\; h(t) - T_{\mathrm{eff}} \cdot \varphi.
     \label{eq:order_param}
 \end{equation}
-When $h(t) \to 0$ (no new information from repeated data), the system relaxes back toward disorder: $\alpha$ increases. This is the $\alpha$~reversal---a continuous phase transition from an ordered (heavy-tail) to a disordered (bulk+spikes) spectral phase, driven by exhaustion of the data signal relative to optimizer temperature. The critical point occurs at $D/N \approx \tau \approx 250$--$300$ tokens per parameter (Section~\ref{sec:results}).
+When $h(t) \to 0$ (no new information from repeated data), the system relaxes back toward disorder: $\alpha$ increases. This is the $\alpha$~reversal---a continuous phase transition from an ordered (heavy-tail) to a disordered (bulk+spikes) spectral phase, driven by exhaustion of the data signal relative to optimizer temperature. The critical point occurs at $D/N \approx \tau$, which is model-size-dependent: $\tau \approx 250$--$300$ for models $\leq$1B, but grows with $N$ for larger models (Section~\ref{sec:scaling}).
 
 \paragraph{Free energy interpretation.}
 Following~\citet{sadrtdinov2025}, the training objective implicitly minimizes free energy $\mathcal{F} = U - T_{\mathrm{eff}}\,\mathcal{S}$, where $U$ is the loss landscape energy and $\mathcal{S}$ the spectral entropy. Stable rank tracks $\mathcal{S}$; $\alpha$ tracks the \emph{gradient} $\partial \mathcal{S}/\partial U$ (how efficiently entropy reduction translates to loss reduction). The heavy-tail phase ($\alpha \in [2,4]$) corresponds to the thermodynamically efficient regime where each nat of entropy removed yields maximal loss decrease~\citep{liu_ziyin_neurips2025, freedman2026}.
@@ -125,5 +125,5 @@ The framework yields four testable predictions:
 \noindent\textbf{P3 ($\alpha$ reversal as phase transition).} For models with $D/N < \tau$, $\alpha$ reaches a minimum then \emph{increases}, signaling the order-disorder transition when data signal is exhausted relative to $T_{\mathrm{eff}}$.
 \emph{Falsified if}: $\alpha$ monotonically decreases for all models regardless of $D/N$.
 
-\noindent\textbf{P4 (Structural Chinchilla).} $\alpha_{\mathrm{final}}$ follows $\alpha = \alpha_\infty + A\exp(-D/\tau N)$ with $\tau \approx 250$--$300$.
-\emph{Falsified if}: no monotone relationship between $D/N$ and $\alpha_{\mathrm{final}}$.
+\noindent\textbf{P4 (Structural Chinchilla).} For models $\leq$1B, $\alpha_{\mathrm{final}}$ follows $\alpha = \alpha_\infty + A\exp(-D/\tau N)$ with $\tau \approx 269$. For larger models, structural maturity requires substantially more tokens per parameter, suggesting $\tau$ grows with $N$.
+\emph{Falsified if}: no relationship between $D/N$ and $\alpha_{\mathrm{final}}$, or large models achieve low $\alpha$ with small $D/N$.
