@@ -1,0 +1,21 @@
+{
+  "model_name": "mistral",
+  "hidden_dim": 4096,
+  "num_params": 7248023552,
+  "num_layers": 32,
+  "n_layers_measured": 226,
+  "stable_rank_mean": 425.5525781141733,
+  "sr_over_d": 0.10389467239115559,
+  "alpha_mean": 6.116227398630756,
+  "alpha_median": 5.183289853125698,
+  "alpha_attn": 3.7743904522300395,
+  "alpha_mlp": 9.227983773800212,
+  "n_attn_layers": 128,
+  "n_mlp_layers": 96,
+  "mlp_attn_gap": 5.453593321570172,
+  "predicted_sr_d": 0.04953125,
+  "prediction_error": 0.05436342239115559,
+  "model_id": "mistralai/Mistral-7B-v0.3",
+  "load_dtype": "float16",
+  "elapsed_s": 108.9883279800415
+}

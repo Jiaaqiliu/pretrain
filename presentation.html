@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beyond Loss Curves: Thermodynamics of Pretraining</title>
+<style>
+:root {
+  --bg-primary: #0f1419;
+  --bg-secondary: #1a2332;
+  --bg-card: #1e2a3a;
+  --bg-highlight: #243447;
+  --text-primary: #e8edf3;
+  --text-secondary: #8899aa;
+  --text-muted: #5c6f82;
+  --accent-blue: #4facfe;
+  --accent-teal: #00f2fe;
+  --accent-purple: #a78bfa;
+  --accent-rose: #f472b6;
+  --accent-amber: #fbbf24;
+  --accent-emerald: #34d399;
+  --gradient-hero: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-card: linear-gradient(145deg, #1e2a3a 0%, #243447 100%);
+  --border-subtle: rgba(136, 153, 170, 0.12);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-glow: 0 0 40px rgba(79, 172, 254, 0.08);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+html {
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 60px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+.slide::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse at 20% 50%, rgba(79, 172, 254, 0.03) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* Navigation dots */
+.nav-dots {
+  position: fixed;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.4;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.nav-dot:hover, .nav-dot.active {
+  opacity: 1;
+  background: var(--accent-blue);
+  box-shadow: 0 0 12px rgba(79, 172, 254, 0.5);
+}
+
+/* Slide counter */
+.slide-counter {
+  position: absolute;
+  bottom: 30px;
+  right: 40px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+}
+
+/* Title Slide */
+.slide-title {
+  text-align: center;
+  background: var(--bg-primary);
+}
+
+.slide-title h1 {
+  font-size: 3.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #e8edf3 30%, #4facfe 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.slide-title .subtitle {
+  font-size: 1.3rem;
+  color: var(--text-secondary);
+  font-weight: 300;
+  margin-bottom: 48px;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.meta-badges {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 8px 20px;
+  border-radius: 100px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.badge.highlight {
+  border-color: rgba(79, 172, 254, 0.3);
+  color: var(--accent-blue);
+  background: rgba(79, 172, 254, 0.06);
+}
+
+/* Section headers */
+h2 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 40px;
+  color: var(--text-primary);
+}
+
+h2 .accent {
+  color: var(--accent-blue);
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+/* Content layouts */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+/* Cards */
+.card {
+  background: var(--gradient-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow), var(--shadow-card);
+}
+
+.card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 16px;
+}
+
+.card-icon.blue { background: rgba(79, 172, 254, 0.12); }
+.card-icon.purple { background: rgba(167, 139, 250, 0.12); }
+.card-icon.rose { background: rgba(244, 114, 182, 0.12); }
+.card-icon.emerald { background: rgba(52, 211, 153, 0.12); }
+.card-icon.amber { background: rgba(251, 191, 36, 0.12); }
+
+.card h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.card p {
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Stat blocks */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.stat-block {
+  text-align: center;
+  padding: 24px 16px;
+  background: var(--bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--accent-blue);
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Tables */
+.table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+th {
+  padding: 14px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-highlight);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(136, 153, 170, 0.06);
+  color: var(--text-primary);
+}
+
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(79, 172, 254, 0.03); }
+
+.cell-highlight {
+  color: var(--accent-blue);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.cell-warning {
+  color: var(--accent-amber);
+  font-weight: 500;
+}
+
+.cell-success {
+  color: var(--accent-emerald);
+  font-weight: 500;
+}
+
+/* Equation blocks */
+.equation {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 8px;
+  padding: 20px 28px;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  text-align: center;
+  margin: 24px 0;
+  color: var(--accent-teal);
+}
+
+/* Key insight callouts */
+.insight {
+  background: rgba(79, 172, 254, 0.04);
+  border: 1px solid rgba(79, 172, 254, 0.15);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 24px 0;
+}
+
+.insight::before {
+  content: '→';
+  color: var(--accent-blue);
+  font-weight: 700;
+  margin-right: 12px;
+}
+
+.insight-text {
+  display: inline;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+/* Phase diagram */
+.phase-diagram {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 32px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.phase-block {
+  padding: 20px 24px;
+  text-align: center;
+  flex: 1;
+}
+
+.phase-block h5 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+
+.phase-block .phase-range {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.phase-random { background: rgba(244, 114, 182, 0.08); color: var(--accent-rose); }
+.phase-partial { background: rgba(251, 191, 36, 0.08); color: var(--accent-amber); }
+.phase-heavy { background: rgba(52, 211, 153, 0.08); color: var(--accent-emerald); }
+.phase-collapse { background: rgba(167, 139, 250, 0.08); color: var(--accent-purple); }
+
+/* Comparison blocks */
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 24px;
+  align-items: center;
+  margin: 32px 0;
+}
+
+.comparison-vs {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  padding: 12px;
+}
+
+/* Lists */
+.feature-list {
+  list-style: none;
+  padding: 0;
+}
+
+.feature-list li {
+  padding: 10px 0;
+  padding-left: 24px;
+  position: relative;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  border-bottom: 1px solid rgba(136, 153, 170, 0.06);
+}
+
+.feature-list li:last-child { border-bottom: none; }
+
+.feature-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+}
+
+/* Timeline */
+.timeline {
+  position: relative;
+  padding-left: 32px;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-subtle);
+}
+
+.timeline-item {
+  position: relative;
+  padding-bottom: 28px;
+}
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -28px;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid var(--bg-primary);
+}
+
+.timeline-item h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.timeline-item p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Footer bar */
+.footer-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-rose));
+  opacity: 0.6;
+}
+
+/* Figures */
+.figure-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+}
+
+.figure-container img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.figure-caption {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 10px;
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .slide { padding: 40px; }
+  .two-col { grid-template-columns: 1fr; }
+  .three-col { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  h2 { font-size: 1.8rem; }
+  .slide-title h1 { font-size: 2.2rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<section class="slide slide-title" id="slide-1">
+  <div>
+    <h1>Beyond Loss Curves:<br>Thermodynamics of Pretraining</h1>
+    <p class="subtitle">Physics-grounded spectral diagnostics that reveal what loss cannot &mdash; structure formation, degradation signals, and adaptive scheduling for frontier training runs.</p>
+    <div class="meta-badges">
+      <span class="badge highlight">NeurIPS 2026</span>
+      <span class="badge">12 Models</span>
+      <span class="badge">3 Architecture Families</span>
+      <span class="badge">70M &ndash; 65B Parameters</span>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">01 / 13</div>
+</section>
+
+<!-- Slide 2: Motivation -->
+<section class="slide" id="slide-2">
+  <h2>The <span class="accent">$500M Blind Spot</span></h2>
+  <div class="two-col">
+    <div>
+      <p style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 24px;">
+        Training a frontier LLM costs $100&ndash;500M, occupies thousands of GPUs for months, and processes trillions of tokens. Yet practitioners monitor this investment through a <strong style="color: var(--accent-rose);">single signal</strong>: the training loss.
+      </p>
+      <ul class="feature-list">
+        <li>Loss can <strong>decrease</strong> while model structure <strong>degrades</strong> (memorization)</li>
+        <li>Loss is <strong>scale-dependent</strong> &mdash; incomparable across model sizes</li>
+        <li>No signal for <strong>when to decay LR</strong> &mdash; arbitrary fixed schedules</li>
+        <li>No <strong>early warning</strong> for structural pathologies</li>
+      </ul>
+    </div>
+    <div class="card" style="align-self: center;">
+      <div style="text-align: center; padding: 20px 0;">
+        <div style="font-size: 3rem; margin-bottom: 12px;">&#9992;</div>
+        <p style="font-size: 1.1rem; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">Piloting a $500M aircraft</p>
+        <p style="font-size: 0.9rem; color: var(--text-muted);">with nothing but an altimeter</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">02 / 13</div>
+</section>
+
+<!-- Slide 3: Core Idea -->
+<section class="slide" id="slide-3">
+  <h2>Core Idea: <span class="accent">Spectral Thermodynamics</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Two Metrics, Complete Picture</h3>
+      <div class="card" style="margin-bottom: 16px;">
+        <h4 style="color: var(--accent-teal);">SR/d &mdash; Stable Rank / Hidden Dim</h4>
+        <p>Measures <em>compression progress</em>. How much of the layer's capacity is actually used.</p>
+        <div class="equation" style="font-size: 0.95rem; margin-top: 12px;">SR = ||W||&sup2;<sub>F</sub> / &sigma;&sup2;<sub>1</sub> = exp(H<sub>R&eacute;nyi-2</sub>)</div>
+      </div>
+      <div class="card">
+        <h4 style="color: var(--accent-purple);">&alpha; &mdash; Power-Law Exponent</h4>
+        <p>Measures <em>structural quality</em>. Whether the layer has developed organized, heavy-tailed features.</p>
+      </div>
+    </div>
+    <div>
+      <h3>Not Analogy &mdash; Identity</h3>
+      <div class="insight">
+        <span class="insight-text">The stable rank <strong>is</strong> the exponential of R&eacute;nyi-2 entropy of the singular-value distribution. Spectral monitoring = direct measurement of thermodynamic state.</span>
+      </div>
+      <div class="phase-diagram">
+        <div class="phase-block phase-random">
+          <h5>Random</h5>
+          <div class="phase-range">&alpha; &gt; 6</div>
+        </div>
+        <div class="phase-block phase-partial">
+          <h5>Bulk+Spikes</h5>
+          <div class="phase-range">&alpha; &isin; [4,6]</div>
+        </div>
+        <div class="phase-block phase-heavy">
+          <h5>Heavy-Tail</h5>
+          <div class="phase-range">&alpha; &isin; [2,4]</div>
+        </div>
+        <div class="phase-block phase-collapse">
+          <h5>Collapse</h5>
+          <div class="phase-range">&alpha; &lt; 2</div>
+        </div>
+      </div>
+      <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 16px;">Well-trained layers enter the heavy-tail regime (&alpha; &lt; 4), indicating pervasive self-regularization and robust feature representations.</p>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">03 / 13</div>
+</section>
+
+<!-- Slide 4: Contributions Overview -->
+<section class="slide" id="slide-4">
+  <h2>Five <span class="accent">Key Contributions</span></h2>
+  <div class="stat-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 32px;">
+    <div class="stat-block"><div class="stat-value" style="font-size: 1.3rem;">P1</div><div class="stat-label">Universal Law</div></div>
+    <div class="stat-block"><div class="stat-value" style="font-size: 1.3rem;">P2</div><div class="stat-label">Predictor</div></div>
+    <div class="stat-block"><div class="stat-value" style="font-size: 1.3rem;">P3</div><div class="stat-label">&alpha; Reversal</div></div>
+    <div class="stat-block"><div class="stat-value" style="font-size: 1.3rem;">P4</div><div class="stat-label">Adaptive LR</div></div>
+    <div class="stat-block"><div class="stat-value" style="font-size: 1.3rem;">P5</div><div class="stat-label">Audit Tool</div></div>
+  </div>
+  <div class="three-col">
+    <div class="card">
+      <div class="card-icon blue">&#x1D4E2;</div>
+      <h4>Universal Compression</h4>
+      <p>SR/d converges to 0.040 + 0.61/&radic;d regardless of scale or architecture. Training compresses R&eacute;nyi-2 entropy by ~2 nats universally.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">&#x1D4AB;</div>
+      <h4>&alpha; Reversal = Degradation</h4>
+      <p>When d&alpha;/dt &gt; 0, structure is degrading &mdash; invisible to loss. Larger models are more fragile: &Delta;&alpha; = +2.71 at 13B.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon emerald">&#x1D4E5;</div>
+      <h4>Adaptive Schedule</h4>
+      <p>&alpha;-guided decay matches hand-tuned WSD while outperforming cosine by &minus;0.054 loss. Fully model-driven, no schedule hyperparameters.</p>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">04 / 13</div>
+</section>
+
+<!-- Slide 5: Experimental Setup -->
+<section class="slide" id="slide-5">
+  <h2>Experimental <span class="accent">Coverage</span></h2>
+  <div class="stat-grid">
+    <div class="stat-block"><div class="stat-value">12</div><div class="stat-label">Models</div></div>
+    <div class="stat-block"><div class="stat-value">930&times;</div><div class="stat-label">Scale Range</div></div>
+    <div class="stat-block"><div class="stat-value">3</div><div class="stat-label">Architecture Families</div></div>
+    <div class="stat-block"><div class="stat-value">282</div><div class="stat-label">Checkpoints</div></div>
+  </div>
+  <div class="table-container" style="margin-top: 32px;">
+    <table>
+      <thead>
+        <tr><th>Model</th><th>Arch</th><th>d</th><th>Params</th><th>Tokens</th><th>D/N</th><th>SR/d</th><th>&alpha;</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Pythia-70M</td><td>GPT-NeoX</td><td class="cell-highlight">512</td><td>70M</td><td>300B</td><td>4,261</td><td>0.074</td><td class="cell-success">2.60</td></tr>
+        <tr><td>Pythia-1B</td><td>GPT-NeoX</td><td class="cell-highlight">2048</td><td>1.0B</td><td>300B</td><td>297</td><td>0.050</td><td class="cell-success">2.78</td></tr>
+        <tr><td>Pythia-6.9B</td><td>GPT-NeoX</td><td class="cell-highlight">4096</td><td>6.9B</td><td>300B</td><td>44</td><td>0.046</td><td class="cell-warning">5.13</td></tr>
+        <tr><td>Amber-7B</td><td>LLaMA</td><td class="cell-highlight">4096</td><td>6.7B</td><td>1.26T</td><td>187</td><td>0.057</td><td class="cell-warning">5.25</td></tr>
+        <tr><td>OLMo-2-13B</td><td>OLMo2</td><td class="cell-highlight">5120</td><td>13B</td><td>4.7T</td><td>365</td><td>0.043</td><td class="cell-warning">6.95</td></tr>
+        <tr><td>OLMo-2-32B</td><td>OLMo2</td><td class="cell-highlight">5120</td><td>32B</td><td>6T</td><td>189</td><td>0.043</td><td class="cell-warning">5.25</td></tr>
+        <tr><td>K2-65B</td><td>LLaMA</td><td class="cell-highlight">8192</td><td>65B</td><td>1.4T</td><td>21</td><td style="color: var(--accent-rose);">0.036*</td><td class="cell-warning">5.09</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 12px;">* K2-65B has not converged (D/N=21); SR/d reflects training insufficiency. Full table includes 12 models.</p>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">05 / 13</div>
+</section>
+
+<!-- Slide 6: Result P1 — Universal Compression -->
+<section class="slide" id="slide-6">
+  <h2>P1: <span class="accent">Universal Compression Law</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="equation">SR/d &asymp; 0.040 + 0.61 / &radic;d</div>
+      <p style="color: var(--text-secondary); margin-bottom: 24px;">
+        Across all sufficiently-trained models, the normalized stable rank converges to a value determined by <strong>hidden dimension alone</strong> &mdash; not by total parameters, depth, or training budget.
+      </p>
+      <div class="figure-container" style="margin-bottom: 16px;">
+        <img src="paper/figures/fig4_srd_vs_d.png" alt="SR/d vs hidden dimension">
+        <div class="figure-caption">Fig 4. SR/d (final) vs hidden dimension d. Red curve: asymptotic model. All architectures fall on the same trend.</div>
+      </div>
+      <div class="insight">
+        <span class="insight-text"><strong>Critical test</strong>: OLMo-2-13B and OLMo-2-32B (d=5120, different depths) achieve <em>identical</em> SR/d = 0.043. <strong>Hold-out</strong>: Mistral-7B gives SR/d = 0.040.</span>
+      </div>
+    </div>
+    <div>
+      <div class="figure-container">
+        <img src="paper/figures/fig1_srd_convergence.png" alt="SR/d convergence across Pythia scales">
+        <div class="figure-caption">Fig 1. SR/d convergence during training across 6 Pythia scales (70M&ndash;6.9B). All trajectories converge to the universal band.</div>
+      </div>
+      <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 20px;">
+        <div class="stat-block"><div class="stat-value" style="font-size: 1.5rem;">0.040</div><div class="stat-label">Asymptotic limit</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size: 1.5rem;">&minus;2.0</div><div class="stat-label">nats removed</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">06 / 13</div>
+</section>
+
+<!-- Slide 7: Result P2 — Performance Predictor -->
+<section class="slide" id="slide-7">
+  <h2>P2: <span class="accent">Performance Predictor</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="stat-grid" style="grid-template-columns: repeat(2, 1fr);">
+        <div class="stat-block"><div class="stat-value">r = &minus;0.92</div><div class="stat-label">Spearman &rho;</div></div>
+        <div class="stat-block"><div class="stat-value">N = 102</div><div class="stat-label">Datapoints</div></div>
+        <div class="stat-block"><div class="stat-value">p &lt; 10<sup>&minus;41</sup></div><div class="stat-label">Significance</div></div>
+        <div class="stat-block"><div class="stat-value">R&sup2; = 0.88</div><div class="stat-label">with log N</div></div>
+      </div>
+      <p style="color: var(--text-secondary); margin-top: 24px;">
+        SR/d alone explains 75.4% of downstream performance variance across 6 Pythia scales and 17 training checkpoints &mdash; <strong>without any evaluation data</strong>.
+      </p>
+      <div class="equation" style="font-size: 0.85rem;">score &asymp; &minus;0.258 &middot; log<sub>10</sub>(SR/d) + 0.048 &middot; log<sub>10</sub>(N) &minus; 0.252</div>
+    </div>
+    <div>
+      <div class="card">
+        <h4>What This Enables</h4>
+        <ul class="feature-list">
+          <li>Real-time performance estimation during training</li>
+          <li>No evaluation suite needed &mdash; weights only</li>
+          <li>Cross-model quality comparison on a single scale</li>
+          <li>Post-hoc audit of released models</li>
+        </ul>
+      </div>
+      <div class="insight" style="margin-top: 20px;">
+        <span class="insight-text">Benchmarks on 7 tasks (LAMBADA, PIQA, WinoGrande, ARC-E, ARC-C, SciQ, LogiQA) across all Pythia training stages.</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">07 / 13</div>
+</section>
+
+<!-- Slide 8: Result P3 — Alpha Reversal -->
+<section class="slide" id="slide-8">
+  <h2>P3: <span class="accent">&alpha; Reversal</span> &mdash; Structural Degradation</h2>
+  <div class="two-col">
+    <div>
+      <p style="color: var(--text-secondary); margin-bottom: 20px;">
+        When &alpha; begins <strong style="color: var(--accent-rose);">increasing</strong> (d&alpha;/dt &gt; 0), the model's spectral structure is degrading &mdash; even as loss continues decreasing.
+      </p>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Model</th><th>D/N</th><th>&alpha;<sub>min</sub></th><th>&alpha;<sub>final</sub></th><th>&Delta;&alpha;</th></tr></thead>
+          <tbody>
+            <tr><td>Pythia-70M</td><td>4,261</td><td class="cell-success">2.60</td><td class="cell-success">2.60</td><td>0.00</td></tr>
+            <tr><td>Pythia-1B</td><td>297</td><td class="cell-success">2.52</td><td class="cell-success">2.78</td><td>+0.26</td></tr>
+            <tr><td>Pythia-2.8B</td><td>108</td><td class="cell-warning">4.71</td><td class="cell-warning">5.16</td><td>+0.45</td></tr>
+            <tr><td style="font-weight:600;">OLMo-2-32B</td><td>189</td><td class="cell-success">2.90</td><td class="cell-warning">5.25</td><td style="color: var(--accent-rose); font-weight: 700;">+2.35</td></tr>
+            <tr><td style="font-weight:600;">OLMo-2-13B</td><td>365</td><td class="cell-warning">4.25</td><td style="color: var(--accent-rose);">6.95</td><td style="color: var(--accent-rose); font-weight: 700;">+2.71</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="figure-container" style="margin-bottom: 16px;">
+        <img src="paper/figures/fig2_alpha_reversal.png" alt="Alpha reversal dynamics">
+        <div class="figure-caption">Fig 2. &alpha; dynamics: well-trained models converge to heavy-tail; under-trained models exhibit reversal.</div>
+      </div>
+      <div class="card" style="margin-top: 16px;">
+        <h4>MLP is the Bottleneck</h4>
+        <p style="margin-bottom: 12px;">The MLP/Attention gap amplifies at scale:</p>
+        <div style="display: flex; gap: 16px;">
+          <div class="stat-block" style="flex:1;"><div class="stat-value" style="font-size:1.2rem;">0.7</div><div class="stat-label">gap @ 2.8B</div></div>
+          <div class="stat-block" style="flex:1;"><div class="stat-value" style="font-size:1.2rem;">4.2</div><div class="stat-label">gap @ 32B</div></div>
+          <div class="stat-block" style="flex:1;"><div class="stat-value" style="font-size:1.2rem;">5.4</div><div class="stat-label">gap @ Mistral</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">08 / 13</div>
+</section>
+
+<!-- Slide 9: Result P4 — Adaptive Schedule -->
+<section class="slide" id="slide-9">
+  <h2>P4: <span class="accent">&alpha;-Guided</span> Adaptive Schedule</h2>
+  <div class="two-col">
+    <div>
+      <h3>3-Way Comparison</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 20px;">Pythia-410M trained from scratch on FineWeb-Edu (9.9B tokens), 9,000 steps, 2 seeds.</p>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Schedule</th><th>Final Loss</th><th>Final &alpha;</th><th>Decay Start</th></tr></thead>
+          <tbody>
+            <tr><td>Cosine</td><td>2.913 &pm; 0.002</td><td>2.683</td><td>Step 500 (6%)</td></tr>
+            <tr><td>WSD</td><td class="cell-highlight">2.855 &pm; 0.001</td><td>2.472</td><td>Step 7200 (80%)</td></tr>
+            <tr><td style="font-weight:600;">&alpha;-Guided</td><td class="cell-highlight">2.859 &pm; 0.001</td><td class="cell-success">2.442</td><td>Step 7500 (83%)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 20px;">
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">&minus;0.054</div><div class="stat-label">&Delta;loss vs cosine</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">83%</div><div class="stat-label">Auto decay point</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">0</div><div class="stat-label">Hyperparams</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="figure-container" style="margin-bottom: 16px;">
+        <img src="paper/figures/fig3_3way_comparison.png" alt="3-way schedule comparison">
+        <div class="figure-caption">Fig 3. (a) Training loss: WSD and &alpha;-Guided outperform cosine. (b) &alpha; trajectory: cosine plateaus early.</div>
+      </div>
+      <div class="insight" style="margin-top: 16px;">
+        <span class="insight-text">&alpha;-Guided automatically discovers the optimal decay point (83%) without specifying the stable fraction &mdash; replacing an arbitrary hyperparameter with a model-driven signal.</span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px;"><strong>Scale-up in progress:</strong> 1B-scale 3-way comparison running on cluster (same data, Pythia-1B).</p>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">09 / 13</div>
+</section>
+
+<!-- Slide 10: Phase Transition -->
+<section class="slide" id="slide-10">
+  <h2>Structural <span class="accent">Phase Transition</span> at N &asymp; 1.7B</h2>
+  <div class="two-col">
+    <div>
+      <p style="color: var(--text-secondary); margin-bottom: 24px; font-size: 1.05rem;">
+        Our most surprising finding: a <strong>sharp structural phase transition</strong> separates small and large models.
+      </p>
+      <div class="comparison">
+        <div class="card" style="text-align: center; border-color: rgba(52, 211, 153, 0.3);">
+          <h4 style="color: var(--accent-emerald);">N &le; 1B</h4>
+          <div class="stat-value" style="color: var(--accent-emerald);">&alpha; &lt; 3</div>
+          <p style="margin-top: 8px;">Easily achieve heavy-tail<br>regardless of budget</p>
+        </div>
+        <div class="comparison-vs">vs</div>
+        <div class="card" style="text-align: center; border-color: rgba(244, 114, 182, 0.3);">
+          <h4 style="color: var(--accent-rose);">N &gt; 1.7B</h4>
+          <div class="stat-value" style="color: var(--accent-rose);">&alpha; &gt; 5</div>
+          <p style="margin-top: 8px;">Persistent immaturity even with hundreds of t/p</p>
+        </div>
+      </div>
+      <div class="equation" style="font-size: 0.9rem;">&alpha;(N) &asymp; 2.65 + &Delta;&alpha; &middot; &sigma;((log<sub>10</sub>N &minus; 9.23) / 0.07) &nbsp;&nbsp; R&sup2; = 0.97</div>
+    </div>
+    <div>
+      <div class="figure-container" style="margin-bottom: 16px;">
+        <img src="paper/figures/fig6_structural_chinchilla.png" alt="Structural Chinchilla phase transition">
+        <div class="figure-caption">Fig 6. &alpha;<sub>final</sub> vs D/N. Blue: small models (&le;1B) follow exponential. Red: large models cluster at &alpha;&gt;5 regardless of D/N.</div>
+      </div>
+      <div class="insight">
+        <span class="insight-text"><strong>Validated</strong>: K2-65B post-hoc audit (SR/d = 0.036, &alpha; = 5.09) correctly diagnoses its known benchmark underperformance &mdash; from weights alone.</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">10 / 13</div>
+</section>
+
+<!-- Slide 11: Generalization Validation -->
+<section class="slide" id="slide-11">
+  <h2>Hold-Out <span class="accent">Validation</span>: Mistral-7B</h2>
+  <div class="two-col">
+    <div>
+      <p style="color: var(--text-secondary); margin-bottom: 20px;">
+        To test generalization beyond our training set, we measured <strong>Mistral-7B</strong> &mdash; a completely unseen architecture (GQA, sliding window attention, different training recipe).
+      </p>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Metric</th><th>Measured</th><th>Predicted</th><th>Match</th></tr></thead>
+          <tbody>
+            <tr><td>SR/d (square layers)</td><td class="cell-highlight">0.040</td><td>0.050</td><td class="cell-success">&#10003;</td></tr>
+            <tr><td>&alpha; (mean)</td><td class="cell-warning">6.13</td><td>&gt; 4</td><td class="cell-success">&#10003;</td></tr>
+            <tr><td>&alpha;<sub>attn</sub></td><td class="cell-success">3.79</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td>&alpha;<sub>mlp</sub></td><td style="color: var(--accent-rose);">9.22</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td>MLP/Attn gap</td><td class="cell-highlight">5.43</td><td>&mdash;</td><td>&mdash;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="border-left: 3px solid var(--accent-emerald);">
+        <h4 style="color: var(--accent-emerald);">Formula Validates on Unseen Architecture</h4>
+        <p>Square-layer SR/d = 0.040 matches prediction (0.050 &pm; 0.01 is the observed range for d=4096 models). The formula generalizes to GQA.</p>
+      </div>
+      <div class="card" style="margin-top: 16px; border-left: 3px solid var(--accent-rose);">
+        <h4 style="color: var(--accent-rose);">Largest MLP/Attn Gap Observed</h4>
+        <p>Mistral's attention layers are nearly in heavy-tail (&alpha;=3.79) while MLP layers remain random (&alpha;=9.22). Gap = 5.43 &mdash; the largest ever measured, confirming MLP as the universal structural bottleneck.</p>
+      </div>
+      <div class="figure-container" style="margin-top: 16px;">
+        <img src="paper/figures/fig5_mlp_attn_gap.png" alt="MLP vs Attention alpha gap">
+        <div class="figure-caption">Fig 5. MLP vs Attention &alpha; decomposition. The gap amplifies dramatically at scale.</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">11 / 13</div>
+</section>
+
+<!-- Slide 12: Conclusion -->
+<section class="slide" id="slide-12">
+  <h2>Takeaway: <span class="accent">A New Instrument Panel</span></h2>
+  <div class="two-col" style="margin-bottom: 32px;">
+    <div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Capability</th><th>Loss</th><th>SR/d + &alpha;</th></tr></thead>
+          <tbody>
+            <tr><td>Detect structural learning</td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003;</td></tr>
+            <tr><td>Detect structural <em>degradation</em></td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003; (&alpha; reversal)</td></tr>
+            <tr><td>Adaptive schedule trigger</td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003; (d&alpha;/dt = 0)</td></tr>
+            <tr><td>Predict performance without eval</td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003; (r = &minus;0.92)</td></tr>
+            <tr><td>Compare across model sizes</td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003; (normalized)</td></tr>
+            <tr><td>Diagnose training sufficiency</td><td style="color: var(--accent-rose);">&times;</td><td class="cell-success">&#10003; (post-hoc)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="background: rgba(79, 172, 254, 0.04); border-color: rgba(79, 172, 254, 0.2);">
+        <p style="font-size: 1.1rem; font-style: italic; color: var(--text-primary); line-height: 1.7;">
+          "Loss tells you how well the model <strong>fits the data</strong>.<br>
+          Spectral metrics tell you how well the model has <strong>organized itself to generalize</strong>."
+        </p>
+        <p style="color: var(--text-muted); margin-top: 16px; font-size: 0.85rem;">
+          Both are needed; only monitoring loss is flying blind.
+        </p>
+      </div>
+      <div style="margin-top: 24px;">
+        <h4 style="margin-bottom: 12px;">Overhead</h4>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">&lt; 0.05% of training compute. Embarrassingly parallel across layers and checkpoints. No training data access needed.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">12 / 13</div>
+</section>
+
+<!-- Slide 13: Next Steps -->
+<section class="slide" id="slide-13">
+  <h2>Next Steps & <span class="accent">Ongoing Work</span></h2>
+  <div class="two-col">
+    <div>
+      <h3 style="margin-bottom: 24px;">Experiments In Progress</h3>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h4 style="color: var(--accent-emerald);">1B-Scale 3-Way Comparison</h4>
+          <p>Pythia-1B trained from scratch on FineWeb-Edu with cosine/WSD/&alpha;-guided. Validates prescriptive claim at 2.5&times; larger scale. <strong>Running now.</strong></p>
+        </div>
+        <div class="timeline-item">
+          <h4 style="color: var(--accent-blue);">Downstream Benchmark Evaluation</h4>
+          <p>5 benchmarks (LAMBADA, PIQA, WinoGrande, ARC-E, HellaSwag) on all 3-way checkpoints. Proves loss difference translates to measurable quality improvement.</p>
+        </div>
+        <div class="timeline-item">
+          <h4 style="color: var(--accent-purple);">Causality Experiment</h4>
+          <p>Fork at &alpha; reversal point: Branch A (obey &alpha;, decay LR) vs Branch B (ignore &alpha;, continue peak LR). Demonstrates <em>causal</em> value of the spectral signal.</p>
+        </div>
+        <div class="timeline-item">
+          <h4 style="color: var(--accent-amber);">Gemma-2-9B Measurement</h4>
+          <p>Second hold-out architecture validation (logit soft-capping, d=3584). Further stress-tests the SR/d formula on unseen designs.</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 style="margin-bottom: 24px;">Open Research Directions</h3>
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="card-icon amber">&#x2699;</div>
+        <h4>MoE Architecture Extension</h4>
+        <p>How do spectral metrics behave in Mixture-of-Experts models? Router weights, expert specialization, and load-balanced training present unique spectral signatures.</p>
+      </div>
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="card-icon purple">&#x1D6D5;</div>
+        <h4>Calibrate &tau;(N) Scaling</h4>
+        <p>The structural maturation timescale grows with model size. Precisely calibrating &tau;(N) would enable predictive "structural Chinchilla" budgeting for frontier runs.</p>
+      </div>
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="card-icon rose">&#x2197;</div>
+        <h4>Causal Link: Compression &rarr; Generalization</h4>
+        <p>Does spectral compression <em>drive</em> generalization, or merely correlate? Intervention experiments and theoretical analysis needed.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon emerald">&#x1F4CA;</div>
+        <h4>Real-Time Monitoring Dashboard</h4>
+        <p>Integration with WandB/TensorBoard for production training pipelines. Auto-alert on &alpha; reversal, SR/d plateau, and MLP bottleneck detection.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">13 / 13</div>
+</section>
+
+<script>
+// Smooth scroll and dot navigation
+const slides = document.querySelectorAll('.slide');
+const navContainer = document.createElement('div');
+navContainer.className = 'nav-dots';
+document.body.appendChild(navContainer);
+
+slides.forEach((slide, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'nav-dot';
+  dot.addEventListener('click', () => slide.scrollIntoView({ behavior: 'smooth' }));
+  navContainer.appendChild(dot);
+});
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const idx = Array.from(slides).indexOf(entry.target);
+      document.querySelectorAll('.nav-dot').forEach((d, i) => {
+        d.classList.toggle('active', i === idx);
+      });
+    }
+  });
+}, { threshold: 0.5 });
+
+slides.forEach(slide => observer.observe(slide));
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  const current = Array.from(slides).findIndex(s => {
+    const rect = s.getBoundingClientRect();
+    return rect.top >= -100 && rect.top <= window.innerHeight / 2;
+  });
+  if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+    e.preventDefault();
+    if (current < slides.length - 1) slides[current + 1].scrollIntoView({ behavior: 'smooth' });
+  }
+  if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+    e.preventDefault();
+    if (current > 0) slides[current - 1].scrollIntoView({ behavior: 'smooth' });
+  }
+});
+</script>
+</body>
+</html>
