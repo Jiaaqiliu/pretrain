@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-p2-heatmap-1b
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: measure
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install transformers huggingface_hub numpy scipy > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/heatmap
+          mkdir -p $OUTDIR
+
+          echo "=== Measuring Pythia-1B per-layer (24 checkpoints) ==="
+          CUDA_VISIBLE_DEVICES=0 python3 scripts/thermo/measure_perlayer_heatmap.py \
+            --model-size 1b \
+            --output $OUTDIR/pythia_1b_perlayer.jsonl
+
+          echo "=== Measuring Pythia-6.9B per-layer (24 checkpoints) ==="
+          CUDA_VISIBLE_DEVICES=0 python3 scripts/thermo/measure_perlayer_heatmap.py \
+            --model-size 6.9b \
+            --output $OUTDIR/pythia_6.9b_perlayer.jsonl
+
+          echo "=== HEATMAP MEASUREMENTS COMPLETE ==="
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "expandable_segments:True"
+        resources:
+          limits:
+            nvidia.com/gpu: 8
+          requests:
+            cpu: "96"
+            memory: "512Gi"
+            nvidia.com/gpu: 8
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "200Gi"
