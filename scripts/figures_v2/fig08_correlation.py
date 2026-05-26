@@ -119,8 +119,8 @@ def main():
     stats_text = (f'Spearman ρ = {rho:.3f}\n'
                   f'R² = {r2:.3f}\n'
                   f'N = {n}')
-    ax.text(0.04, 0.96, stats_text, transform=ax.transAxes,
-            fontsize=6.5, va='top', color=C['navy'], family='monospace',
+    ax.text(0.96, 0.96, stats_text, transform=ax.transAxes,
+            fontsize=6.5, va='top', ha='right', color=C['navy'], family='monospace',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
                      edgecolor=C['gray_pale'], alpha=0.9))
 

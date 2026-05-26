@@ -103,7 +103,7 @@ OLMO_COLORS = ['#D4956A', '#B85C38', '#8B4226', '#5C2D14']
 # =============================================================================
 # Paths
 # =============================================================================
-PROJECT_ROOT = Path('Path(__file__).resolve().parent.parent.parent')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS = PROJECT_ROOT / 'results'
 FIG_OUT = PROJECT_ROOT / 'paper' / 'figures_v2'
 FIG_OUT.mkdir(parents=True, exist_ok=True)
