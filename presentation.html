@@ -97,12 +97,49 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
 .timeline-item p { font-size: 0.85rem; color: var(--text-secondary); }
 .footer-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-rose)); opacity: 0.6; }
 .figure-container { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 20px; text-align: center; box-shadow: var(--shadow-card); }
-.figure-container img { max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto; }
-.figure-container img.fig-large { max-height: 420px; width: auto; }
-.figure-container img.fig-medium { max-height: 340px; width: auto; }
-.figure-container img.fig-small { max-height: 260px; width: auto; }
+.figure-container img { max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto; image-rendering: -webkit-optimize-contrast; }
+.figure-container img.fig-large { max-height: 400px; width: auto; max-width: 100%; }
+.figure-container img.fig-medium { max-height: 320px; width: auto; max-width: 100%; }
+.figure-container img.fig-small { max-height: 240px; width: auto; max-width: 100%; }
 .figure-caption { font-size: 0.78rem; color: var(--text-muted); margin-top: 12px; font-style: italic; }
 .cn-note { color: var(--text-muted); font-size: 0.85em; }
+
+/* Lightbox for click-to-zoom */
+.lightbox-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 9999;
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.lightbox-overlay.active { display: flex; }
+.lightbox-overlay img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 12px;
+  box-shadow: 0 8px 60px rgba(79, 172, 254, 0.15);
+}
+.lightbox-hint {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.figure-container img {
+  cursor: zoom-in;
+  transition: opacity 0.2s ease;
+}
+.figure-container img:hover {
+  opacity: 0.85;
+}
+
 @media (max-width: 1024px) {
   .slide { padding: 40px; }
   .two-col { grid-template-columns: 1fr; }
@@ -411,9 +448,9 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
         </ul>
       </div>
       <div class="card" style="margin-top: 16px; border-left: 3px solid var(--accent-amber);">
-        <h4 style="color: var(--accent-amber);">回应审稿人的关键质疑</h4>
-        <p>"Lower loss ≠ better model"（更低的 loss 不一定意味着更好的模型）<br><br>
-        → 我们的回答：<strong>这里确实 = </strong>。Loss 下降 0.054 → 5 项 benchmark 全面提升。</p>
+        <h4 style="color: var(--accent-amber);">关键问题：Lower loss 一定意味着 better model 吗？</h4>
+        <p>一般来说，更低的 loss 不一定意味着更好的模型（可能是 memorization）。<br><br>
+        但在我们的实验中：Loss 下降 0.054 → <strong>5 项 benchmark 全面提升 (+2%)</strong>。这说明 α-guided 带来的 loss 改善是<strong>真实的泛化质量提升</strong>，而非过拟合。</p>
       </div>
     </div>
   </div>
@@ -557,7 +594,34 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
   <div class="slide-counter">12 / 12</div>
 </section>
 
+<!-- Lightbox overlay -->
+<div class="lightbox-overlay" id="lightbox">
+  <img src="" alt="Zoomed figure" id="lightbox-img">
+  <div class="lightbox-hint">点击任意位置关闭 / Click anywhere to close</div>
+</div>
+
 <script>
+// Lightbox click-to-zoom
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
+
+document.querySelectorAll('.figure-container img').forEach(img => {
+  img.addEventListener('click', (e) => {
+    e.stopPropagation();
+    lightboxImg.src = img.src;
+    lightbox.classList.add('active');
+  });
+});
+
+lightbox.addEventListener('click', () => {
+  lightbox.classList.remove('active');
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') lightbox.classList.remove('active');
+});
+
+// Navigation
 const slides = document.querySelectorAll('.slide');
 const navContainer = document.createElement('div');
 navContainer.className = 'nav-dots';
