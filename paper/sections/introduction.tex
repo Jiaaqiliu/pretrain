@@ -26,7 +26,7 @@ When we observe SR/$d$ converging to a universal constant, we are observing that
 This is not analogy; it is a mathematical identity that grounds our entire framework in information-theoretic thermodynamics.
 
 \textbf{This paper fills the gap between static spectral analysis and real-time training guidance.}
-We measure spectral properties of weight matrices across 12 language models spanning three architecture families and nearly three orders of magnitude in scale (70M--65B), tracking their evolution throughout training.
+We measure spectral properties of weight matrices across 13 language models spanning four architecture families and nearly three orders of magnitude in scale (70M--65B), tracking their evolution throughout training.
 We discover:
 
 \begin{enumerate}[leftmargin=*,itemsep=1pt,topsep=2pt]
@@ -39,7 +39,7 @@ We discover:
     \item \textbf{An $\alpha$-guided adaptive schedule} (\S\ref{sec:schedule}). On real data (FineWeb-Edu, 10B tokens), an $\alpha$-guided schedule automatically identifies the optimal decay point (83\% of training), matching hand-tuned WSD performance ($\Delta\text{loss} < 0.004$) while outperforming cosine by $-0.054$ in loss and $-0.24$ in $\alpha$. This demonstrates that spectral metrics can \emph{replace} arbitrary schedule hyperparameters with model-driven signals.
 \end{enumerate}
 
-Additionally, we discover a \textbf{sharp structural phase transition at $N \approx 1.7$B parameters} (\S\ref{sec:scaling}): models below this threshold easily achieve heavy-tail structure ($\alpha < 3$) regardless of training budget, while models above it exhibit persistent structural immaturity ($\alpha > 5$) even with hundreds of tokens per parameter. This ``Structural Chinchilla'' finding explains why over-training works for small models (they achieve spectral maturity cheaply) and why frontier models remain structurally immature despite massive compute---they are above the phase transition. We validate this diagnostically by applying SR/$d$ post-hoc to K2-65B, whose spectral metrics independently reveal its known benchmark underperformance (\S\ref{sec:audit}).
+Additionally, we discover a \textbf{sharp structural phase transition at $N \approx 1.7$B parameters} (\S\ref{sec:scaling}): models below this threshold easily achieve heavy-tail structure ($\alpha < 3$) regardless of training budget, while models above it exhibit persistent structural immaturity ($\alpha > 5$) even with hundreds of tokens per parameter. This ``Structural Chinchilla'' finding explains why over-training works for small models (they achieve spectral maturity cheaply) and why frontier models remain structurally immature despite massive compute---they are above the phase transition. We validate this diagnostically by applying SR/$d$ post-hoc to K2-65B, whose spectral metrics independently reveal its known benchmark underperformance (\S\ref{sec:audit}). Per-layer heatmap analysis further confirms that 96\% of structural ordering occurs in the first 4\% of training (``explosive ordering''), after which the spectral state is largely frozen.
 
 Together, these results establish spectral monitoring as a practical complement to loss curves---grounded not in analogy but in the information-theoretic thermodynamics of SGD.
 The question that should guide every training decision shifts from ``has loss converged?'' to ``is R\'{e}nyi entropy still decreasing, and has the model reached spectral maturity?''

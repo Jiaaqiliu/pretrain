@@ -30,7 +30,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 html { scroll-behavior: smooth; scroll-snap-type: y mandatory; }
 body { font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); line-height: 1.6; overflow-x: hidden; }
-.slide { min-height: 100vh; scroll-snap-align: start; display: flex; flex-direction: column; justify-content: center; padding: 60px 80px; position: relative; overflow: hidden; }
+.slide { min-height: 100vh; scroll-snap-align: start; display: flex; flex-direction: column; justify-content: center; padding: 60px 80px; position: relative; overflow: hidden; page-break-after: always; page-break-inside: avoid; }
+@media print { .slide { min-height: auto; height: 100vh; overflow: hidden; } .nav-dots { display: none; } }
 .slide::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(ellipse at 20% 50%, rgba(79, 172, 254, 0.03) 0%, transparent 60%); pointer-events: none; }
 .nav-dots { position: fixed; right: 30px; top: 50%; transform: translateY(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 12px; }
 .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); opacity: 0.4; transition: all 0.3s ease; cursor: pointer; }
@@ -165,7 +166,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">01 / 12</div>
+  <div class="slide-counter">01 / 14</div>
 </section>
 
 <!-- Slide 2: Motivation / Pain Point -->
@@ -193,7 +194,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">02 / 12</div>
+  <div class="slide-counter">02 / 14</div>
 </section>
 
 <!-- Slide 3: Core Concept -->
@@ -236,11 +237,14 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
       <div class="insight" style="margin-top: 24px;">
         <span class="insight-text">关键：SR = exp(Rényi-2 熵)。SR/d 下降 = 谱熵减少 = 信息在压缩。这不是类比，是<strong>数学恒等式</strong>。</span>
       </div>
-      <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 16px;">计算成本：7B 模型全量测量 ~5 分钟（单 GPU）。每 5000 步测一次 = 训练总成本的 <strong>&lt;0.05%</strong>。</p>
+      <div class="figure-container" style="margin-top: 16px;">
+        <img src="paper/figures_v2/fig01_phase_portrait.png" alt="Spectral Phase Portrait" class="fig-medium">
+        <div class="figure-caption">Phase Portrait：每个模型是一条轨迹（从右上→左下 = 从随机→成熟）。小模型全部到达左下角；大模型卡在中间。</div>
+      </div>
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">03 / 12</div>
+  <div class="slide-counter">03 / 14</div>
 </section>
 
 <!-- Slide 4: Key Contributions -->
@@ -276,7 +280,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">04 / 12</div>
+  <div class="slide-counter">04 / 14</div>
 </section>
 
 <!-- Slide 5: Experimental Coverage -->
@@ -304,9 +308,15 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
       </tbody>
     </table>
   </div>
-  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 12px;">* Mistral SR/d 为方形层（d×d projection）值。完整表格含 12 个模型。</p>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; align-items: center;">
+    <p style="font-size: 0.8rem; color: var(--text-muted);">* Mistral SR/d 为方形层（d×d projection）值。完整表格含 12 个模型。</p>
+    <div class="figure-container" style="padding: 8px;">
+      <img src="paper/figures_v2/fig08_correlation.png" alt="SR/d vs Downstream Performance" class="fig-medium">
+      <div class="figure-caption">SR/d 与下游性能的相关性：r = −0.92, N=102, 仅从权重即可预测性能。</div>
+    </div>
+  </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">05 / 12</div>
+  <div class="slide-counter">05 / 14</div>
 </section>
 
 <!-- Slide 6: Result P1 — Universal Compression -->
@@ -327,17 +337,21 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
     <div>
       <div class="figure-container" style="margin-bottom: 20px;">
-        <img src="paper/figures/fig4_srd_vs_d.png" alt="SR/d vs hidden dimension" class="fig-medium">
-        <div class="figure-caption">SR/d (final) vs 隐藏维度 d。红线：渐近模型。不同架构落在同一趋势上。</div>
+        <img src="paper/figures_v2/fig05_srd_vs_d.png" alt="SR/d vs hidden dimension" class="fig-medium">
+        <div class="figure-caption">SR/d (final) vs 隐藏维度 d。红线：渐近模型 0.040 + 0.61/√d。3 个架构族落在同一趋势上。</div>
       </div>
       <div class="figure-container">
-        <img src="paper/figures/fig1_srd_convergence.png" alt="SR/d convergence" class="fig-medium">
-        <div class="figure-caption">训练过程中 SR/d 的收敛动态。6 个 Pythia 规模（100× 差异）全部收敛到同一区间。</div>
+        <img src="paper/figures_v2/fig10_compression.png" alt="Universal compression" class="fig-medium">
+        <div class="figure-caption">ΔH₂ ≈ -2 nats：训练普遍移除 ~2 nats 的 Rényi-2 谱熵，跨越 930× 参数范围。</div>
+      </div>
+      <div class="figure-container" style="margin-top: 12px;">
+        <img src="paper/figures_v2/fig11_cross_arch.png" alt="Cross-architecture validation" class="fig-medium">
+        <div class="figure-caption">跨架构验证：GPT-NeoX (Pythia) 与 OLMo-2 展现相同的 SR/d 收敛和 α 动态模式。</div>
       </div>
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">06 / 12</div>
+  <div class="slide-counter">06 / 14</div>
 </section>
 
 <!-- Slide 7: Result P3 — Alpha Reversal -->
@@ -366,17 +380,17 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
     <div>
       <div class="figure-container" style="margin-bottom: 20px;">
-        <img src="paper/figures/fig2_alpha_reversal.png" alt="Alpha reversal dynamics" class="fig-medium">
-        <div class="figure-caption">α 动态：小模型（绿）持续改善 → heavy-tail；大模型（红）先降后升 = 结构退化。</div>
+        <img src="paper/figures_v2/fig03_alpha_dynamics.png" alt="Alpha dynamics with decomposition" class="fig-medium">
+        <div class="figure-caption">α 动态与 MLP/Attn 分解：小模型全面进入重尾；大模型 MLP 层结构持续退化。</div>
       </div>
       <div class="figure-container">
-        <img src="paper/figures/fig5_mlp_attn_gap.png" alt="MLP vs Attention gap" class="fig-medium">
-        <div class="figure-caption">MLP（前馈层）vs Attention（注意力层）的 α 差距随模型增大而急剧扩大。MLP 是结构瓶颈。</div>
+        <img src="paper/figures_v2/fig06_mlp_attn_gap.png" alt="MLP vs Attention gap" class="fig-medium">
+        <div class="figure-caption">MLP/Attn gap 随规模急剧扩大：2.8B→0.7, 13B→1.7, 32B→4.2, Mistral→5.4。</div>
       </div>
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">07 / 12</div>
+  <div class="slide-counter">07 / 14</div>
 </section>
 
 <!-- Slide 8: Result P4 — Adaptive Schedule -->
@@ -413,7 +427,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">08 / 12</div>
+  <div class="slide-counter">08 / 14</div>
 </section>
 
 <!-- Slide 9: Downstream Eval -->
@@ -455,7 +469,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">09 / 12</div>
+  <div class="slide-counter">09 / 14</div>
 </section>
 
 <!-- Slide 10: K2 Diagnostic Case Study -->
@@ -501,7 +515,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">10 / 12</div>
+  <div class="slide-counter">10 / 14</div>
 </section>
 
 <!-- Slide 11: Practical Guidance -->
@@ -527,7 +541,17 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
       <strong>架构启发</strong>：优先增加 MLP 容量（更宽 FFN 或 MoE）。</p>
     </div>
   </div>
-  <div style="margin-top: 32px;">
+  <div style="margin-top: 24px; display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; align-items: center;">
+    <div class="figure-container">
+      <img src="paper/figures_v2/fig07_phase_transition.png" alt="Phase Transition" class="fig-medium">
+      <div class="figure-caption">(a) α vs D/N：小模型遵循指数衰减；大模型集群在 α>5。(b) 相变发生在 N≈1.7B。</div>
+    </div>
+    <div class="figure-container">
+      <img src="paper/figures_v2/fig09_dashboard.png" alt="Monitoring Dashboard" class="fig-medium">
+      <div class="figure-caption">α-Guided 监控仪表盘：Loss + α + SR/d 三信号联动，α 信号指导 LR decay 时机。</div>
+    </div>
+  </div>
+  <div style="margin-top: 24px;">
     <h3>训练监控仪表盘（推荐协议）</h3>
     <div class="table-container">
       <table>
@@ -542,11 +566,73 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">11 / 12</div>
+  <div class="slide-counter">11 / 14</div>
 </section>
 
-<!-- Slide 12: Summary & Next Steps -->
+<!-- Slide 12: Per-Layer Heatmap -->
 <section class="slide" id="slide-12">
+  <h2>Per-Layer <span class="accent">Spectral Heatmap</span></h2>
+  <div style="text-align: center; margin-bottom: 20px;">
+    <div class="figure-container" style="display: inline-block; max-width: 95%;">
+      <img src="paper/figures_v2/fig13_heatmaps_v2.png" alt="Per-layer α heatmap" style="width: 100%; border-radius: 8px;">
+    </div>
+  </div>
+  <div class="two-col" style="margin-top: 16px;">
+    <div class="card">
+      <h4 style="color: var(--accent-emerald);">Pythia-1B: "Explosive Ordering"</h4>
+      <p>结构形成集中在最初 <strong>4% 的训练</strong>（step 0→6K）。α 从 4.0 暴降到 2.6，之后几乎不变。模型在极早期就达到了结构成熟 — 符合 D/N=297 的充足训练预算。</p>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent-rose);">Pythia-6.9B: "Structural Stagnation"</h4>
+      <p>初始下降后完全停滞：α 降到 ~5 就卡住，之后 <strong>96% 的训练</strong>几乎无结构变化。MLP 层尤其严重（始终 α>5）。D/N=44 严重不足 — 训练预算无法支撑 6.9B 达到结构成熟。</p>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">12 / 14</div>
+</section>
+
+<!-- Slide 13: Downstream Eval Results -->
+<section class="slide" id="slide-13">
+  <h2>Downstream <span class="accent">Benchmark Validation</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>410M 3-Way: 5 Benchmarks, 0-shot</h3>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Schedule</th><th>ARC-E</th><th>HellaSwag</th><th>LAMBADA</th><th>PIQA</th><th>WGrande</th><th>Avg</th></tr></thead>
+          <tbody>
+            <tr><td>Cosine</td><td>0.550</td><td>0.307</td><td>0.284</td><td>0.645</td><td>0.510</td><td class="cell-highlight">0.459</td></tr>
+            <tr><td>WSD</td><td>0.567</td><td>0.314</td><td>0.293</td><td>0.659</td><td>0.504</td><td class="cell-highlight">0.467</td></tr>
+            <tr><td style="font-weight:600;">α-Guided</td><td>0.574</td><td>0.313</td><td class="cell-success">0.302</td><td>0.655</td><td>0.498</td><td class="cell-highlight">0.468</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 20px;">
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+1.95%</div><div class="stat-label">α-Guided vs Cosine</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+6.3%</div><div class="stat-label">LAMBADA 提升</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">≈ WSD</div><div class="stat-label">无需调参</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="border-left: 3px solid var(--accent-emerald); margin-bottom: 16px;">
+        <h4 style="color: var(--accent-emerald);">Key Conclusion</h4>
+        <p>Training loss 改善 (Δ = -0.054) <strong>确实转化为</strong>可测量的下游 benchmark 提升。这直接回答审稿人 "lower loss ≠ better model" 的质疑。</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--accent-blue);">
+        <h4 style="color: var(--accent-blue);">α-Guided = 自动版 WSD</h4>
+        <p>α-Guided 与手动调参的 WSD 性能几乎一致 (Δ=0.11%)，但完全不需要指定 stable fraction — 由模型自身的光谱信号驱动 decay 时机。</p>
+      </div>
+      <div class="insight" style="margin-top: 16px;">
+        <span class="insight-text"><strong>LAMBADA 上优势最大</strong> (+6.3%)：光谱引导的 schedule 对语言建模核心能力（长程依赖预测）提升尤为显著。</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">13 / 14</div>
+</section>
+
+<!-- Slide 14: Summary & Next Steps -->
+<section class="slide" id="slide-14">
   <h2>总结 & <span class="accent">下一步</span></h2>
   <div class="two-col">
     <div>
@@ -587,7 +673,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">12 / 12</div>
+  <div class="slide-counter">14 / 14</div>
 </section>
 
 <!-- Lightbox overlay -->

@@ -240,12 +240,15 @@ For the SR/$d$--performance correlation (Section~\ref{sec:predictor}), we use th
 \textbf{Experiment} & \textbf{Hardware} & \textbf{GPU-hours} \\
 \midrule
 Pythia spectral measurements (6 scales) & 8$\times$H100 & 6 \\
+Pythia per-layer heatmap (1B + 6.9B, 24 ckpts each) & 8$\times$H100 & 8 \\
 OLMo-2 measurements (1B/7B/13B/32B) & 8$\times$H100 & 12 \\
 K2-65B measurements & 8$\times$H100 & 4 \\
 Amber-7B measurements & 8$\times$H100 & 4 \\
+Mistral-7B measurements & 8$\times$H100 & 2 \\
 Real-data 3-way (410M, 6 runs) & 8$\times$H100 & ${\sim}192$ \\
+Downstream eval (410M, 6 checkpoints) & 1$\times$H100 & 3 \\
 \midrule
-\textbf{Total} & & ${\sim}218$ \\
+\textbf{Total} & & ${\sim}231$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -280,6 +283,7 @@ The full $\alpha$ trajectory for each Pythia model shows a clear pattern:
 Pythia-2.8B & 4.79 & 5.53 & 0.74 & 2560 \\
 Pythia-6.9B & 5.16 & 5.13 & $-0.03$ & 4096 \\
 Amber-7B & 4.98 & 5.66 & 0.67 & 4096 \\
+Mistral-7B & 3.79 & 9.22 & \textbf{5.43} & 4096 \\
 OLMo-2-13B & 6.25 & 7.94 & \textbf{1.69} & 5120 \\
 OLMo-2-32B & 3.44 & 7.59 & \textbf{4.15} & 5120 \\
 K2-65B & 4.50 & 5.89 & 1.39 & 8192 \\
@@ -287,7 +291,7 @@ K2-65B & 4.50 & 5.89 & 1.39 & 8192 \\
 \end{tabular}
 \end{table}
 
-The gap amplifies dramatically at scale: 1.69 at 13B and 4.15 at 32B. Notably, OLMo-2-32B's attention layers have already entered the heavy-tail regime ($\alpha_{\mathrm{attn}} = 3.44 < 4$) while its MLP layers remain structurally random ($\alpha_{\mathrm{mlp}} = 7.59$), indicating that MLP layers are the dominant structural bottleneck at frontier scale. The anomalous negative gap at 6.9B ($-0.03$) suggests that at intermediate scales with extremely low $D/N = 44$, both layer types are equally starved for data.
+The gap amplifies dramatically at scale: 1.69 at 13B and 4.15 at 32B. Mistral-7B exhibits the largest gap ($5.43$), with attention layers achieving heavy-tail structure ($\alpha_{\mathrm{attn}} = 3.79$) while MLP layers remain near-random ($\alpha_{\mathrm{mlp}} = 9.22$). This extreme asymmetry may reflect Mistral's GQA architecture, where the reduced KV capacity forces attention to compress more aggressively. Notably, OLMo-2-32B's attention layers have already entered the heavy-tail regime ($\alpha_{\mathrm{attn}} = 3.44 < 4$) while its MLP layers remain structurally random ($\alpha_{\mathrm{mlp}} = 7.59$), indicating that MLP layers are the dominant structural bottleneck at frontier scale. The anomalous negative gap at 6.9B ($-0.03$) suggests that at intermediate scales with extremely low $D/N = 44$, both layer types are equally starved for data.
 
 \subsection{Finite-Width Correction Validation}
 
