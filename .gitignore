@@ -56,6 +56,14 @@ inspect_evals/
 !/docs/agent_team_structure.md
 !/docs/CLUSTER_OPS.md
 !/docs/EXPERIMENT_LOG.md
+!/docs/EXPERIMENT_PHASE2.md
+!/docs/EXPERIMENT_PRESCRIPTIVE.md
+!/docs/MEASUREMENT_REVISION.md
+!/docs/MONITORING_FRAMEWORK.md
+!/docs/PRESENTATION_NOTES.md
+!/docs/THEORY_UPGRADE.md
+!/docs/THEORY_V2.md
+!/docs/VISUALIZATION_PLAN.md
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py
