@@ -317,3 +317,12 @@ $d$ & \textbf{Predicted SR/$d$} & \textbf{Measured SR/$d$} & \textbf{Error} \\
 \end{table}
 
 The model captures the overall trend with residuals $< 0.01$. Deviations are attributable to differences in training sufficiency ($D/N$) across models.
+
+\subsection{Universal Spectral Compression}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\columnwidth]{figures_v2/fig10_compression.pdf}
+    \caption{Universal spectral compression: every sufficiently-trained model removes $\Delta H_2 \approx -2$ nats of R\'{e}nyi-2 entropy per layer, regardless of scale (70M--6.9B). The dashed line shows the mean ($-2.04 \pm 0.17$ nats).}
+    \label{fig:compression}
+\end{figure}

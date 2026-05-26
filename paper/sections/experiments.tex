@@ -98,14 +98,7 @@ Mistral-7B$^\ddagger$ & Mistral & 4096 & --- & 0.040 & --- \\
 
 \paragraph{Asymptotic model.} Fitting SR/$d$ vs.\ $d$ across all sufficiently-trained models (Figure~\ref{fig:srd_vs_d}): $\mathrm{SR}/d \approx 0.040 + 0.61/\sqrt{d}$. As $d \to \infty$, SR/$d \to 0.040$. The critical test: OLMo-2-13B and OLMo-2-32B share $d = 5120$ but differ in depth (40 vs.\ 64 layers) and total parameters (13B vs.\ 32B). They achieve \emph{identical} SR/$d_{\mathrm{final}} = 0.043$, confirming that SR/$d$ is a property of the \emph{layer} (determined by $d$), not of the model as a whole. K2-65B ($d = 8192$) achieves SR/$d = 0.036$, but this reflects training insufficiency ($D/N = 21$) rather than the converged value for that dimension, a diagnostic use case we discuss in Section~\ref{sec:audit}.
 
-\paragraph{Universal entropy reduction.} Converting to information-theoretic units (Figure~\ref{fig:compression}): the Universal Compression Ratio $\mathrm{UCR} = \mathrm{SR}_{\mathrm{final}} / \mathrm{SR}_{\mathrm{init}} \approx 0.13$ corresponds to $\Delta H_2 = \log(\mathrm{UCR}) \approx -2.04 \pm 0.17$ nats of R\'{e}nyi-2 entropy removed per layer. This is remarkably constant across 930$\times$ variation in model size, suggesting a deep thermodynamic constraint on what it means for a transformer layer to ``learn.''
-
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=0.75\columnwidth]{figures_v2/fig10_compression.pdf}
-    \caption{Universal spectral compression: every sufficiently-trained model removes $\Delta H_2 \approx -2$ nats of R\'{e}nyi-2 entropy per layer, regardless of scale (70M--6.9B). The dashed line shows the mean ($-2.04 \pm 0.17$ nats).}
-    \label{fig:compression}
-\end{figure}
+\paragraph{Universal entropy reduction.} Converting to information-theoretic units (Figure~\ref{fig:compression} in Appendix): the Universal Compression Ratio $\mathrm{UCR} = \mathrm{SR}_{\mathrm{final}} / \mathrm{SR}_{\mathrm{init}} \approx 0.13$ corresponds to $\Delta H_2 = \log(\mathrm{UCR}) \approx -2.04 \pm 0.17$ nats of R\'{e}nyi-2 entropy removed per layer. This is remarkably constant across 930$\times$ variation in model size, suggesting a deep thermodynamic constraint on what it means for a transformer layer to ``learn.''
 
 %-----------------------------------------------------------------------------
 \subsection{P2: SR/$d$ as Universal Performance Predictor}
