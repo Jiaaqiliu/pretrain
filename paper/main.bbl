@@ -1,4 +1,4 @@
-\begin{thebibliography}{21}
+\begin{thebibliography}{26}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -59,6 +59,12 @@ J.~Hoffmann, S.~Borgeaud, A.~Mensch, E.~Buchatskaya, T.~Cai, E.~Rutherford,
 \newblock Training compute-optimal large language models.
 \newblock \emph{arXiv preprint arXiv:2203.15556}, 2022.
 
+\bibitem[Li et~al.(2026)Li, Wang, Chen, Zhao, Zheng, and Wu]{li_schedules2026}
+B.~Li, Z.~Wang, F.~Chen, S.~Zhao, R.~Zheng, and L.~Wu.
+\newblock Optimal learning-rate schedules under functional scaling laws: Power
+  decay and warmup-stable-decay.
+\newblock \emph{arXiv preprint arXiv:2602.06797}, 2026.
+
 \bibitem[Liu et~al.(2025{\natexlab{a}})Liu, Liu, Gore, and
   Tegmark]{liu_tegmark2025}
 Z.~Liu, Y.~Liu, J.~Gore, and M.~Tegmark.
@@ -109,6 +115,12 @@ J.~Pennington and P.~Worah.
 \newblock In \emph{Advances in Neural Information Processing Systems
   (NeurIPS)}, 2017.
 
+\bibitem[Qiu et~al.(2025)Qiu, Wu, Tan, Wang, and Yao]{spectral_alignment2025}
+H.~Qiu, Y.~Wu, Y.~Tan, Y.~Wang, and Q.~Yao.
+\newblock Spectral alignment as predictor of loss explosion in neural network
+  training.
+\newblock \emph{arXiv preprint arXiv:2510.04202}, 2025.
+
 \bibitem[Sadrtdinov et~al.(2025{\natexlab{a}})Sadrtdinov, Klimov, Lobacheva,
   and Vetrov]{sadrtdinov2025}
 I.~Sadrtdinov, I.~Klimov, E.~Lobacheva, and D.~Vetrov.
@@ -137,6 +149,24 @@ J.~M. Springer, S.~Goyal, K.~Wen, T.~Kumar, X.~Yue, S.~Malladi, G.~Neubig, and
   A.~Raghunathan.
 \newblock Overtrained language models are harder to fine-tune.
 \newblock \emph{arXiv preprint arXiv:2503.19206}, 2025.
+
+\bibitem[Wen et~al.(2025)Wen, Li, Wang, Hall, Liang, and Ma]{wsd_schedule}
+K.~Wen, Z.~Li, J.~Wang, D.~Hall, P.~Liang, and T.~Ma.
+\newblock Understanding warmup-stable-decay learning rates: A river valley loss
+  landscape perspective.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+
+\bibitem[Wilson(2025)]{wilson_compression_icml2025}
+A.~G. Wilson.
+\newblock Deep learning is not so mysterious or different.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock Position Paper.
+
+\bibitem[Yang et~al.(2025)Yang, Zhang, Shang, and Zhang]{high_entropy_npj2026}
+E.~Yang, X.~Zhang, Y.~Shang, and G.~Zhang.
+\newblock High-entropy advantage in neural networks' generalizability.
+\newblock \emph{arXiv preprint arXiv:2503.13145}, 2025.
 
 \bibitem[Yu et~al.(2025)]{k2_report}
 H.~Yu et~al.
