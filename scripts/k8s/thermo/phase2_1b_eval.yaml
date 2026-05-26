@@ -1,0 +1,97 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luhanqin-p2-1b-eval
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 172800
+  template:
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: trainer5
+      restartPolicy: Never
+      containers:
+      - name: eval
+        image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uxo pipefail
+          cd /fsx/dev/jiaqi/A-EVOLVE-V2
+          git fetch origin Pretraining-Thermodynamics-olmo-core || true
+          git checkout Pretraining-Thermodynamics-olmo-core || true
+          git reset --hard origin/Pretraining-Thermodynamics-olmo-core || true
+          pip install lm-eval==0.4.10 transformers accelerate > /dev/null 2>&1 || true
+          set -e
+
+          OUTDIR=/fsx/dev/jiaqi/thermo_results/eval_1b
+          mkdir -p $OUTDIR
+
+          TOKENIZER="EleutherAI/pythia-1b-deduped"
+          TASKS="lambada_openai,piqa,winogrande,arc_easy,hellaswag"
+
+          echo "=== Evaluating 1B Cosine ==="
+          python -m lm_eval --model hf \
+            --model_args pretrained=/fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/final,tokenizer=$TOKENIZER \
+            --tasks $TASKS --batch_size 32 --num_fewshot 0 \
+            --output_path $OUTDIR/cosine_s42_results.json
+
+          echo "=== Evaluating 1B WSD ==="
+          python -m lm_eval --model hf \
+            --model_args pretrained=/fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/wsd_s42/final,tokenizer=$TOKENIZER \
+            --tasks $TASKS --batch_size 32 --num_fewshot 0 \
+            --output_path $OUTDIR/wsd_s42_results.json
+
+          echo "=== Evaluating 1B α-Guided ==="
+          python -m lm_eval --model hf \
+            --model_args pretrained=/fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/alpha_s42/final,tokenizer=$TOKENIZER \
+            --tasks $TASKS --batch_size 32 --num_fewshot 0 \
+            --output_path $OUTDIR/alpha_s42_results.json
+
+          echo "=== ALL 1B EVAL COMPLETE ==="
+
+          # Print summary
+          python3 -c "
+          import json, os
+          outdir = '$OUTDIR'
+          results = {}
+          for name in ['cosine_s42', 'wsd_s42', 'alpha_s42']:
+              path = os.path.join(outdir, f'{name}_results.json')
+              if os.path.exists(path):
+                  with open(path) as f:
+                      data = json.load(f)
+                  r = data.get('results', {})
+                  scores = {k: v.get('acc,none', v.get('acc_norm,none', 0)) for k, v in r.items()}
+                  avg = sum(scores.values()) / len(scores) if scores else 0
+                  results[name] = {'scores': scores, 'avg': avg}
+                  print(f'{name}: avg={avg:.4f} | {scores}')
+          # Save summary
+          with open(os.path.join(outdir, 'summary.json'), 'w') as f:
+              json.dump(results, f, indent=2)
+          print('Summary saved to', os.path.join(outdir, 'summary.json'))
+          "
+        env:
+        - name: HF_HOME
+          value: "/fsx/dev/jiaqi/.cache/huggingface"
+        - name: CUDA_HOME
+          value: "/opt/cuda-toolkit"
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            cpu: "16"
+            memory: "64Gi"
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - mountPath: /fsx
+          name: fsx
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: fsx
+        persistentVolumeClaim:
+          claimName: fsx
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "64Gi"

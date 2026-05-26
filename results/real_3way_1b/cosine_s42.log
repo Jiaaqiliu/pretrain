@@ -1,0 +1,224 @@
+Config: 9500 steps, batch=4x8x16
+Model: EleutherAI/pythia-1b-deduped step0 (1011.8M params)
+Tokens per step: 1,048,576 (1.05M)
+  step 50/9500: loss=8.6904, lr=2.45e-05, 0.18 steps/s, ETA=872min
+  step 100/9500: loss=6.9868, lr=4.95e-05, 0.18 steps/s, ETA=861min
+  step 150/9500: loss=6.3373, lr=7.45e-05, 0.18 steps/s, ETA=854min
+  step 200/9500: loss=6.0189, lr=9.95e-05, 0.18 steps/s, ETA=849min
+  step 250/9500: loss=5.7529, lr=1.24e-04, 0.18 steps/s, ETA=844min
+  step 300/9500: loss=5.5120, lr=1.50e-04, 0.18 steps/s, ETA=839min
+  step 350/9500: loss=5.2807, lr=1.75e-04, 0.18 steps/s, ETA=834min
+  step 400/9500: loss=5.0683, lr=1.99e-04, 0.18 steps/s, ETA=829min
+  step 450/9500: loss=4.8827, lr=2.25e-04, 0.18 steps/s, ETA=825min
+  step 500/9500: loss=4.7246, lr=2.49e-04, 0.18 steps/s, ETA=820min
+  [SPECTRAL] step 500: α=9.044, SR/d=0.0917
+  step 550/9500: loss=4.5534, lr=2.50e-04, 0.18 steps/s, ETA=815min
+  step 600/9500: loss=4.3993, lr=2.50e-04, 0.18 steps/s, ETA=811min
+  step 650/9500: loss=4.2145, lr=2.50e-04, 0.18 steps/s, ETA=806min
+  step 700/9500: loss=4.0969, lr=2.50e-04, 0.18 steps/s, ETA=801min
+  step 750/9500: loss=4.0082, lr=2.50e-04, 0.18 steps/s, ETA=797min
+  step 800/9500: loss=3.9020, lr=2.49e-04, 0.18 steps/s, ETA=792min
+  step 850/9500: loss=3.8455, lr=2.49e-04, 0.18 steps/s, ETA=787min
+  step 900/9500: loss=3.7770, lr=2.49e-04, 0.18 steps/s, ETA=783min
+  step 950/9500: loss=3.7109, lr=2.49e-04, 0.18 steps/s, ETA=778min
+  step 1000/9500: loss=3.6748, lr=2.48e-04, 0.18 steps/s, ETA=774min
+  [SPECTRAL] step 1000: α=6.013, SR/d=0.0490
+  step 1050/9500: loss=3.6172, lr=2.48e-04, 0.18 steps/s, ETA=769min
+  step 1100/9500: loss=3.5866, lr=2.48e-04, 0.18 steps/s, ETA=764min
+  step 1150/9500: loss=3.5434, lr=2.47e-04, 0.18 steps/s, ETA=760min
+  step 1200/9500: loss=3.5156, lr=2.47e-04, 0.18 steps/s, ETA=755min
+  step 1250/9500: loss=3.4812, lr=2.46e-04, 0.18 steps/s, ETA=751min
+  step 1300/9500: loss=3.4575, lr=2.46e-04, 0.18 steps/s, ETA=746min
+  step 1350/9500: loss=3.4356, lr=2.45e-04, 0.18 steps/s, ETA=742min
+  step 1400/9500: loss=3.3967, lr=2.45e-04, 0.18 steps/s, ETA=737min
+  step 1450/9500: loss=3.3831, lr=2.44e-04, 0.18 steps/s, ETA=733min
+  step 1500/9500: loss=3.3641, lr=2.43e-04, 0.18 steps/s, ETA=728min
+  [SPECTRAL] step 1500: α=4.985, SR/d=0.0477
+  step 1550/9500: loss=3.3406, lr=2.43e-04, 0.18 steps/s, ETA=723min
+  step 1600/9500: loss=3.3331, lr=2.42e-04, 0.18 steps/s, ETA=719min
+  step 1650/9500: loss=3.3095, lr=2.41e-04, 0.18 steps/s, ETA=714min
+  step 1700/9500: loss=3.2943, lr=2.40e-04, 0.18 steps/s, ETA=710min
+  step 1750/9500: loss=3.2829, lr=2.39e-04, 0.18 steps/s, ETA=705min
+  step 1800/9500: loss=3.2646, lr=2.39e-04, 0.18 steps/s, ETA=701min
+  step 1850/9500: loss=3.2502, lr=2.38e-04, 0.18 steps/s, ETA=696min
+  step 1900/9500: loss=3.2287, lr=2.37e-04, 0.18 steps/s, ETA=692min
+  step 1950/9500: loss=3.2286, lr=2.36e-04, 0.18 steps/s, ETA=687min
+  step 2000/9500: loss=3.1971, lr=2.35e-04, 0.18 steps/s, ETA=683min
+  [SPECTRAL] step 2000: α=4.563, SR/d=0.0497
+  [SAVE] /fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/step_2000
+  step 2050/9500: loss=3.2041, lr=2.34e-04, 0.18 steps/s, ETA=678min
+  step 2100/9500: loss=3.2010, lr=2.33e-04, 0.18 steps/s, ETA=674min
+  step 2150/9500: loss=3.1891, lr=2.32e-04, 0.18 steps/s, ETA=669min
+  step 2200/9500: loss=3.1739, lr=2.31e-04, 0.18 steps/s, ETA=665min
+  step 2250/9500: loss=3.1624, lr=2.30e-04, 0.18 steps/s, ETA=660min
+  step 2300/9500: loss=3.1400, lr=2.29e-04, 0.18 steps/s, ETA=656min
+  step 2350/9500: loss=3.1508, lr=2.27e-04, 0.18 steps/s, ETA=651min
+  step 2400/9500: loss=3.1323, lr=2.26e-04, 0.18 steps/s, ETA=646min
+  step 2450/9500: loss=3.1327, lr=2.25e-04, 0.18 steps/s, ETA=642min
+  step 2500/9500: loss=3.1046, lr=2.24e-04, 0.18 steps/s, ETA=637min
+  [SPECTRAL] step 2500: α=4.323, SR/d=0.0517
+  step 2550/9500: loss=3.1017, lr=2.22e-04, 0.18 steps/s, ETA=633min
+  step 2600/9500: loss=3.1011, lr=2.21e-04, 0.18 steps/s, ETA=628min
+  step 2650/9500: loss=3.0884, lr=2.20e-04, 0.18 steps/s, ETA=624min
+  step 2700/9500: loss=3.0969, lr=2.18e-04, 0.18 steps/s, ETA=619min
+  step 2750/9500: loss=3.0703, lr=2.17e-04, 0.18 steps/s, ETA=614min
+  step 2800/9500: loss=3.0805, lr=2.16e-04, 0.18 steps/s, ETA=610min
+  step 2850/9500: loss=3.0730, lr=2.14e-04, 0.18 steps/s, ETA=605min
+  step 2900/9500: loss=3.0632, lr=2.13e-04, 0.18 steps/s, ETA=601min
+  step 2950/9500: loss=3.0685, lr=2.11e-04, 0.18 steps/s, ETA=596min
+  step 3000/9500: loss=3.0535, lr=2.10e-04, 0.18 steps/s, ETA=592min
+  [SPECTRAL] step 3000: α=4.190, SR/d=0.0525
+  step 3050/9500: loss=3.0306, lr=2.08e-04, 0.18 steps/s, ETA=587min
+  step 3100/9500: loss=3.0327, lr=2.07e-04, 0.18 steps/s, ETA=583min
+  step 3150/9500: loss=3.0364, lr=2.05e-04, 0.18 steps/s, ETA=578min
+  step 3200/9500: loss=3.0322, lr=2.04e-04, 0.18 steps/s, ETA=573min
+  step 3250/9500: loss=3.0125, lr=2.02e-04, 0.18 steps/s, ETA=569min
+  step 3300/9500: loss=3.0141, lr=2.00e-04, 0.18 steps/s, ETA=564min
+  step 3350/9500: loss=3.0151, lr=1.99e-04, 0.18 steps/s, ETA=560min
+  step 3400/9500: loss=3.0135, lr=1.97e-04, 0.18 steps/s, ETA=555min
+  step 3450/9500: loss=3.0076, lr=1.95e-04, 0.18 steps/s, ETA=551min
+  step 3500/9500: loss=3.0044, lr=1.94e-04, 0.18 steps/s, ETA=546min
+  [SPECTRAL] step 3500: α=4.103, SR/d=0.0533
+  step 3550/9500: loss=3.0030, lr=1.92e-04, 0.18 steps/s, ETA=542min
+  step 3600/9500: loss=2.9937, lr=1.90e-04, 0.18 steps/s, ETA=537min
+  step 3650/9500: loss=2.9807, lr=1.89e-04, 0.18 steps/s, ETA=532min
+  step 3700/9500: loss=2.9834, lr=1.87e-04, 0.18 steps/s, ETA=528min
+  step 3750/9500: loss=2.9705, lr=1.85e-04, 0.18 steps/s, ETA=523min
+  step 3800/9500: loss=2.9791, lr=1.83e-04, 0.18 steps/s, ETA=519min
+  step 3850/9500: loss=2.9665, lr=1.81e-04, 0.18 steps/s, ETA=514min
+  step 3900/9500: loss=2.9679, lr=1.80e-04, 0.18 steps/s, ETA=510min
+  step 3950/9500: loss=2.9693, lr=1.78e-04, 0.18 steps/s, ETA=505min
+  step 4000/9500: loss=2.9612, lr=1.76e-04, 0.18 steps/s, ETA=501min
+  [SPECTRAL] step 4000: α=4.061, SR/d=0.0537
+  [SAVE] /fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/step_4000
+  step 4050/9500: loss=2.9539, lr=1.74e-04, 0.18 steps/s, ETA=496min
+  step 4100/9500: loss=2.9463, lr=1.72e-04, 0.18 steps/s, ETA=492min
+  step 4150/9500: loss=2.9424, lr=1.70e-04, 0.18 steps/s, ETA=487min
+  step 4200/9500: loss=2.9439, lr=1.69e-04, 0.18 steps/s, ETA=482min
+  step 4250/9500: loss=2.9267, lr=1.67e-04, 0.18 steps/s, ETA=478min
+  step 4300/9500: loss=2.9445, lr=1.65e-04, 0.18 steps/s, ETA=473min
+  step 4350/9500: loss=2.9317, lr=1.63e-04, 0.18 steps/s, ETA=469min
+  step 4400/9500: loss=2.9331, lr=1.61e-04, 0.18 steps/s, ETA=464min
+  step 4450/9500: loss=2.9285, lr=1.59e-04, 0.18 steps/s, ETA=460min
+  step 4500/9500: loss=2.9166, lr=1.57e-04, 0.18 steps/s, ETA=455min
+  [SPECTRAL] step 4500: α=4.024, SR/d=0.0541
+  step 4550/9500: loss=2.9239, lr=1.55e-04, 0.18 steps/s, ETA=451min
+  step 4600/9500: loss=2.9027, lr=1.53e-04, 0.18 steps/s, ETA=446min
+  step 4650/9500: loss=2.9105, lr=1.51e-04, 0.18 steps/s, ETA=442min
+  step 4700/9500: loss=2.9120, lr=1.49e-04, 0.18 steps/s, ETA=437min
+  step 4750/9500: loss=2.9030, lr=1.47e-04, 0.18 steps/s, ETA=432min
+  step 4800/9500: loss=2.8971, lr=1.45e-04, 0.18 steps/s, ETA=428min
+  step 4850/9500: loss=2.9011, lr=1.43e-04, 0.18 steps/s, ETA=423min
+  step 4900/9500: loss=2.8975, lr=1.41e-04, 0.18 steps/s, ETA=419min
+  step 4950/9500: loss=2.8909, lr=1.40e-04, 0.18 steps/s, ETA=414min
+  step 5000/9500: loss=2.8991, lr=1.38e-04, 0.18 steps/s, ETA=410min
+  [SPECTRAL] step 5000: α=4.019, SR/d=0.0544
+  step 5050/9500: loss=2.8930, lr=1.36e-04, 0.18 steps/s, ETA=405min
+  step 5100/9500: loss=2.8938, lr=1.34e-04, 0.18 steps/s, ETA=401min
+  step 5150/9500: loss=2.8910, lr=1.32e-04, 0.18 steps/s, ETA=396min
+  step 5200/9500: loss=2.8756, lr=1.30e-04, 0.18 steps/s, ETA=391min
+  step 5250/9500: loss=2.8796, lr=1.28e-04, 0.18 steps/s, ETA=387min
+  step 5300/9500: loss=2.8843, lr=1.26e-04, 0.18 steps/s, ETA=382min
+  step 5350/9500: loss=2.8754, lr=1.24e-04, 0.18 steps/s, ETA=378min
+  step 5400/9500: loss=2.8644, lr=1.22e-04, 0.18 steps/s, ETA=373min
+  step 5450/9500: loss=2.8655, lr=1.20e-04, 0.18 steps/s, ETA=369min
+  step 5500/9500: loss=2.8629, lr=1.18e-04, 0.18 steps/s, ETA=364min
+  [SPECTRAL] step 5500: α=4.009, SR/d=0.0549
+  step 5550/9500: loss=2.8704, lr=1.16e-04, 0.18 steps/s, ETA=360min
+  step 5600/9500: loss=2.8623, lr=1.14e-04, 0.18 steps/s, ETA=355min
+  step 5650/9500: loss=2.8621, lr=1.12e-04, 0.18 steps/s, ETA=350min
+  step 5700/9500: loss=2.8554, lr=1.10e-04, 0.18 steps/s, ETA=346min
+  step 5750/9500: loss=2.8484, lr=1.08e-04, 0.18 steps/s, ETA=341min
+  step 5800/9500: loss=2.8604, lr=1.07e-04, 0.18 steps/s, ETA=337min
+  step 5850/9500: loss=2.8512, lr=1.05e-04, 0.18 steps/s, ETA=332min
+  step 5900/9500: loss=2.8537, lr=1.03e-04, 0.18 steps/s, ETA=328min
+  step 5950/9500: loss=2.8394, lr=1.01e-04, 0.18 steps/s, ETA=323min
+  step 6000/9500: loss=2.8338, lr=9.91e-05, 0.18 steps/s, ETA=319min
+  [SPECTRAL] step 6000: α=4.014, SR/d=0.0559
+  [SAVE] /fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/step_6000
+  step 6050/9500: loss=2.8371, lr=9.72e-05, 0.18 steps/s, ETA=314min
+  step 6100/9500: loss=2.8410, lr=9.54e-05, 0.18 steps/s, ETA=310min
+  step 6150/9500: loss=2.8427, lr=9.36e-05, 0.18 steps/s, ETA=305min
+  step 6200/9500: loss=2.8342, lr=9.18e-05, 0.18 steps/s, ETA=300min
+  step 6250/9500: loss=2.8301, lr=9.00e-05, 0.18 steps/s, ETA=296min
+  step 6300/9500: loss=2.8339, lr=8.82e-05, 0.18 steps/s, ETA=291min
+  step 6350/9500: loss=2.8223, lr=8.65e-05, 0.18 steps/s, ETA=287min
+  step 6400/9500: loss=2.8184, lr=8.47e-05, 0.18 steps/s, ETA=282min
+  step 6450/9500: loss=2.8232, lr=8.30e-05, 0.18 steps/s, ETA=278min
+  step 6500/9500: loss=2.8218, lr=8.13e-05, 0.18 steps/s, ETA=273min
+  [SPECTRAL] step 6500: α=4.016, SR/d=0.0549
+  step 6550/9500: loss=2.8209, lr=7.96e-05, 0.18 steps/s, ETA=269min
+  step 6600/9500: loss=2.8192, lr=7.79e-05, 0.18 steps/s, ETA=264min
+  step 6650/9500: loss=2.8145, lr=7.63e-05, 0.18 steps/s, ETA=259min
+  step 6700/9500: loss=2.8068, lr=7.46e-05, 0.18 steps/s, ETA=255min
+  step 6750/9500: loss=2.8077, lr=7.30e-05, 0.18 steps/s, ETA=250min
+  step 6800/9500: loss=2.8118, lr=7.14e-05, 0.18 steps/s, ETA=246min
+  step 6850/9500: loss=2.8018, lr=6.98e-05, 0.18 steps/s, ETA=241min
+  step 6900/9500: loss=2.8025, lr=6.83e-05, 0.18 steps/s, ETA=237min
+  step 6950/9500: loss=2.8120, lr=6.67e-05, 0.18 steps/s, ETA=232min
+  step 7000/9500: loss=2.8027, lr=6.52e-05, 0.18 steps/s, ETA=228min
+  [SPECTRAL] step 7000: α=4.018, SR/d=0.0555
+  step 7050/9500: loss=2.8082, lr=6.37e-05, 0.18 steps/s, ETA=223min
+  step 7100/9500: loss=2.7963, lr=6.23e-05, 0.18 steps/s, ETA=218min
+  step 7150/9500: loss=2.7950, lr=6.08e-05, 0.18 steps/s, ETA=214min
+  step 7200/9500: loss=2.7920, lr=5.94e-05, 0.18 steps/s, ETA=209min
+  step 7250/9500: loss=2.8024, lr=5.80e-05, 0.18 steps/s, ETA=205min
+  step 7300/9500: loss=2.7790, lr=5.66e-05, 0.18 steps/s, ETA=200min
+  step 7350/9500: loss=2.7874, lr=5.52e-05, 0.18 steps/s, ETA=196min
+  step 7400/9500: loss=2.7904, lr=5.39e-05, 0.18 steps/s, ETA=191min
+  step 7450/9500: loss=2.7816, lr=5.26e-05, 0.18 steps/s, ETA=187min
+  step 7500/9500: loss=2.7921, lr=5.13e-05, 0.18 steps/s, ETA=182min
+  [SPECTRAL] step 7500: α=4.025, SR/d=0.0553
+  step 7550/9500: loss=2.7920, lr=5.01e-05, 0.18 steps/s, ETA=177min
+  step 7600/9500: loss=2.7787, lr=4.89e-05, 0.18 steps/s, ETA=173min
+  step 7650/9500: loss=2.7825, lr=4.77e-05, 0.18 steps/s, ETA=168min
+  step 7700/9500: loss=2.7865, lr=4.65e-05, 0.18 steps/s, ETA=164min
+  step 7750/9500: loss=2.7928, lr=4.54e-05, 0.18 steps/s, ETA=159min
+  step 7800/9500: loss=2.7745, lr=4.43e-05, 0.18 steps/s, ETA=155min
+  step 7850/9500: loss=2.7825, lr=4.32e-05, 0.18 steps/s, ETA=150min
+  step 7900/9500: loss=2.7826, lr=4.21e-05, 0.18 steps/s, ETA=146min
+  step 7950/9500: loss=2.7788, lr=4.11e-05, 0.18 steps/s, ETA=141min
+  step 8000/9500: loss=2.7844, lr=4.01e-05, 0.18 steps/s, ETA=137min
+  [SPECTRAL] step 8000: α=4.034, SR/d=0.0559
+  [SAVE] /fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/step_8000
+  step 8050/9500: loss=2.7684, lr=3.91e-05, 0.18 steps/s, ETA=132min
+  step 8100/9500: loss=2.7844, lr=3.82e-05, 0.18 steps/s, ETA=127min
+  step 8150/9500: loss=2.7642, lr=3.73e-05, 0.18 steps/s, ETA=123min
+  step 8200/9500: loss=2.7728, lr=3.64e-05, 0.18 steps/s, ETA=118min
+  step 8250/9500: loss=2.7756, lr=3.56e-05, 0.18 steps/s, ETA=114min
+  step 8300/9500: loss=2.7575, lr=3.47e-05, 0.18 steps/s, ETA=109min
+  step 8350/9500: loss=2.7671, lr=3.40e-05, 0.18 steps/s, ETA=105min
+  step 8400/9500: loss=2.7663, lr=3.32e-05, 0.18 steps/s, ETA=100min
+  step 8450/9500: loss=2.7720, lr=3.25e-05, 0.18 steps/s, ETA=96min
+  step 8500/9500: loss=2.7719, lr=3.18e-05, 0.18 steps/s, ETA=91min
+  [SPECTRAL] step 8500: α=4.038, SR/d=0.0555
+  step 8550/9500: loss=2.7666, lr=3.11e-05, 0.18 steps/s, ETA=86min
+  step 8600/9500: loss=2.7695, lr=3.05e-05, 0.18 steps/s, ETA=82min
+  step 8650/9500: loss=2.7617, lr=2.99e-05, 0.18 steps/s, ETA=77min
+  step 8700/9500: loss=2.7631, lr=2.94e-05, 0.18 steps/s, ETA=73min
+  step 8750/9500: loss=2.7550, lr=2.88e-05, 0.18 steps/s, ETA=68min
+  step 8800/9500: loss=2.7547, lr=2.84e-05, 0.18 steps/s, ETA=64min
+  step 8850/9500: loss=2.7670, lr=2.79e-05, 0.18 steps/s, ETA=59min
+  step 8900/9500: loss=2.7700, lr=2.75e-05, 0.18 steps/s, ETA=55min
+  step 8950/9500: loss=2.7618, lr=2.71e-05, 0.18 steps/s, ETA=50min
+  step 9000/9500: loss=2.7484, lr=2.67e-05, 0.18 steps/s, ETA=46min
+  [SPECTRAL] step 9000: α=4.053, SR/d=0.0557
+  step 9050/9500: loss=2.7454, lr=2.64e-05, 0.18 steps/s, ETA=41min
+  step 9100/9500: loss=2.7653, lr=2.61e-05, 0.18 steps/s, ETA=36min
+  step 9150/9500: loss=2.7464, lr=2.58e-05, 0.18 steps/s, ETA=32min
+  step 9200/9500: loss=2.7561, lr=2.56e-05, 0.18 steps/s, ETA=27min
+  step 9250/9500: loss=2.7636, lr=2.54e-05, 0.18 steps/s, ETA=23min
+  step 9300/9500: loss=2.7531, lr=2.53e-05, 0.18 steps/s, ETA=18min
+  step 9350/9500: loss=2.7426, lr=2.52e-05, 0.18 steps/s, ETA=14min
+  step 9400/9500: loss=2.7598, lr=2.51e-05, 0.18 steps/s, ETA=9min
+  step 9450/9500: loss=2.7590, lr=2.50e-05, 0.18 steps/s, ETA=5min
+  step 9500/9500: loss=2.7354, lr=2.50e-05, 0.18 steps/s, ETA=0min
+  [SPECTRAL] step 9500: α=4.032, SR/d=0.0558
+=== TRAINING COMPLETE ===
+Final loss: 2.7387
+Final alpha: 4.046
+Final SR/d: 0.0558
+Decay started at: step None
+Final checkpoint: /fsx/dev/jiaqi/thermo_results/real_3way_1b/ckpts/cosine_s42/final
+=== COSINE 1B COMPLETE ===
++ echo '=== COSINE 1B COMPLETE ==='
