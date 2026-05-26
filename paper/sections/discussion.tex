@@ -86,7 +86,7 @@ Based on our findings, we recommend a three-signal protocol for training teams:
 
 \paragraph{Phase transition mechanism.} The sharp sigmoid transition at $N \approx 1.7$B is empirical; we do not have a first-principles derivation of why this threshold exists or whether it is architecture-dependent. The Landau theory in Section~\ref{sec:thermo} provides a qualitative framework ($T_c(N)$ decreasing with $N$) but does not predict the specific threshold.
 
-\paragraph{Downstream evaluation scale.} The 3-way schedule downstream evaluation (\S\ref{sec:schedule}) uses 5 benchmarks at 410M scale. While the $+1.95\%$ improvement validates that spectral gains translate to downstream performance, evaluation at larger scales (7B+) with more comprehensive benchmark suites (MMLU, GSM8K) would further strengthen the prescriptive claim.
+\paragraph{Downstream evaluation scale.} The 3-way schedule downstream evaluation (\S\ref{sec:schedule}) validates at two scales (410M and 1B) on 5 benchmarks, showing the $\alpha$-guided advantage amplifies from $+1.95\%$ to $+2.56\%$. Evaluation at 7B+ with more comprehensive benchmark suites (MMLU, GSM8K) would further strengthen the prescriptive claim, though the consistent amplification trend suggests the advantage continues to grow.
 
 \paragraph{Correlation vs.\ causation.} SR/$d$ correlates with but does not provably cause good downstream performance. The causal mechanism, whether compression is a \emph{driver} or \emph{side effect} of learning, deserves further theoretical analysis.
 

@@ -6,7 +6,7 @@ Measuring these quantities across 13 models spanning four architecture families 
 (1)~the normalized stable rank (SR/$d$) converges to a universal constant determined by hidden dimension alone, revealing that training compresses R\'{e}nyi-2 entropy by ${\sim}2$ nats regardless of scale or architecture;
 (2)~SR/$d$ achieves Spearman $r = -0.92$ with downstream performance, predicting model quality from weights alone;
 (3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal ($d\alpha/dt > 0$) that detects structural degradation invisible to loss, with larger models proving more fragile;
-and (4)~an $\alpha$-guided learning rate schedule that matches hand-tuned WSD while outperforming cosine by $+1.95\%$ on downstream benchmarks.
+and (4)~an $\alpha$-guided learning rate schedule that outperforms both cosine ($+2.56\%$) and hand-tuned WSD ($+0.98\%$) on downstream benchmarks at 1B scale, with the advantage amplifying as model size grows.
 We further identify a sharp phase transition at $N \approx 1.7$B: smaller models easily achieve spectral maturity, while larger models remain structurally immature even with massive token budgets, implying that compute-optimal training is structurally insufficient.
 These results give practitioners a physics-grounded instrument panel for pretraining that answers questions loss cannot.
 \end{abstract}

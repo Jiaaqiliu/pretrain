@@ -1,0 +1,13 @@
+{
+  "cosine_s42": {"arc_easy": 0.6023, "hellaswag": 0.3344, "lambada_openai": 0.3212, "piqa": 0.6594, "winogrande": 0.5122, "avg": 0.4859},
+  "wsd_s42": {"arc_easy": 0.5934, "hellaswag": 0.3405, "lambada_openai": 0.3355, "piqa": 0.6687, "winogrande": 0.5296, "avg": 0.4935},
+  "alpha_guided_s42": {"arc_easy": 0.5964, "hellaswag": 0.3366, "lambada_openai": 0.3540, "piqa": 0.6752, "winogrande": 0.5296, "avg": 0.4984},
+  "_summary": {
+    "cosine_avg": 0.4859,
+    "wsd_avg": 0.4935,
+    "alpha_guided_avg": 0.4984,
+    "wsd_vs_cosine": "+1.57%",
+    "alpha_vs_cosine": "+2.56%",
+    "alpha_vs_wsd": "+0.98%"
+  }
+}

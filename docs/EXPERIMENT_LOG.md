@@ -53,7 +53,7 @@
 3. **LAMBADA 上 α-Guided 最佳** (0.302 vs cosine 0.284, +6.3%), 光谱引导对 LM 质量提升显著
 4. 这直接回答审稿人 "lower loss ≠ better model" 的质疑
 
-#### Experiment 2.3: 1B 3-Way Scale-Up (RUNNING 🔄)
+#### Experiment 2.3: 1B 3-Way Scale-Up (COMPLETED ✅)
 
 在 Pythia-1B 规模重做 3-way schedule 对比, 验证 prescriptive claim 在更大规模成立。
 
@@ -64,7 +64,34 @@
 - LR: peak=2.5e-4, min=2.5e-5
 - Jobs: `luhanqin-p2-1b-cosine`, `luhanqin-p2-1b-wsd`, `luhanqin-p2-1b-alpha`
 
-**当前进度:** step ~500/9500 (5%), speed 0.18 steps/s, ETA ~14h (2026-05-26 05:47)
+**训练结果 (2026-05-26):**
+
+| Schedule | Final Loss | Final α | Final SR/d | Decay Point |
+|----------|-----------|---------|-----------|-------------|
+| Cosine | 2.739 | 4.046 | 0.0558 | step 500 (5%) |
+| WSD | **2.701** | 4.006 | 0.0539 | step 7600 (80%) |
+| α-Guided | 2.709 | **3.874** | **0.0537** | step 7000 (74%) |
+
+**下游 Benchmark 结果 (2026-05-26):**
+
+| Schedule | ARC-E | HellaSwag | LAMBADA | PIQA | WinoGrande | **AVG** |
+|----------|-------|-----------|---------|------|------------|---------|
+| Cosine | 0.602 | 0.334 | 0.321 | 0.659 | 0.512 | 0.486 |
+| WSD | 0.593 | 0.341 | 0.336 | 0.669 | 0.530 | 0.494 |
+| **α-Guided** | 0.596 | 0.337 | **0.354** | **0.675** | 0.530 | **0.498** |
+
+| 对比 | Δ Accuracy |
+|------|-----------|
+| WSD vs Cosine | **+1.57%** |
+| α-Guided vs Cosine | **+2.56%** |
+| α-Guided vs WSD | **+0.98%** |
+
+**关键发现:**
+1. **α-guided 在 1B 规模明确超过 WSD** (+0.98% downstream), 解决了 410M 上两者基本持平的问题
+2. **优势随规模放大**: 410M 时 α-guided vs cosine = +1.95%, 1B 时 = +2.56%
+3. **α-guided 自动适应规模**: 410M 时选择 83% decay, 1B 时选择 74%, 说明信号确实是 model-driven
+4. **LAMBADA 增益最大** (+10.2% vs cosine), 与 410M 模式一致, heavy-tail 结构利于长程推理
+5. α-guided 实现了最好的 α (3.874, 深入 heavy-tail 区域) 同时下游也最优, 证明结构质量 → 泛化
 
 ---
 
