@@ -3,20 +3,26 @@
 \label{sec:related}
 %=============================================================================
 
-\paragraph{Heavy-tail self-regularization.}
-Martin \& Mahoney~\citep{martin_mahoney_jmlr2021} discovered that well-trained neural network layers exhibit heavy-tailed eigenvalue spectra and that the power-law exponent $\alpha$ correlates with model quality. Their WeightWatcher tool~\citep{weightwatcher} demonstrated this across hundreds of pre-trained models. Our work extends their framework from \emph{static} analysis of final models to \emph{dynamic} monitoring during training, discovering the $\alpha$ reversal phenomenon, the three-phase dynamics, and the Structural Chinchilla scaling law. We also introduce SR/$d$ as a complementary metric with stronger cross-scale correlation ($r = -0.92$) than $\alpha$ alone.
+\paragraph{Spectral analysis and random matrix theory.}
+The connection between eigenvalue spectra and neural network quality originates with the Marchenko-Pastur law~\citep{marchenko_pastur1967}, which characterizes random matrices and provides a null model for untrained weights.
+Pennington \& Worah~\citep{pennington2017} extended free probability theory to nonlinear networks, showing that spectra deviate systematically from MP as learning progresses.
+Martin \& Mahoney~\citep{martin_mahoney_jmlr2021} made the decisive discovery that well-trained layers exhibit heavy-tailed eigenvalue distributions whose power-law exponent $\alpha$ correlates with model quality, codified in the WeightWatcher tool~\citep{weightwatcher}.
+Hodgkinson et al.~\citep{hodgkinson2025} recently provided theoretical underpinning by proposing random matrix ensembles that mechanistically explain why heavy tails emerge in weights, Jacobians, and Hessians of trained networks.
+Complementary spectral perspectives include stable rank as a regularizer~\citep{sanyal2019stable}, the spectral edge thesis as a phase-transition framework~\citep{spectral_edge_thesis}, high-entropy advantages for generalization~\citep{high_entropy_npj2026}, spin-glass models connecting spectral structure to hidden order~\citep{barney_spin_glass2024, winter_janssen2025}, and scaling collapse revealing universal spectral dynamics across scales~\citep{scaling_collapse_icml2025}.
+Our work extends all of these from \emph{static} post-hoc analysis to \emph{dynamic} real-time monitoring, introduces SR/$d$ as a complementary metric with stronger cross-scale correlation ($r = -0.92$) than $\alpha$ alone, and discovers the $\alpha$ reversal phenomenon and three-phase training dynamics.
 
-\paragraph{Stable rank in deep learning.}
-Sanyal et al.~\citep{sanyal2019stable} proposed Stable Rank Normalization as a regularizer. We use stable rank as a \emph{monitoring metric} rather than a regularizer, and establish its universal convergence (SR/$d \approx 0.040 + 0.61/\sqrt{d}$) across architectures, a finding not previously reported. We further show that this convergence corresponds to a universal R\'{e}nyi-2 entropy reduction of ${\sim}2$ nats.
+\paragraph{Thermodynamics and statistical physics of training.}
+A growing body of work frames neural network training through the lens of statistical physics.
+Sadrtdinov et al.~\citep{sadrtdinov2025} showed that SGD implicitly minimizes a free energy functional; Liu et al.~\citep{liu_tegmark2025} identified learning rate with effective temperature via fluctuation-dissipation relations and derived thermodynamic laws for LLM training; the same group verified the ideal-gas equation $PV\!=\!NkT$ for scale-invariant networks at small scale~\citep{pvnkt_ijcai2026}.
+Liu \& Chuang~\citep{liu_ziyin_neurips2025} developed a neural thermodynamics framework based on entropic forces, while Okanohara~\citep{okanohara2026} formalized irreversible learning as ensemble transport.
+Phase transitions have been identified in grokking~\citep{grokking_glass_neurips2025, grokking_pretraining2025}, continual learning~\citep{order_params_cl2024}, LLM scaling~\citep{phase_transitions_on_model}, and diffusion model training~\citep{biroli_mezard2025_diffusion}.
+Spring-block models connect layer-wise feature learning to mechanical relaxation~\citep{spring_block_prl2025}, and renormalization group methods reveal universal learning dynamics~\citep{rg_for_dnns2025}.
+Our contribution is not a new state equation, but the identification of \emph{spectral} thermodynamic quantities (SR as $\exp(H_2)$, $\alpha$ as order parameter) that provide robust real-time diagnostics where macroscopic state equations fail at scale.
 
-\paragraph{Thermodynamics of neural networks.}
-Several works establish thermodynamic frameworks for training: \citet{sadrtdinov2025} showed SGD minimizes free energy; \citet{liu_tegmark2025} identified learning rate with temperature via fluctuation-dissipation; \citet{pvnkt_ijcai2026} verified PV=NkT at small scale. Our contribution is not a new state equation (the PV/NT formulation does not converge at scale), but rather the identification of \emph{spectral} thermodynamic quantities, specifically SR as $\exp(H_2)$ and $\alpha$ as a measure of the ordered/disordered phase, that provide robust diagnostics where macroscopic state equations fail.
-
-\paragraph{Chinchilla scaling laws.}
-Hoffmann et al.~\citep{hoffmann2022} established compute-optimal data/parameter ratios ($D/N \approx 20$). Subsequent work showed that over-training beyond Chinchilla ratios produces better models~\citep{gadre2024, llama3}. Our Structural Chinchilla law provides a spectral explanation: structural maturity ($\alpha < 3$) requires $D/N > 500$, far exceeding compute-optimality. We show that the maturation timescale $\tau$ grows with model size, explaining why frontier models remain structurally immature despite massive absolute token counts.
-
-\paragraph{Training monitoring.}
-Current practice monitors loss, gradient norms, and occasionally loss spikes~\citep{deepseekv3}. Our SR/$d$ metric ($r = -0.92$) works for all dense transformers and requires only weight access, not routing statistics or evaluation data.
-
-\paragraph{Random Matrix Theory.}
-The Marchenko-Pastur distribution~\citep{marchenko_pastur1967} describes eigenvalue spectra of random matrices. Deviations from MP signal learned structure. Pennington \& Worah~\citep{pennington2017} analyzed spectra via free probability theory. Our work uses MP deviation (quantified by $\alpha$ and SR/$d$) as a real-time signal rather than a post-hoc analysis tool, and identifies the universal convergence point $\text{SR}/d \to 0.04$ as $d \to \infty$.
+\paragraph{Scaling laws, training practice, and adaptive schedules.}
+Kaplan et al.~\citep{kaplan2020} established power-law scaling of loss with model size and data, and Hoffmann et al.~\citep{hoffmann2022} refined this to compute-optimal ratios ($D/N \approx 20$).
+Subsequent work demonstrated that training well beyond Chinchilla ratios yields superior downstream performance~\citep{gadre2024, llama3, muennighoff2023}, though overtrained models can be harder to fine-tune~\citep{overtraining_fragile2025}.
+On the scheduling side, Wen et al.~\citep{wsd_schedule} analyzed Warmup-Stable-Decay through a river-valley loss landscape lens; theoretical foundations for optimal schedules have been developed under functional scaling laws~\citep{li_schedules2026, bordelon_schedules2026}; and annealing strategies have been studied for scaling and transferability~\citep{annealing_scaling_law2024, annealing_scaling_aaai2026}.
+Current training practice monitors loss, gradient norms, and loss-landscape curvature~\citep{deepseekv3, kalra_curvature2026}, occasionally complemented by hyperparameter transfer via $\mu$P~\citep{mup} or learning dynamics analysis during continual pretraining~\citep{cpt_dynamics2025}.
+Our Structural Chinchilla law provides a spectral explanation for why over-training works: structural maturity ($\alpha < 3$) requires $D/N > 500$, and the maturation timescale $\tau$ grows with model size.
+Unlike fixed or hand-tuned schedules, our $\alpha$-guided approach derives the decay point from the model's own spectral state.

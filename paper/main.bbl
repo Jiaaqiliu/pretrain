@@ -1,4 +1,4 @@
-\begin{thebibliography}{26}
+\begin{thebibliography}{47}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -11,6 +11,12 @@ V.~Aksenov, E.~Bodnia, M.~H. Freedman, and M.~Mulligan.
 \newblock Compression is all you need: Modeling mathematics.
 \newblock \emph{arXiv preprint arXiv:2603.20396}, 2026.
 
+\bibitem[Barney et~al.(2024)Barney, Winer, and Galitski]{barney_spin_glass2024}
+R.~Barney, M.~Winer, and V.~Galitski.
+\newblock Neural networks as spin models: From glass to hidden order through
+  training.
+\newblock \emph{arXiv preprint arXiv:2408.06421}, 2024.
+
 \bibitem[Biderman et~al.(2023)Biderman, Schoelkopf, Anthony, Bradley, O'Brien,
   Hallahan, Khan, Purohit, Prashanth, Raff, et~al.]{pythia}
 S.~Biderman, H.~Schoelkopf, Q.~Anthony, H.~Bradley, K.~O'Brien, E.~Hallahan,
@@ -18,6 +24,21 @@ S.~Biderman, H.~Schoelkopf, Q.~Anthony, H.~Bradley, K.~O'Brien, E.~Hallahan,
 \newblock Pythia: A suite for analyzing large language models across training
   and scaling.
 \newblock \emph{arXiv preprint arXiv:2304.01373}, 2023.
+
+\bibitem[Bonnaire et~al.(2025)Bonnaire, Urfin, Biroli, and
+  M{\'e}zard]{biroli_mezard2025_diffusion}
+T.~Bonnaire, R.~Urfin, G.~Biroli, and M.~M{\'e}zard.
+\newblock Why diffusion models don't memorize: The role of implicit dynamical
+  regularization in training.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2025.
+\newblock Best Paper.
+
+\bibitem[Bordelon and Mori(2026)]{bordelon_schedules2026}
+B.~Bordelon and F.~Mori.
+\newblock Theory of optimal learning rate schedules and scaling laws for a
+  random feature model.
+\newblock \emph{arXiv preprint arXiv:2602.04774}, 2026.
 
 \bibitem[{DeepSeek-AI}(2024)]{deepseekv3}
 {DeepSeek-AI}.
@@ -52,12 +73,31 @@ N.~Halko, P.-G. Martinsson, and J.~A. Tropp.
   constructing approximate matrix decompositions.
 \newblock \emph{SIAM Review}, 53\penalty0 (2):\penalty0 217--288, 2011.
 
+\bibitem[Hodgkinson et~al.(2025)Hodgkinson, Wang, and Mahoney]{hodgkinson2025}
+L.~Hodgkinson, Z.~Wang, and M.~W. Mahoney.
+\newblock Models of heavy-tailed mechanistic universality.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+
 \bibitem[Hoffmann et~al.(2022)Hoffmann, Borgeaud, Mensch, Buchatskaya, Cai,
   Rutherford, Casas, Hendricks, Welbl, Clark, et~al.]{hoffmann2022}
 J.~Hoffmann, S.~Borgeaud, A.~Mensch, E.~Buchatskaya, T.~Cai, E.~Rutherford,
   D.~d.~L. Casas, L.~A. Hendricks, J.~Welbl, A.~Clark, et~al.
 \newblock Training compute-optimal large language models.
 \newblock \emph{arXiv preprint arXiv:2203.15556}, 2022.
+
+\bibitem[Kalra et~al.(2026)Kalra, Gagnon-Audet, Gromov,
+  et~al.]{kalra_curvature2026}
+D.~S. Kalra, J.-C. Gagnon-Audet, A.~Gromov, et~al.
+\newblock A scalable measure of loss landscape curvature for analyzing the
+  training dynamics of {LLMs}.
+\newblock \emph{arXiv preprint arXiv:2601.16979}, 2026.
+
+\bibitem[Kaplan et~al.(2020)Kaplan, McCandlish, Henighan, Brown, Chess, Child,
+  Gray, Radford, Wu, and Amodei]{kaplan2020}
+J.~Kaplan, S.~McCandlish, T.~Henighan, T.~B. Brown, B.~Chess, R.~Child,
+  S.~Gray, A.~Radford, J.~Wu, and D.~Amodei.
+\newblock Scaling laws for neural language models.
+\newblock \emph{arXiv preprint arXiv:2001.08361}, 2020.
 
 \bibitem[Li et~al.(2026)Li, Wang, Chen, Zhao, Zheng, and Wu]{li_schedules2026}
 B.~Li, Z.~Wang, F.~Chen, S.~Zhao, R.~Zheng, and L.~Wu.
@@ -103,6 +143,21 @@ C.~H. Martin, T.~Peng, and M.~W. Mahoney.
 \newblock {Llama 4}: Maverick and scout.
 \newblock \emph{arXiv preprint}, 2025.
 
+\bibitem[Muennighoff et~al.(2023)Muennighoff, Rush, Barak, Le~Scao, Piktus,
+  Tazi, Pyysalo, Wolf, and Raffel]{muennighoff2023}
+N.~Muennighoff, A.~M. Rush, B.~Barak, T.~Le~Scao, A.~Piktus, N.~Tazi,
+  S.~Pyysalo, T.~Wolf, and C.~Raffel.
+\newblock Scaling data-constrained language models.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock Outstanding Paper Runner-up.
+
+\bibitem[Okanohara(2026)]{okanohara2026}
+D.~Okanohara.
+\newblock A thermodynamic theory of learning {I}: Irreversible ensemble
+  transport and epistemic costs.
+\newblock \emph{arXiv preprint arXiv:2601.17607}, 2026.
+
 \bibitem[{OLMo Team} et~al.(2025){OLMo Team}, Bhagia, Blunsom, Groeneveld,
   Hajishirzi, et~al.]{olmo2}
 {OLMo Team}, A.~Bhagia, P.~Blunsom, D.~Groeneveld, H.~Hajishirzi, et~al.
@@ -115,11 +170,41 @@ J.~Pennington and P.~Worah.
 \newblock In \emph{Advances in Neural Information Processing Systems
   (NeurIPS)}, 2017.
 
-\bibitem[Qiu et~al.(2025)Qiu, Wu, Tan, Wang, and Yao]{spectral_alignment2025}
+\bibitem[Peraza~Coppola et~al.(2025)Peraza~Coppola, Helias, and
+  Ringel]{rg_for_dnns2025}
+G.~Peraza~Coppola, M.~Helias, and Z.~Ringel.
+\newblock Renormalization group for deep neural networks: Universality of
+  learning and scaling laws.
+\newblock \emph{arXiv preprint arXiv:2510.25553}, 2025.
+
+\bibitem[Prieto et~al.(2025)Prieto, Barsbey, Mediano, and
+  Birdal]{grokking_pretraining2025}
+L.~Prieto, M.~Barsbey, P.~A.~M. Mediano, and T.~Birdal.
+\newblock Grokking at the edge of numerical stability.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+
+\bibitem[Qiu et~al.(2025{\natexlab{a}})Qiu, Wu, Tan, Wang, and
+  Yao]{spectral_alignment2025}
 H.~Qiu, Y.~Wu, Y.~Tan, Y.~Wang, and Q.~Yao.
 \newblock Spectral alignment as predictor of loss explosion in neural network
   training.
-\newblock \emph{arXiv preprint arXiv:2510.04202}, 2025.
+\newblock \emph{arXiv preprint arXiv:2510.04202}, 2025{\natexlab{a}}.
+
+\bibitem[Qiu et~al.(2025{\natexlab{b}})Qiu, Xiao, Wilson, Pennington, and
+  Agarwala]{scaling_collapse_icml2025}
+S.~Qiu, L.~Xiao, A.~G. Wilson, J.~Pennington, and A.~Agarwala.
+\newblock Scaling collapse reveals universal dynamics in compute-optimally
+  trained neural networks.
+\newblock In \emph{International Conference on Machine Learning (ICML)},
+  2025{\natexlab{b}}.
+\newblock Oral.
+
+\bibitem[Ren et~al.(2024)Ren, Bhatt, and Sompolinsky]{order_params_cl2024}
+H.~Ren, G.~Bhatt, and H.~Sompolinsky.
+\newblock Order parameters and phase transitions of continual learning in deep
+  neural networks.
+\newblock \emph{Proceedings of the National Academy of Sciences (PNAS)}, 2024.
 
 \bibitem[Sadrtdinov et~al.(2025{\natexlab{a}})Sadrtdinov, Klimov, Lobacheva,
   and Vetrov]{sadrtdinov2025}
@@ -143,12 +228,40 @@ A.~Sanyal, P.~H.~S. Torr, and P.~K. Dokania.
 \newblock In \emph{International Conference on Learning Representations
   (ICLR)}, 2020.
 
+\bibitem[Shi et~al.(2025)Shi, Pan, and Dokmanovi{\'c}]{spring_block_prl2025}
+C.~Shi, L.~Pan, and I.~Dokmanovi{\'c}.
+\newblock Spring-block theory of feature learning in deep neural networks.
+\newblock \emph{Physical Review Letters}, 134:\penalty0 257301, 2025.
+
 \bibitem[Springer et~al.(2025)Springer, Goyal, Wen, Kumar, Yue, Malladi,
   Neubig, and Raghunathan]{overtraining_fragile2025}
 J.~M. Springer, S.~Goyal, K.~Wen, T.~Kumar, X.~Yue, S.~Malladi, G.~Neubig, and
   A.~Raghunathan.
 \newblock Overtrained language models are harder to fine-tune.
 \newblock \emph{arXiv preprint arXiv:2503.19206}, 2025.
+
+\bibitem[Sun and Haghighat(2025)]{phase_transitions_on_model}
+Y.~Sun and B.~Haghighat.
+\newblock Phase transitions in large language models and the {O(N)} model.
+\newblock \emph{arXiv preprint arXiv:2501.16241}, 2025.
+
+\bibitem[Tissue et~al.(2024)Tissue, Wang, and Wang]{annealing_scaling_law2024}
+H.~Tissue, V.~Wang, and L.~Wang.
+\newblock Scaling law with learning rate annealing.
+\newblock \emph{arXiv preprint arXiv:2408.11029}, 2024.
+
+\bibitem[Wang et~al.(2026)]{annealing_scaling_aaai2026}
+S.~Wang et~al.
+\newblock Scaling and transferability of annealing strategies in large language
+  model training.
+\newblock In \emph{AAAI Conference on Artificial Intelligence}, 2026.
+
+\bibitem[Wang et~al.(2025)Wang, Tissue, Wang, Li, and Zeng]{cpt_dynamics2025}
+X.~Wang, H.~Tissue, L.~Wang, L.~Li, and D.~D. Zeng.
+\newblock Learning dynamics in continual pre-training for large language
+  models.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock Oral.
 
 \bibitem[Wen et~al.(2025)Wen, Li, Wang, Hall, Liang, and Ma]{wsd_schedule}
 K.~Wen, Z.~Li, J.~Wang, D.~Hall, P.~Liang, and T.~Ma.
@@ -163,14 +276,42 @@ A.~G. Wilson.
 \newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
 \newblock Position Paper.
 
+\bibitem[Winter and Janssen(2025)]{winter_janssen2025}
+M.~K. Winter and L.~M.~C. Janssen.
+\newblock Glassy dynamics in deep neural networks: A structural comparison.
+\newblock \emph{Physical Review Research}, 7:\penalty0 023010, 2025.
+
+\bibitem[Xu(2026)]{spectral_edge_thesis}
+Y.~Xu.
+\newblock The spectral edge thesis: A mathematical framework for intra-signal
+  phase transitions in neural network training.
+\newblock \emph{arXiv preprint arXiv:2603.28964}, 2026.
+
 \bibitem[Yang et~al.(2025)Yang, Zhang, Shang, and Zhang]{high_entropy_npj2026}
 E.~Yang, X.~Zhang, Y.~Shang, and G.~Zhang.
 \newblock High-entropy advantage in neural networks' generalizability.
 \newblock \emph{arXiv preprint arXiv:2503.13145}, 2025.
 
+\bibitem[Yang et~al.(2021)Yang, Hu, Babuschkin, Sidor, Liu, Farhi, Ryder,
+  Pachocki, Chen, and Gao]{mup}
+G.~Yang, E.~J. Hu, I.~Babuschkin, S.~Sidor, X.~Liu, D.~Farhi, N.~Ryder,
+  J.~Pachocki, W.~Chen, and J.~Gao.
+\newblock Tensor programs {V}: Tuning large neural networks via zero-shot
+  hyperparameter transfer.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2021.
+
 \bibitem[Yu et~al.(2025)]{k2_report}
 H.~Yu et~al.
 \newblock K2: A foundation language model with transparent data provenance.
 \newblock \emph{arXiv preprint arXiv:2501.07124}, 2025.
+
+\bibitem[Zhang et~al.(2025)Zhang, Shang, Yang, and
+  Zhang]{grokking_glass_neurips2025}
+X.~Zhang, Y.~Shang, E.~Yang, and G.~Zhang.
+\newblock Is grokking a computational glass relaxation?
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2025.
+\newblock Spotlight.
 
 \end{thebibliography}
