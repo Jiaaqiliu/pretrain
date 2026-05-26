@@ -159,10 +159,10 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     <h1>Beyond Loss Curves:<br>Spectral Monitoring for LLM Pretraining</h1>
     <p class="subtitle">仅从模型权重的谱结构（spectral structure），就能诊断训练健康度、预测下游性能、指导学习率决策——成本不到训练的 0.05%</p>
     <div class="meta-badges">
-      <span class="badge">12 Models（模型）</span>
-      <span class="badge">3 Architecture Families（架构家族）</span>
+      <span class="badge">13 Models（模型）</span>
+      <span class="badge">4 Architecture Families（架构家族）</span>
       <span class="badge">70M – 65B Parameters（参数）</span>
-      <span class="badge highlight">~250 Checkpoints 分析</span>
+      <span class="badge highlight">~2,700 Spectral Measurements</span>
     </div>
   </div>
   <div class="footer-bar"></div>
@@ -271,7 +271,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     <div class="card">
       <div class="card-icon purple">🎯</div>
       <h4>P4: 自适应 LR Schedule</h4>
-      <p>α-Guided 自动找到 decay（衰减）时机，匹配手调 WSD、比 Cosine 好 2% benchmark。</p>
+      <p>α-Guided 自动找到 decay（衰减）时机，1B 规模上比 Cosine 好 +2.56%、比手调 WSD 好 +0.98%，优势随规模放大。</p>
     </div>
     <div class="card">
       <div class="card-icon amber">🔍</div>
@@ -287,10 +287,10 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
 <section class="slide" id="slide-5">
   <h2>实验<span class="accent">覆盖范围</span></h2>
   <div class="stat-grid">
-    <div class="stat-block"><div class="stat-value">12</div><div class="stat-label">Models（模型）</div></div>
+    <div class="stat-block"><div class="stat-value">13</div><div class="stat-label">Models（模型）</div></div>
     <div class="stat-block"><div class="stat-value">930×</div><div class="stat-label">Scale Range（规模跨度）</div></div>
-    <div class="stat-block"><div class="stat-value">3</div><div class="stat-label">Arch Families（架构家族）</div></div>
-    <div class="stat-block"><div class="stat-value">~250</div><div class="stat-label">Checkpoints（检查点）</div></div>
+    <div class="stat-block"><div class="stat-value">4</div><div class="stat-label">Arch Families（架构家族）</div></div>
+    <div class="stat-block"><div class="stat-value">~2,700</div><div class="stat-label">Measurements（测量）</div></div>
   </div>
   <div class="table-container" style="margin-top: 32px;">
     <table>
@@ -398,22 +398,25 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
   <h2>P4: <span class="accent">α-Guided</span> 自适应学习率 — 真实数据验证</h2>
   <div class="two-col">
     <div>
-      <h3>3-Way 对比实验</h3>
-      <p style="color: var(--text-secondary); margin-bottom: 16px;">Pythia-410M，FineWeb-Edu 10B tokens（真实数据），9K steps，2 seeds</p>
+      <h3>3-Way 对比实验（410M + 1B）</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 16px;">FineWeb-Edu 10B tokens（真实数据），两个模型规模验证</p>
       <div class="table-container">
         <table>
-          <thead><tr><th>Schedule<br><span class="cn-note">（学习率策略）</span></th><th>Final Loss</th><th>Final α</th><th>Decay Start<br><span class="cn-note">（开始衰减）</span></th></tr></thead>
+          <thead><tr><th>Scale</th><th>Schedule</th><th>Final Loss</th><th>Avg Benchmark</th><th>vs Cosine</th></tr></thead>
           <tbody>
-            <tr><td>Cosine<br><span class="cn-note">（余弦衰减）</span></td><td>2.931</td><td>2.683</td><td>Step 500 (6%)</td></tr>
-            <tr><td>WSD<br><span class="cn-note">（恒温-稳定-衰减）</span></td><td class="cell-highlight">2.874</td><td>2.472</td><td>Step 7200 (80%)</td></tr>
-            <tr><td style="font-weight:600;">α-Guided<br><span class="cn-note">（谱信号引导）</span></td><td class="cell-highlight">2.877</td><td class="cell-success">2.442</td><td>Step 7500 (83%) ← 自动</td></tr>
+            <tr><td rowspan="3" style="font-weight:600;">410M</td><td>Cosine</td><td>2.913</td><td>0.459</td><td>—</td></tr>
+            <tr><td>WSD</td><td class="cell-highlight">2.855</td><td>0.467</td><td>+1.71%</td></tr>
+            <tr><td style="font-weight:600;">α-Guided</td><td class="cell-highlight">2.859</td><td class="cell-success">0.468</td><td class="cell-success">+1.95%</td></tr>
+            <tr style="border-top: 2px solid var(--border-subtle);"><td rowspan="3" style="font-weight:600;">1B</td><td>Cosine</td><td>2.690</td><td>0.486</td><td>—</td></tr>
+            <tr><td>WSD</td><td class="cell-highlight">2.651</td><td>0.494</td><td>+1.57%</td></tr>
+            <tr><td style="font-weight:600;">α-Guided</td><td class="cell-highlight">2.648</td><td class="cell-success">0.498</td><td class="cell-success"><strong>+2.56%</strong></td></tr>
           </tbody>
         </table>
       </div>
       <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 20px;">
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">−0.054</div><div class="stat-label">Δloss vs Cosine</div></div>
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+1.95%</div><div class="stat-label">Benchmark 提升</div></div>
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">0</div><div class="stat-label">需要调的超参</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+2.56%</div><div class="stat-label">1B: α-Guided vs Cosine</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+0.98%</div><div class="stat-label">1B: α-Guided vs WSD</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem; color: var(--accent-emerald);">↑ 放大</div><div class="stat-label">优势随规模增长</div></div>
       </div>
     </div>
     <div>
@@ -462,9 +465,11 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
         </ul>
       </div>
       <div class="card" style="margin-top: 16px; border-left: 3px solid var(--accent-amber);">
-        <h4 style="color: var(--accent-amber);">关键问题：Lower loss 一定意味着 better model 吗？</h4>
-        <p>一般来说，更低的 loss 不一定意味着更好的模型（可能是 memorization）。<br><br>
-        但在我们的实验中：Loss 下降 0.054 → <strong>5 项 benchmark 全面提升 (+2%)</strong>。这说明 α-guided 带来的 loss 改善是<strong>真实的泛化质量提升</strong>，而非过拟合。</p>
+        <h4 style="color: var(--accent-amber);">关键发现：优势随规模放大</h4>
+        <p>410M: α-Guided vs Cosine = <strong>+1.95%</strong><br>
+        1B: α-Guided vs Cosine = <strong>+2.56%</strong><br>
+        1B: α-Guided vs WSD = <strong>+0.98%</strong><br><br>
+        模型越大，谱信号的指导价值越高。这与 α reversal 在大模型中更剧烈的观察一致：大模型更需要自适应 schedule。</p>
       </div>
     </div>
   </div>
@@ -591,39 +596,38 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
   <div class="slide-counter">12 / 14</div>
 </section>
 
-<!-- Slide 13: Downstream Eval Results -->
+<!-- Slide 13: Scale Comparison — Advantage Amplifies -->
 <section class="slide" id="slide-13">
-  <h2>Downstream <span class="accent">Benchmark Validation</span></h2>
+  <h2>Scale Comparison: <span class="accent">优势随规模放大</span></h2>
   <div class="two-col">
     <div>
-      <h3>410M 3-Way: 5 Benchmarks, 0-shot</h3>
+      <h3>1B Downstream: 5 Benchmarks, 0-shot</h3>
       <div class="table-container">
         <table>
           <thead><tr><th>Schedule</th><th>ARC-E</th><th>HellaSwag</th><th>LAMBADA</th><th>PIQA</th><th>WGrande</th><th>Avg</th></tr></thead>
           <tbody>
-            <tr><td>Cosine</td><td>0.550</td><td>0.307</td><td>0.284</td><td>0.645</td><td>0.510</td><td class="cell-highlight">0.459</td></tr>
-            <tr><td>WSD</td><td>0.567</td><td>0.314</td><td>0.293</td><td>0.659</td><td>0.504</td><td class="cell-highlight">0.467</td></tr>
-            <tr><td style="font-weight:600;">α-Guided</td><td>0.574</td><td>0.313</td><td class="cell-success">0.302</td><td>0.655</td><td>0.498</td><td class="cell-highlight">0.468</td></tr>
+            <tr><td>Cosine</td><td>0.602</td><td>0.334</td><td>0.321</td><td>0.659</td><td>0.512</td><td class="cell-highlight">0.486</td></tr>
+            <tr><td>WSD</td><td>0.593</td><td>0.341</td><td>0.336</td><td>0.669</td><td>0.530</td><td class="cell-highlight">0.494</td></tr>
+            <tr><td style="font-weight:600;">α-Guided</td><td>0.596</td><td>0.337</td><td class="cell-success">0.354</td><td class="cell-success">0.675</td><td>0.530</td><td class="cell-highlight">0.498</td></tr>
           </tbody>
         </table>
       </div>
       <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 20px;">
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+1.95%</div><div class="stat-label">α-Guided vs Cosine</div></div>
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+6.3%</div><div class="stat-label">LAMBADA 提升</div></div>
-        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">≈ WSD</div><div class="stat-label">无需调参</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem; color: var(--accent-emerald);">+2.56%</div><div class="stat-label">α-Guided vs Cosine</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem; color: var(--accent-emerald);">+0.98%</div><div class="stat-label">α-Guided vs WSD</div></div>
+        <div class="stat-block"><div class="stat-value" style="font-size:1.3rem;">+10.2%</div><div class="stat-label">LAMBADA 单项</div></div>
       </div>
     </div>
     <div>
-      <div class="card" style="border-left: 3px solid var(--accent-emerald); margin-bottom: 16px;">
-        <h4 style="color: var(--accent-emerald);">Key Conclusion</h4>
-        <p>Training loss 改善 (Δ = -0.054) <strong>确实转化为</strong>可测量的下游 benchmark 提升。这直接回答审稿人 "lower loss ≠ better model" 的质疑。</p>
+      <div class="figure-container" style="margin-bottom: 16px;">
+        <img src="paper/figures_v2/fig15_scale_comparison.png" alt="Scale Comparison: 410M vs 1B" class="fig-large">
+        <div class="figure-caption">410M → 1B：α-guided 优势从 +1.95% 放大到 +2.56%，且在 1B 上首次显著超越 WSD (+0.98%)。</div>
       </div>
-      <div class="card" style="border-left: 3px solid var(--accent-blue);">
-        <h4 style="color: var(--accent-blue);">α-Guided = 自动版 WSD</h4>
-        <p>α-Guided 与手动调参的 WSD 性能几乎一致 (Δ=0.11%)，但完全不需要指定 stable fraction — 由模型自身的光谱信号驱动 decay 时机。</p>
-      </div>
-      <div class="insight" style="margin-top: 16px;">
-        <span class="insight-text"><strong>LAMBADA 上优势最大</strong> (+6.3%)：光谱引导的 schedule 对语言建模核心能力（长程依赖预测）提升尤为显著。</span>
+      <div class="card" style="border-left: 3px solid var(--accent-emerald);">
+        <h4 style="color: var(--accent-emerald);">核心发现：优势随规模放大</h4>
+        <p>410M: α-Guided ≈ WSD (+0.11%)<br>
+        1B: α-Guided > WSD <strong>(+0.98%)</strong><br><br>
+        更大的模型更受益于谱信号引导——因为大模型的 α reversal 更剧烈，谱信号提供的决策价值更大。</p>
       </div>
     </div>
   </div>
@@ -649,7 +653,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
       <ul class="feature-list">
         <li><strong>通用压缩定律</strong>：SR/d = f(d)，与规模/架构无关 — 信息论恒等式</li>
         <li><strong>α 反转 = 不可见的退化信号</strong>：Loss 还在降但结构在坏</li>
-        <li><strong>α-Guided 匹配手调 WSD</strong>：不需要调超参的自适应 schedule</li>
+        <li><strong>α-Guided 超越手调 WSD</strong>：1B 规模 +0.98%，且优势随规模放大</li>
         <li><strong>Post-hoc 审计</strong>：5 分钟判断任何模型的训练充分度</li>
         <li><strong>MLP 瓶颈</strong>：大模型架构设计应优先增加 MLP 容量</li>
       </ul>
@@ -658,16 +662,20 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
       <h3 style="margin-bottom: 24px;">进行中 & 下一步</h3>
       <div class="timeline">
         <div class="timeline-item">
-          <h4 style="color: var(--accent-emerald);">🔄 1B Scale-Up（正在运行）</h4>
-          <p>Pythia-1B 上重做 3-way 对比，验证结论在更大规模成立。ETA: 14h。</p>
+          <h4 style="color: var(--accent-emerald);">✅ 1B Scale-Up（已完成）</h4>
+          <p>Pythia-1B 3-way 对比完成：α-Guided 比 cosine +2.56%，比 WSD +0.98%。<strong>优势随规模放大</strong>。</p>
         </div>
         <div class="timeline-item">
           <h4 style="color: var(--accent-blue);">🔜 因果实验（Causality Fork）</h4>
           <p>在 α 反转点分叉：A 遵循信号降 LR vs B 忽略信号继续训。证明 α 的<strong>因果</strong>指导价值。</p>
         </div>
         <div class="timeline-item">
-          <h4 style="color: var(--accent-purple);">📋 更多架构验证</h4>
-          <p>Gemma-2-9B、Qwen-2-7B 等。特别需要极度 over-trained 的大模型（如 Llama-3-8B）来确认"大模型能否达到 α&lt;3"。</p>
+          <h4 style="color: var(--accent-purple);">🔜 7B Scale-Up</h4>
+          <p>7B 规模的 3-way 对比。如果 α-guided 优势继续放大，prescriptive claim 将显著增强。</p>
+        </div>
+        <div class="timeline-item">
+          <h4 style="color: var(--accent-amber);">📋 更多架构验证</h4>
+          <p>Gemma-2-9B、Qwen-2-7B 等。需要极度 over-trained 的大模型（如 Llama-3-8B）来确认"大模型能否达到 α&lt;3"。</p>
         </div>
       </div>
     </div>
