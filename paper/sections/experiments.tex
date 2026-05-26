@@ -3,7 +3,7 @@
 \label{sec:experiments}
 %=============================================================================
 
-We validate the spectral framework on three fronts: (i)~measurement of spectral metrics across public checkpoints from four architecture families, (ii)~correlation with downstream performance, and (iii)~controlled training experiments demonstrating prescriptive value.
+We validate the spectral framework through measurements of 13 models from four architecture families, correlation analysis with downstream performance, and controlled training experiments. Our experiments address four questions: (1)~Does SR/$d$ converge universally? (2)~Can it predict downstream performance without evaluation data? (3)~Does $\alpha$ reversal detect degradation invisible to loss? (4)~Can $\alpha$ guide scheduling in practice?
 
 \subsection{Setup}
 \label{sec:setup}
@@ -75,7 +75,7 @@ Mistral-7B$^\ddagger$ & Mistral & 4096 & --- & 0.040 & --- \\
 {\footnotesize $^\ddagger$Mistral-7B uses GQA (8 KV heads vs.\ 32 Q heads); SR/$d=0.040$ is measured on square-aspect layers only, filtering out the geometric inflation of narrow KV projections (SR/$d_{\mathrm{all}}=0.104$).}
 \end{table}
 
-\paragraph{Result.} Across 13 models, 4 architecture families, and 930$\times$ scale range (70M--65B), SR/$d_{\mathrm{final}}$ is determined primarily by hidden dimension $d$, not by total parameter count or training budget. This is our first main result: \textbf{training universally compresses each weight layer's effective dimensionality to ${\sim}4$--$7\%$ of its full capacity.} Figure~\ref{fig:srd_convergence} shows the convergence dynamics. Notably, Mistral-7B (a GQA architecture with only 8 KV heads) achieves SR/$d = 0.040$ on its square-aspect layers---exactly matching the predicted asymptote for $d = 4096$---confirming the formula extends to grouped-query attention architectures.
+\paragraph{Result.} Across 13 models, 4 architecture families, and 930$\times$ scale range (70M--65B), SR/$d_{\mathrm{final}}$ is determined primarily by hidden dimension $d$, not by total parameter count or training budget. This is our first main result: \textbf{training universally compresses each weight layer's effective dimensionality to ${\sim}4$--$7\%$ of its full capacity.} Figure~\ref{fig:srd_convergence} shows the convergence dynamics. Notably, Mistral-7B (a GQA architecture with only 8 KV heads) achieves SR/$d = 0.040$ on its square-aspect layers, exactly matching the predicted asymptote for $d = 4096$, confirming the formula extends to grouped-query attention architectures.
 
 \begin{figure}[t]
     \centering
@@ -96,7 +96,7 @@ Mistral-7B$^\ddagger$ & Mistral & 4096 & --- & 0.040 & --- \\
     \label{fig:srd_combined}
 \end{figure}
 
-\paragraph{Asymptotic model.} Fitting SR/$d$ vs.\ $d$ across all sufficiently-trained models (Figure~\ref{fig:srd_vs_d}): $\mathrm{SR}/d \approx 0.040 + 0.61/\sqrt{d}$. As $d \to \infty$, SR/$d \to 0.040$. The critical test: OLMo-2-13B and OLMo-2-32B share $d = 5120$ but differ in depth (40 vs.\ 64 layers) and total parameters (13B vs.\ 32B). They achieve \emph{identical} SR/$d_{\mathrm{final}} = 0.043$, confirming that SR/$d$ is a property of the \emph{layer} (determined by $d$), not of the model as a whole. K2-65B ($d = 8192$) achieves SR/$d = 0.036$, but this reflects training insufficiency ($D/N = 21$) rather than the converged value for that dimension---a diagnostic use case we discuss in Section~\ref{sec:audit}.
+\paragraph{Asymptotic model.} Fitting SR/$d$ vs.\ $d$ across all sufficiently-trained models (Figure~\ref{fig:srd_vs_d}): $\mathrm{SR}/d \approx 0.040 + 0.61/\sqrt{d}$. As $d \to \infty$, SR/$d \to 0.040$. The critical test: OLMo-2-13B and OLMo-2-32B share $d = 5120$ but differ in depth (40 vs.\ 64 layers) and total parameters (13B vs.\ 32B). They achieve \emph{identical} SR/$d_{\mathrm{final}} = 0.043$, confirming that SR/$d$ is a property of the \emph{layer} (determined by $d$), not of the model as a whole. K2-65B ($d = 8192$) achieves SR/$d = 0.036$, but this reflects training insufficiency ($D/N = 21$) rather than the converged value for that dimension, a diagnostic use case we discuss in Section~\ref{sec:audit}.
 
 %-----------------------------------------------------------------------------
 \subsection{P2: SR/$d$ as Universal Performance Predictor}
@@ -130,11 +130,11 @@ $\alpha$ (within-model) & $-0.68$ to $-0.79$ & $< 10^{-3}$ & --- \\
 This enables real-time performance prediction during training without running expensive evaluation suites.
 
 %-----------------------------------------------------------------------------
-\subsection{P3: $\alpha$ Reversal---Detecting Structural Degradation}
+\subsection{P3: $\alpha$ Reversal as Structural Degradation Signal}
 \label{sec:reversal}
 %-----------------------------------------------------------------------------
 
-\paragraph{Observation.} For models with insufficient tokens per parameter, the power-law exponent $\alpha$ reaches a minimum early in training, then \emph{increases}---signaling that spectral structure is \emph{degrading} even as loss continues to decrease. Critically, both OLMo-2-32B and 13B reveal that the reversal threshold is \emph{model-size-dependent}: OLMo-2-32B ($D/N = 189$) briefly \emph{enters} the heavy-tail regime ($\alpha_{\min} = 2.90 < 3$) then reverses entirely ($\Delta\alpha = +2.35$), while OLMo-2-13B ($D/N = 365$) shows the largest reversal magnitude ($\Delta\alpha = +2.71$) despite having twice the tokens per parameter of 32B.
+\paragraph{Observation.} For models with insufficient tokens per parameter, the power-law exponent $\alpha$ reaches a minimum early in training, then \emph{increases}, signaling that spectral structure is \emph{degrading} even as loss continues to decrease. Critically, both OLMo-2-32B and 13B reveal that the reversal threshold is \emph{model-size-dependent}: OLMo-2-32B ($D/N = 189$) briefly \emph{enters} the heavy-tail regime ($\alpha_{\min} = 2.90 < 3$) then reverses entirely ($\Delta\alpha = +2.35$), while OLMo-2-13B ($D/N = 365$) shows the largest reversal magnitude ($\Delta\alpha = +2.71$) despite having twice the tokens per parameter of 32B.
 
 \begin{table}[t]
 \centering
@@ -177,8 +177,8 @@ OLMo-2-13B & 365 & 4.25 & 6.95 & \textbf{YES} & Largest reversal ($\Delta\alpha{
     \label{fig:alpha_combined}
 \end{figure}
 
-\paragraph{Mechanism: MLP layers drive the reversal.}
-Layer-type analysis reveals that $\alpha_{\mathrm{attn}}$ stabilizes early and remains flat, while $\alpha_{\mathrm{mlp}}$ continues rising after the global minimum (Figure~\ref{fig:mlp_attn_gap}). MLP layers store factual knowledge and have higher capacity demands; with insufficient training data, gradient noise destabilizes partially-learned MLP structure while attention patterns remain robust. The MLP/Attention gap ($\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}}$) reaches 0.7 at 2.8B, 1.7 at 13B, and 4.2 at 32B---confirming that MLP is the structural bottleneck at scale. At 32B, attention layers have already entered the heavy-tail regime ($\alpha_{\mathrm{attn}} = 3.4 < 4$) while MLP layers remain structurally random ($\alpha_{\mathrm{mlp}} = 7.6 > 6$).
+\paragraph{MLP-driven reversal.}
+Layer-type analysis reveals that $\alpha_{\mathrm{attn}}$ stabilizes early and remains flat, while $\alpha_{\mathrm{mlp}}$ continues rising after the global minimum (Figure~\ref{fig:mlp_attn_gap}). MLP layers store factual knowledge and have higher capacity demands; with insufficient training data, gradient noise destabilizes partially-learned MLP structure while attention patterns remain robust. The MLP/Attention gap ($\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}}$) reaches 0.7 at 2.8B, 1.7 at 13B, and 4.2 at 32B, confirming that MLP is the structural bottleneck at scale. At 32B, attention layers have already entered the heavy-tail regime ($\alpha_{\mathrm{attn}} = 3.4 < 4$) while MLP layers remain structurally random ($\alpha_{\mathrm{mlp}} = 7.6 > 6$).
 
 \paragraph{Practical value.} The $\alpha$ reversal signal is \emph{invisible to loss} (loss continues decreasing via memorization) but reveals that continued training at the current LR is structurally counter-productive. Detecting reversal enables:
 (a)~adaptive LR decay (start cooling when structure saturates),
@@ -195,7 +195,7 @@ We validate that $\alpha$ can \emph{guide} training decisions, not merely observ
 \paragraph{Setup.} Pythia-410M trained from scratch on FineWeb-Edu (9.9B tokens), 9{,}000 steps, 2 seeds each. Three schedules:
 \begin{itemize}[leftmargin=*,itemsep=0pt]
     \item \textbf{Cosine}: standard cosine decay from warmup end (step 500, 6\%).
-    \item \textbf{WSD}: Warmup-Stable-Decay---constant LR for 80\%, then linear decay.
+    \item \textbf{WSD}: Warmup-Stable-Decay, constant LR for 80\%, then linear decay.
     \item \textbf{$\alpha$-Guided}: constant LR until $\alpha$ reversal or 80\% fallback, then linear decay.
 \end{itemize}
 
@@ -245,7 +245,7 @@ $\alpha$-Guided & $\mathbf{0.468 \pm 0.002}$ & $\mathbf{+1.95\%}$ & LAMBADA (+5.
 
 The $\alpha$-guided schedule slightly \emph{outperforms} WSD on downstream benchmarks ($+0.24\%$) despite marginally higher loss ($+0.004$), suggesting that better spectral structure ($\alpha = 2.44$ vs.\ $2.47$) translates to improved generalization. LAMBADA (requiring long-range contextual reasoning) shows the largest improvement ($+5.5\%$), consistent with the hypothesis that heavy-tail structure encodes robust, transferable representations.
 
-\paragraph{Interpretation.} The $\alpha$-guided schedule automatically identifies step 7{,}500 (83\%) as the decay onset---matching the manually-optimized WSD timing (80\%) without requiring \emph{a priori} specification of the stable fraction. Both maintain peak LR $15\times$ longer than cosine, enabling continued structure formation. The key insight: \textbf{spectral metrics provide a model-driven signal that replaces arbitrary schedule hyperparameters}, achieving equivalent or better downstream performance compared to hand-tuned WSD while being fully adaptive.
+\paragraph{Interpretation.} The $\alpha$-guided schedule automatically identifies step 7{,}500 (83\%) as the decay onset, matching the manually-optimized WSD timing (80\%) without requiring \emph{a priori} specification of the stable fraction. Both maintain peak LR $15\times$ longer than cosine, enabling continued structure formation. The key insight: \textbf{spectral metrics provide a model-driven signal that replaces arbitrary schedule hyperparameters}, achieving equivalent or better downstream performance compared to hand-tuned WSD while being fully adaptive.
 
 %-----------------------------------------------------------------------------
 \subsection{Structural Chinchilla Law}
@@ -257,7 +257,7 @@ Fitting $\alpha_{\mathrm{final}}$ vs.\ $D/N$ (tokens per parameter) across model
     \alpha(D/N) \approx 2.54 + 3.5 \cdot \exp\!\left(-\frac{D}{269 \cdot N}\right), \quad R^2 = 0.81 \;\text{(models $\leq$1B)}
     \label{eq:structural_chinchilla}
 \end{equation}
-However, extending to models above 1B reveals that $\alpha$ depends on \emph{both} $D/N$ and model size $N$ independently (Figure~\ref{fig:structural_chinchilla}). OLMo-2-13B at $D/N = 365$ achieves $\alpha = 6.95$, while Pythia-1B at similar $D/N = 297$ achieves $\alpha = 2.78$---the same training ratio produces vastly different structural states depending on model size.
+However, extending to models above 1B reveals that $\alpha$ depends on \emph{both} $D/N$ and model size $N$ independently (Figure~\ref{fig:structural_chinchilla}). OLMo-2-13B at $D/N = 365$ achieves $\alpha = 6.95$, while Pythia-1B at similar $D/N = 297$ achieves $\alpha = 2.78$. The same training ratio produces vastly different structural states depending on model size.
 
 \begin{figure}[t]
     \centering
@@ -268,15 +268,15 @@ However, extending to models above 1B reveals that $\alpha$ depends on \emph{bot
 
 This ``Structural Chinchilla'' law quantifies the tokens-per-parameter budget needed for spectral maturity:
 \begin{itemize}[leftmargin=*,itemsep=0pt]
-    \item $D/N = 20$ (Chinchilla-optimal): $\alpha \approx 5.8$ --- \emph{structurally immature}
-    \item $D/N = 269$ ($\tau$, characteristic scale): $\alpha \approx 3.8$ --- halfway to optimal
-    \item $D/N = 500$: $\alpha \approx 3.1$ --- structurally mature
-    \item $D/N \to \infty$: $\alpha \to 2.54$ --- asymptotic limit
+    \item $D/N = 20$ (Chinchilla-optimal): $\alpha \approx 5.8$: \emph{structurally immature}
+    \item $D/N = 269$ ($\tau$, characteristic scale): $\alpha \approx 3.8$: halfway to optimal
+    \item $D/N = 500$: $\alpha \approx 3.1$: structurally mature
+    \item $D/N \to \infty$: $\alpha \to 2.54$: asymptotic limit
 \end{itemize}
 
 The characteristic scale $\tau = 269$ tokens/parameter represents the budget at which heavy-tailed self-regularization is half-complete. Structure-optimal training requires ${\sim}12$--$25\times$ more tokens than compute-optimal (Chinchilla), explaining the empirical success of massive over-training strategies (Llama-3: 15,000 $D/N$; Pythia-70M: 4,261 $D/N$).
 
-\paragraph{Phase transition at $N \approx 1.7$B.} Extending to 13B--65B models reveals that $\alpha_{\mathrm{final}}$ depends on \emph{both} $D/N$ and model size $N$ independently. OLMo-2-13B at $D/N = 365$ achieves $\alpha = 6.95$, while Pythia-1B at $D/N = 297$ achieves $\alpha = 2.78$---the same training ratio produces vastly different structural states. Fitting all 13 models with a sigmoid model yields:
+\paragraph{Phase transition at $N \approx 1.7$B.} Extending to 13B--65B models reveals that $\alpha_{\mathrm{final}}$ depends on \emph{both} $D/N$ and model size $N$ independently. OLMo-2-13B at $D/N = 365$ achieves $\alpha = 6.95$, while Pythia-1B at $D/N = 297$ achieves $\alpha = 2.78$. The same training ratio produces vastly different structural states. Fitting all 13 models with a sigmoid model yields:
 \begin{equation}
     \alpha(N) \approx 2.65 + \Delta\alpha \cdot \sigma\!\left(\frac{\log_{10} N - 9.23}{0.07}\right), \quad R^2 = 0.97
 \end{equation}
@@ -292,12 +292,12 @@ Measurements from Amber-7B (25 checkpoints spanning 1.26T tokens) and OLMo-2-13B
 \begin{enumerate}[leftmargin=*,itemsep=1pt]
     \item \textbf{Explosive ordering} (0--5\% of training, ${\sim}6$ tokens/param): $\alpha$ drops from ${\sim}18$ to its minimum at rate $\Delta\alpha/\Delta t \approx -2.3$/checkpoint. Both attention and MLP participate. SR drops 60\%+. For OLMo-2-13B, this phase spans steps 0--7K, with $\alpha$ dropping from 18.8 to 4.25.
 
-    \item \textbf{Slow reversal} (5--80\%+ of training): $\alpha$ \emph{rises} from its minimum at rate $\Delta\alpha/\Delta t \approx +0.002$/checkpoint. MLP drives the reversal; attention remains stable. For OLMo-2-13B, the reversal spans steps 7K--596K (the \emph{entire} remaining training), with $\alpha$ rising from 4.25 to 6.95---the largest reversal magnitude observed ($\Delta\alpha = +2.71$).
+    \item \textbf{Slow reversal} (5--80\%+ of training): $\alpha$ \emph{rises} from its minimum at rate $\Delta\alpha/\Delta t \approx +0.002$/checkpoint. MLP drives the reversal; attention remains stable. For OLMo-2-13B, the reversal spans steps 7K--596K (the \emph{entire} remaining training), with $\alpha$ rising from 4.25 to 6.95, the largest reversal magnitude observed ($\Delta\alpha = +2.71$).
 
     \item \textbf{Recovery} (only if $D/N$ is sufficient): $\alpha$ begins decreasing again. The accumulated gradient signal finally overcomes noise-driven degradation. OLMo-2-13B \emph{never reaches this phase}: even at $D/N = 365$ tokens/parameter, the model remains in Phase~2 throughout, confirming that larger models require substantially more data to achieve structural recovery.
 \end{enumerate}
 
-\paragraph{Per-layer heatmap confirmation.} We validate the three-phase dynamics through per-layer spectral measurements across 24 checkpoints for Pythia-1B (66 layers) and Pythia-6.9B (130 layers). The heatmaps (Figure~\ref{fig:heatmap}) reveal a striking pattern: \textbf{96\% of structural ordering occurs in the first 4\% of training} (step 0$\to$6K out of 143K total). At initialization, both models show high $\alpha$ across all layers ($\alpha_{\mathrm{mean}} = 3.97$ for 1B, $19.0$ for 6.9B). By step 6K (4\% of training), per-layer $\alpha$ values have already collapsed to near-final values---the heatmap is essentially ``frozen'' for the remaining 96\% of training. For Pythia-1B, the attn/MLP decomposition shows attention layers rapidly reaching $\alpha_{\mathrm{attn}} = 2.09$ by step 6K (remaining at $2.08$ at step 138K), while MLP layers reach $\alpha_{\mathrm{mlp}} = 3.00$ then slowly drift to $3.34$---a layer-resolved view of the MLP-driven reversal mechanism.
+\paragraph{Per-layer heatmap confirmation.} We validate the three-phase dynamics through per-layer spectral measurements across 24 checkpoints for Pythia-1B (66 layers) and Pythia-6.9B (130 layers). The heatmaps (Figure~\ref{fig:heatmap}) reveal a striking pattern: \textbf{96\% of structural ordering occurs in the first 4\% of training} (step 0$\to$6K out of 143K total). At initialization, both models show high $\alpha$ across all layers ($\alpha_{\mathrm{mean}} = 3.97$ for 1B, $19.0$ for 6.9B). By step 6K (4\% of training), per-layer $\alpha$ values have already collapsed to near-final values; the heatmap is essentially ``frozen'' for the remaining 96\% of training. For Pythia-1B, the attn/MLP decomposition shows attention layers rapidly reaching $\alpha_{\mathrm{attn}} = 2.09$ by step 6K (remaining at $2.08$ at step 138K), while MLP layers reach $\alpha_{\mathrm{mlp}} = 3.00$ then slowly drift to $3.34$, a layer-resolved view of the MLP-driven reversal mechanism.
 
 \begin{figure}[t]
     \centering
@@ -315,7 +315,7 @@ The ``7\% rule'': at the $\alpha$ minimum (typically 4--14\% of total training),
 
 SR/$d$ can diagnose training sufficiency from weights alone, without access to loss curves or benchmarks. We validate this by applying it post-hoc to K2-65B~\citep{k2_report}, a 65B-parameter model trained on 1.4T tokens ($D/N = 21$, Chinchilla-optimal).
 
-\paragraph{Diagnosis.} K2-65B achieves SR/$d = 0.036$---below the converged values of all other models at comparable $d$. Its $\alpha$ trajectory shows reversal ($\alpha_{\min} = 4.45 \to \alpha_{\mathrm{final}} = 5.09$, $\Delta\alpha = +0.65$), and SR/$d$ is still rising at training end (0.030 $\to$ 0.036), indicating compression has not converged. Our spectral diagnosis: \emph{structurally immature, training insufficient}.
+\paragraph{Diagnosis.} K2-65B achieves SR/$d = 0.036$, below the converged values of all other models at comparable $d$. Its $\alpha$ trajectory shows reversal ($\alpha_{\min} = 4.45 \to \alpha_{\mathrm{final}} = 5.09$, $\Delta\alpha = +0.65$), and SR/$d$ is still rising at training end (0.030 $\to$ 0.036), indicating compression has not converged. Our spectral diagnosis: \emph{structurally immature, training insufficient}.
 
-\paragraph{External validation.} This diagnosis is independently corroborated by: (i)~K2 underperforms Llama-2-70B (which uses only 43\% more tokens) on 15/21 benchmarks; (ii)~training curves in the K2 technical report show non-plateaued metrics at the final checkpoint; (iii)~the authors acknowledge a limited data budget. The spectral audit reaches the same conclusion as comprehensive benchmarking---but requires only the model weights, no evaluation infrastructure.
+\paragraph{External validation.} This diagnosis is independently corroborated by: (i)~K2 underperforms Llama-2-70B (which uses only 43\% more tokens) on 15/21 benchmarks; (ii)~training curves in the K2 technical report show non-plateaued metrics at the final checkpoint; (iii)~the authors acknowledge a limited data budget. The spectral audit reaches the same conclusion as comprehensive benchmarking, but requires only the model weights, no evaluation infrastructure.
 

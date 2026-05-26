@@ -11,10 +11,7 @@ Through measurements across 13 models, 4 architecture families (GPT-NeoX, LLaMA,
 (4)~an $\alpha$-guided schedule that matches hand-tuned WSD while being fully adaptive;
 (5)~SR/$d$ as a zero-cost structural audit tool that can diagnose training sufficiency from weights alone.
 
-Most surprisingly, our measurements across scales reveal a sharp phase transition at $N \approx 1.7$B: models below this threshold easily achieve heavy-tail structure ($\alpha < 3$) regardless of training budget, while larger models exhibit persistent structural immaturity ($\alpha > 5$) even with hundreds of tokens per parameter. This implies that frontier models may be systematically undertrained from a structural perspective even when they appear loss-converged---validated by our post-hoc diagnosis of K2-65B, whose spectral metrics independently reveal its known benchmark underperformance.
-
-These results provide practitioners with actionable tools: a monitoring dashboard that detects training pathologies before loss does, an adaptive scheduling signal that replaces fixed schedules with model-driven decisions, and a post-hoc audit that assesses released models without access to training logs.
+Most surprisingly, a sharp phase transition at $N \approx 1.7$B separates models that easily achieve heavy-tail structure from those that remain persistently immature, validated by our post-hoc diagnosis of K2-65B.
 The overarching message is simple: \emph{loss tells you how well the model fits the data; spectral metrics tell you how well the model has organized itself to generalize.}
 Both are needed; only monitoring loss is flying blind.
-
 Extending these metrics to MoE architectures, calibrating the size-dependent structural timescale $\tau(N)$, and establishing the causal link between spectral compression and generalization are the most important open directions.

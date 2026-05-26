@@ -1,12 +1,12 @@
 \begin{abstract}
 Training a frontier language model costs hundreds of millions of dollars, yet practitioners monitor this investment through a single signal: the training loss.
-We show that spectral properties of weight matrices---specifically, the stable rank and power-law exponent of the eigenvalue spectrum---provide physically grounded monitoring signals that loss fundamentally cannot.
+We show that spectral properties of weight matrices, specifically the stable rank and power-law exponent of the eigenvalue spectrum, provide physically grounded monitoring signals that loss fundamentally cannot.
 The stable rank is not merely an analogy to statistical mechanics: it \emph{is} the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution, making spectral monitoring a direct measurement of thermodynamic state.
-Measuring these quantities across 13 models spanning four architecture families (GPT-NeoX, LLaMA, OLMo2, Mistral) and nearly three orders of magnitude in scale (70M--65B parameters), we establish four results:
-(1)~the normalized stable rank (SR/$d$) converges to a value determined by hidden dimension alone ($\approx 0.040 + 0.61/\sqrt{d}$), revealing that training compresses R\'{e}nyi-2 entropy by ${\sim}2$ nats universally---confirmed by two models with identical $d$ but different depths achieving identical SR/$d$;
-(2)~SR/$d$ achieves Spearman correlation $r = -0.92$ with downstream task performance ($N\!=\!102$ checkpoint--benchmark pairs, $p < 10^{-40}$), predicting model quality without requiring any evaluation data;
-(3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal---$d\alpha/dt > 0$---that detects structural degradation invisible to loss, with the 13B-scale model showing the largest reversal ($\Delta\alpha = +2.71$), demonstrating that larger models are more fragile to insufficient training;
-(4)~an $\alpha$-guided learning rate schedule that automatically identifies the optimal decay point, matching hand-tuned WSD while outperforming cosine by $-0.054$ in loss and $+1.95\%$ in downstream benchmarks on real data (FineWeb-Edu, 10B tokens).
-We further derive a ``Structural Chinchilla'' law showing that compute-optimal training (20 tokens/param) leaves models structurally immature ($\alpha > 5$), while structural maturity requires ${\sim}500$ tokens/param---and that larger models require \emph{more} tokens per parameter, not fewer, to achieve spectral maturity.
-These results provide practitioners with a physics-grounded instrument panel for pretraining that answers questions loss cannot: ``Is structure still forming?'', ``When should I decay the LR?'', and ``Is this model structurally ready for deployment?''
+Measuring these quantities across 13 models spanning four architecture families (GPT-NeoX, LLaMA, OLMo2, Mistral) and scales from 70M to 65B parameters, we establish four results:
+(1)~the normalized stable rank (SR/$d$) converges to a universal constant determined by hidden dimension alone, revealing that training compresses R\'{e}nyi-2 entropy by ${\sim}2$ nats regardless of scale or architecture;
+(2)~SR/$d$ achieves Spearman $r = -0.92$ with downstream performance, predicting model quality from weights alone;
+(3)~the power-law exponent $\alpha$ exhibits a ``reversal'' signal ($d\alpha/dt > 0$) that detects structural degradation invisible to loss, with larger models proving more fragile;
+and (4)~an $\alpha$-guided learning rate schedule that matches hand-tuned WSD while outperforming cosine by $+1.95\%$ on downstream benchmarks.
+We further identify a sharp phase transition at $N \approx 1.7$B: smaller models easily achieve spectral maturity, while larger models remain structurally immature even with massive token budgets, implying that compute-optimal training is structurally insufficient.
+These results give practitioners a physics-grounded instrument panel for pretraining that answers questions loss cannot.
 \end{abstract}

@@ -28,13 +28,13 @@ Determine training sufficiency & $\times$ & \checkmark ($\alpha < 3$) \\
 
 The fundamental asymmetry is: \emph{loss can decrease while structure degrades}. This occurs whenever the model reduces prediction error through memorization rather than compression. Only spectral metrics distinguish these cases.
 
-The layer-type decomposition is particularly diagnostic. At 13B scale, we observe $\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}} = 1.69$, indicating that MLP layers are structurally far less mature than attention layers despite identical token exposure. This gap signals an MLP capacity bottleneck---the model has insufficient MLP parameters to compress the representations that attention has already learned to route. Practitioners observing this pattern should consider MLP-width expansion or gated architectures that increase effective MLP capacity.
+The layer-type decomposition is particularly diagnostic. At 13B scale, we observe $\alpha_{\mathrm{mlp}} - \alpha_{\mathrm{attn}} = 1.69$, indicating that MLP layers are structurally far less mature than attention layers despite identical token exposure. This gap signals an MLP capacity bottleneck: the model has insufficient MLP parameters to compress the representations that attention has already learned to route. Practitioners observing this pattern should consider MLP-width expansion or gated architectures that increase effective MLP capacity.
 
 \subsection{Connection to Over-Training and Chinchilla}
 
-The Chinchilla scaling law~\citep{hoffmann2022} minimizes loss for a given compute budget, yielding $D/N \approx 20$ tokens/parameter. Our Structural Chinchilla law (Eq.~\ref{eq:structural_chinchilla}) reveals that this produces $\alpha \approx 5.8$---models that are \emph{compute-optimal but structurally immature}.
+The Chinchilla scaling law~\citep{hoffmann2022} minimizes loss for a given compute budget, yielding $D/N \approx 20$ tokens/parameter. Our Structural Chinchilla law (Eq.~\ref{eq:structural_chinchilla}) reveals that this produces $\alpha \approx 5.8$, models that are \emph{compute-optimal but structurally immature}.
 
-The industry has empirically moved toward massive over-training: Llama-3 uses $D/N \approx 15{,}000$ (750$\times$ Chinchilla), and these models exhibit superior generalization, fine-tuning robustness, and emergent capabilities~\citep{llama3}. Our framework explains why: for small models ($\leq$1B), $D/N > 300$ suffices to enter the heavy-tail regime ($\alpha < 4$), but larger models require substantially more---the maturation timescale grows with model size. Heavy-tail structure corresponds to robust, transferable feature representations.
+The industry has empirically moved toward massive over-training: Llama-3 uses $D/N \approx 15{,}000$ (750$\times$ Chinchilla), and these models exhibit superior generalization, fine-tuning robustness, and emergent capabilities~\citep{llama3}. Our framework explains why: for small models ($\leq$1B), $D/N > 300$ suffices to enter the heavy-tail regime ($\alpha < 4$), but larger models require substantially more; the maturation timescale grows with model size. Heavy-tail structure corresponds to robust, transferable feature representations.
 
 This resolves the apparent paradox of ``compute-inefficient'' training being better: \textbf{Chinchilla minimizes loss per FLOP, but structural optimality requires a fundamentally different budget.}
 
@@ -48,11 +48,11 @@ This suggests that the structural maturation timescale $\tau$ is not constant bu
 \end{equation}
 where small models ($N_0 \sim 100\text{M}$) achieve structural maturity at $\tau_0 \approx 269$ tokens/param, but larger models require progressively more. The 13B data point implies $\tau_{\text{eff}} \gg 269$ at that scale.
 
-This has stark implications for frontier training. Llama-3-8B was trained with ${\sim}15{,}000$ tokens/param and likely achieves deep structural maturity. But Llama-3-70B uses only ${\sim}2{,}100$ tokens/param---if $\tau$ grows super-linearly, the 70B model may be \emph{structurally undercooked} despite its massive absolute token count. The largest models, paradoxically, may be the most structurally starved relative to their needs.
+This has stark implications for frontier training. Llama-3-8B was trained with ${\sim}15{,}000$ tokens/param and likely achieves deep structural maturity. But Llama-3-70B uses only ${\sim}2{,}100$ tokens/param. If $\tau$ grows super-linearly, the 70B model may be \emph{structurally undercooked} despite its massive absolute token count. The largest models, paradoxically, may be the most structurally starved relative to their needs.
 
 \subsection{Thermodynamic Interpretation}
 
-The stable rank is not merely analogous to a thermodynamic quantity---it \emph{is} one. $\text{SR}(\mathbf{W})$ equals $\exp(H_2(\hat{\boldsymbol{\sigma}}))$, the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution (Section~\ref{sec:theory}). The universal compression $\text{UCR} \approx 0.13$ therefore corresponds to a universal entropy reduction $\Delta H_2 \approx -2.0$ nats during training. This is reminiscent of Landauer's principle: erasure of information requires a minimum energy cost, and training ``erases'' ${\sim}87\%$ of the initial random degrees of freedom to encode task-relevant structure. That this entropy reduction is approximately constant across scales and architectures suggests a deep thermodynamic constraint on what it means for a transformer to ``learn.''
+The stable rank is not merely analogous to a thermodynamic quantity: it \emph{is} one. $\text{SR}(\mathbf{W})$ equals $\exp(H_2(\hat{\boldsymbol{\sigma}}))$, the exponential of the R\'{e}nyi-2 entropy of the normalized singular-value distribution (Section~\ref{sec:theory}). The universal compression $\text{UCR} \approx 0.13$ therefore corresponds to a universal entropy reduction $\Delta H_2 \approx -2.0$ nats during training. This is reminiscent of Landauer's principle: erasure of information requires a minimum energy cost, and training ``erases'' ${\sim}87\%$ of the initial random degrees of freedom to encode task-relevant structure. That this entropy reduction is approximately constant across scales and architectures suggests a deep thermodynamic constraint on what it means for a transformer to ``learn.''
 
 \subsection{Practical Monitoring Protocol}
 
@@ -63,7 +63,7 @@ Based on our findings, we recommend a three-signal protocol for training teams:
     \begin{itemize}[leftmargin=*,itemsep=0pt]
         \item $d\alpha/dt < 0$: structure forming (healthy)
         \item $d\alpha/dt \approx 0$: structure saturated (consider decay)
-        \item $d\alpha/dt > 0$ for 3+ measurements: \textbf{ALERT}---structural degradation
+        \item $d\alpha/dt > 0$ for 3+ measurements: \textbf{ALERT}: structural degradation
         \item $\alpha_{\mathrm{mlp}} \gg \alpha_{\mathrm{attn}}$: MLP is the capacity bottleneck
     \end{itemize}
 
@@ -82,12 +82,12 @@ Based on our findings, we recommend a three-signal protocol for training teams:
 
 \paragraph{Scale ceiling.} Our measurements extend to 65B parameters ($d = 8192$). However, K2-65B has not converged due to limited training ($D/N = 21$), so its SR/$d = 0.036$ reflects training insufficiency rather than the true asymptotic value for $d = 8192$. Verifying the $1/\sqrt{d}$ correction at the largest dimensions requires a sufficiently-trained 65B+ model.
 
-\paragraph{Architecture scope.} We validate across GPT-NeoX, LLaMA, OLMo-2, and Mistral (GQA)---all dense decoder-only transformers. MoE and encoder-decoder architectures are untested. The GQA boundary case (Mistral-7B) reveals that narrow KV projections inflate aggregate SR/$d$ geometrically; filtering to square-aspect layers recovers the universal formula, but this requires awareness of the architecture's attention head configuration.
+\paragraph{Architecture scope.} We validate across GPT-NeoX, LLaMA, OLMo-2, and Mistral (GQA), all dense decoder-only transformers. MoE and encoder-decoder architectures are untested. The GQA boundary case (Mistral-7B) reveals that narrow KV projections inflate aggregate SR/$d$ geometrically; filtering to square-aspect layers recovers the universal formula, but this requires awareness of the architecture's attention head configuration.
 
 \paragraph{Phase transition mechanism.} The sharp sigmoid transition at $N \approx 1.7$B is empirical; we do not have a first-principles derivation of why this threshold exists or whether it is architecture-dependent. The Landau theory in Section~\ref{sec:thermo} provides a qualitative framework ($T_c(N)$ decreasing with $N$) but does not predict the specific threshold.
 
 \paragraph{Downstream evaluation scale.} The 3-way schedule downstream evaluation (\S\ref{sec:schedule}) uses 5 benchmarks at 410M scale. While the $+1.95\%$ improvement validates that spectral gains translate to downstream performance, evaluation at larger scales (7B+) with more comprehensive benchmark suites (MMLU, GSM8K) would further strengthen the prescriptive claim.
 
-\paragraph{Correlation vs.\ causation.} SR/$d$ correlates with but does not provably cause good downstream performance. The causal mechanism---whether compression is a \emph{driver} or \emph{side effect} of learning---deserves further theoretical analysis.
+\paragraph{Correlation vs.\ causation.} SR/$d$ correlates with but does not provably cause good downstream performance. The causal mechanism, whether compression is a \emph{driver} or \emph{side effect} of learning, deserves further theoretical analysis.
 
 \paragraph{Power-law fitting.} The $\alpha$ exponent depends on the fitting procedure (choice of $x_{\min}$, tail range). We use the MLE + KS approach from~\citet{martin_mahoney_jmlr2021}, but report that simpler log-log regression produces qualitatively similar trends with slightly different absolute values.
