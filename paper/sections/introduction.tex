@@ -44,3 +44,10 @@ We additionally discover a \textbf{sharp structural phase transition at $N \appr
 Together, these results establish spectral monitoring as a practical complement to loss curves, grounded not in analogy but in the information-theoretic thermodynamics of SGD.
 The question that should guide every training decision shifts from ``has loss converged?'' to ``is R\'{e}nyi entropy still decreasing, and has the model reached spectral maturity?''
 We release measurement code and monitoring dashboards for integration into existing training pipelines.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures_v2/fig01_phase_portrait.pdf}
+    \caption{\textbf{Spectral phase portrait.} Each model traces a trajectory through (SR/$d$, $\alpha$) space during training (right=init, left=final). Well-trained small models (70M--1B) converge to the lower-left ``mature'' region ($\alpha < 4$, SR/$d < 0.08$). Under-trained large models (2.8B, 6.9B) stall in the ``transition'' zone. OLMo-2-13B reverses direction after reaching its $\alpha$ minimum, moving \emph{away} from maturity. All models share the same compression axis (SR/$d$ converges universally) but diverge on the structural quality axis ($\alpha$).}
+    \label{fig:phase_portrait}
+\end{figure}

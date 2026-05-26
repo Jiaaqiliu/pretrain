@@ -78,6 +78,15 @@ Based on our findings, we recommend a three-signal protocol for training teams:
     Use Eq.~\ref{eq:regression} to estimate downstream performance from current SR/$d$ and $N$, without running evaluation.
 \end{enumerate}
 
+Figure~\ref{fig:dashboard} shows the monitoring dashboard in action on a real training run (Pythia-410M, $\alpha$-guided schedule). The three panels---loss+LR, $\alpha$ trajectory, and SR/$d$ trajectory---provide a complete instrument panel. In this run, $\alpha$ decreases monotonically (no reversal detected), confirming that the 410M model with $D/N = 740$ has sufficient data to achieve structural maturity without triggering early decay.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\columnwidth]{figures_v2/fig09_dashboard.pdf}
+    \caption{\textbf{Spectral monitoring dashboard} for a real training run (Pythia-410M, $\alpha$-guided, FineWeb-Edu). Top: loss and learning rate. Middle: $\alpha$ trajectory with reversal detection (green = healthy, no reversal detected). Bottom: SR/$d$ compression dynamics. The three panels together provide real-time structural diagnostics that complement the loss curve.}
+    \label{fig:dashboard}
+\end{figure}
+
 \subsection{Limitations}
 
 \paragraph{Scale ceiling.} Our measurements extend to 65B parameters ($d = 8192$). However, K2-65B has not converged due to limited training ($D/N = 21$), so its SR/$d = 0.036$ reflects training insufficiency rather than the true asymptotic value for $d = 8192$. Verifying the $1/\sqrt{d}$ correction at the largest dimensions requires a sufficiently-trained 65B+ model.
