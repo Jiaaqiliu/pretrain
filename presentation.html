@@ -166,7 +166,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">01 / 14</div>
+  <div class="slide-counter">01 / 16</div>
 </section>
 
 <!-- Slide 2: Motivation / Pain Point -->
@@ -194,7 +194,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">02 / 14</div>
+  <div class="slide-counter">02 / 16</div>
 </section>
 
 <!-- Slide 3: Core Concept -->
@@ -244,10 +244,106 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">03 / 14</div>
+  <div class="slide-counter">03 / 16</div>
 </section>
 
-<!-- Slide 4: Key Contributions -->
+<!-- Slide 4: SR/d Deep Dive -->
+<section class="slide" id="slide-4">
+  <h2>SR/d 深度解读：<span class="accent">"这个矩阵有多少方向在干活？"</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="card" style="margin-bottom: 20px; border-left: 3px solid var(--accent-teal);">
+        <h4 style="color: var(--accent-teal);">直觉理解</h4>
+        <p>想象一个教室里有 <strong>4096 个学生</strong>（= hidden dimension d）。</p>
+        <p style="margin-top: 12px;"><strong style="color: var(--accent-rose);">训练前</strong>：所有学生乱动，~40% 在"做事"但互相抵消。SR/d ≈ 0.4。</p>
+        <p style="margin-top: 8px;"><strong style="color: var(--accent-emerald);">训练后</strong>：只有 ~5% 在做核心工作，但高度协调，产出远超之前。其余变成精确辅助。SR/d ≈ 0.05。</p>
+        <p style="margin-top: 12px; font-weight: 600;">SR/d = "有效工作方向 / 总可用方向"</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--accent-blue);">
+        <h4 style="color: var(--accent-blue);">数学含义</h4>
+        <p>权重矩阵 W 做 SVD 分解后有 d 个奇异值 σ₁ ≥ σ₂ ≥ ... ≥ σ_d。</p>
+        <div class="equation" style="font-size: 0.9rem; margin: 12px 0;">SR(W) = (σ₁² + σ₂² + ... + σ_d²) / σ₁²</div>
+        <p>分子 = 所有方向的<strong>总能量</strong>，分母 = 最强方向的<strong>能量</strong>。</p>
+        <p style="margin-top: 8px;">SR 不数"有多少奇异值非零"（那是 rank），而是衡量<strong>能量分布的集中度</strong>。满秩矩阵可以 rank=4096 但 SR 只有 200。</p>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom: 20px; border-left: 3px solid var(--accent-purple);">
+        <h4 style="color: var(--accent-purple);">信息论的精确含义</h4>
+        <p>定义谱概率分布 p<sub>i</sub> = σ<sub>i</sub>² / Σ σ<sub>j</sub>²，则：</p>
+        <div class="equation" style="font-size: 0.9rem; margin: 12px 0;">log(SR) = H<sub>Rényi-2</sub>（谱熵）</div>
+        <p><strong>SR/d 下降 = 谱熵减少 = 信息在被压缩。</strong></p>
+        <p style="margin-top: 12px;">训练的通用压缩量：</p>
+        <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 8px;">
+          <div class="stat-block"><div class="stat-value" style="font-size:1.2rem;">−2 nats</div><div class="stat-label">ΔH₂ 谱熵变化</div></div>
+          <div class="stat-block"><div class="stat-value" style="font-size:1.2rem;">13%</div><div class="stat-label">UCR 保留比</div></div>
+          <div class="stat-block"><div class="stat-value" style="font-size:1.2rem;">87%</div><div class="stat-label">谱自由度被擦除</div></div>
+        </div>
+        <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.88rem;">这个 13% 不依赖模型大小、不依赖架构 — 它是训练本身的<strong>通用常数</strong>。</p>
+      </div>
+      <div class="insight">
+        <span class="insight-text"><strong>类比</strong>：Loss 告诉你"模型预测得多准"，SR/d 告诉你"模型内部有多有序"。学生可以靠死记硬背考高分（loss 低），但知识结构碎片化（SR/d 没到位）。</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">04 / 16</div>
+</section>
+
+<!-- Slide 5: α Deep Dive -->
+<section class="slide" id="slide-5">
+  <h2>α 深度解读：<span class="accent">"这个矩阵的内部结构有多好？"</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--accent-purple);">
+        <h4 style="color: var(--accent-purple);">直觉理解：公司类比</h4>
+        <p>SVD 后的奇异值 = 每个"员工"的贡献度。</p>
+        <div style="margin-top: 12px;">
+          <p><span class="cell-danger">α > 6（随机公司）</span>：所有员工贡献差不多，没有核心团队。统计上跟随机矩阵没区别。<strong>什么都没学到。</strong></p>
+          <p style="margin-top: 8px;"><span class="cell-warning">α ∈ [4,6]（初创期）</span>：出现了几个明星（大奇异值"冒出来"），但大部分人还是随机状态。有少数特征被学到了。</p>
+          <p style="margin-top: 8px;"><span class="cell-success">α ∈ [2,4]（成熟公司）</span>：形成了<strong>幂律等级结构</strong>：少数人贡献极大，大量人有明确角色。这是高度功能化的<strong>自组织</strong>。</p>
+          <p style="margin-top: 8px;"><span style="color: var(--accent-purple);">α < 2（过度内卷）</span>：一两个方向垄断所有能量。Rank collapse。</p>
+        </div>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--accent-amber);">
+        <h4 style="color: var(--accent-amber);">SR/d vs α — 不是同一个指标</h4>
+        <div class="table-container" style="margin-top: 8px;">
+          <table style="font-size: 0.82rem;">
+            <thead><tr><th></th><th>SR/d</th><th>α</th></tr></thead>
+            <tbody>
+              <tr><td style="font-weight:600;">度量</td><td>压缩了多少（how much）</td><td>压缩得多好（how well）</td></tr>
+              <tr><td style="font-weight:600;">类比</td><td>雕塑去掉了多少石料</td><td>雕出来的形状质量</td></tr>
+              <tr><td style="font-weight:600;">物理量</td><td>熵 S</td><td>熵变效率 ∂S/∂U</td></tr>
+              <tr><td style="font-weight:600;">时间行为</td><td>单调下降</td><td>可反转（reversal）</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--accent-teal);">
+        <h4 style="color: var(--accent-teal);">物理学含义 — α 是"温度计"</h4>
+        <p>SGD 训练 = Langevin 动力学，有两个"力"：</p>
+        <p style="margin-top: 8px;"><strong style="color: var(--accent-emerald);">数据驱动力</strong>（梯度）：把权重推向<strong>有序</strong></p>
+        <p><strong style="color: var(--accent-rose);">热噪声</strong>（mini-batch 随机性）：把权重推向<strong>无序</strong></p>
+        <div class="equation" style="font-size: 0.85rem; margin: 12px 0;">α ≈ 1 + (λ / T<sub>eff</sub>) · f(SNR)</div>
+        <p>数据信号强（SNR↑）→ α↓ → 有序（heavy-tail）<br>
+        热噪声强（T<sub>eff</sub>↑）→ α↑ → 无序（随机）</p>
+        <p style="margin-top: 8px; font-weight: 600;">α 就是数据信号与 optimizer 噪声的博弈结果。</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--accent-rose);">
+        <h4 style="color: var(--accent-rose);">α Reversal — 为什么 Loss 看不到？</h4>
+        <p>当数据被重复太多次：数据信号 → 0，但 optimizer 噪声仍在。结构从有序<strong>回退</strong>到无序（α↑）。</p>
+        <p style="margin-top: 8px;">但 loss 为什么还在降？因为 <strong>memorization</strong>。模型记住了训练样本（loss↓），但可迁移的结构在被"融化"（α↑）。</p>
+        <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.88rem;">就像学生反复做同一套卷子：做题分数越来越高（loss↓），但对新题型的理解力在退化（α↑）。</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar"></div>
+  <div class="slide-counter">05 / 16</div>
+</section>
+
+<!-- Slide 6: Key Contributions -->
 <section class="slide" id="slide-4">
   <h2>五项<span class="accent">核心贡献</span></h2>
   <div class="three-col">
@@ -280,7 +376,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">04 / 14</div>
+  <div class="slide-counter">06 / 16</div>
 </section>
 
 <!-- Slide 5: Experimental Coverage -->
@@ -316,7 +412,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">05 / 14</div>
+  <div class="slide-counter">07 / 16</div>
 </section>
 
 <!-- Slide 6: Result P1 — Universal Compression -->
@@ -351,7 +447,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">06 / 14</div>
+  <div class="slide-counter">08 / 16</div>
 </section>
 
 <!-- Slide 7: Result P3 — Alpha Reversal -->
@@ -390,7 +486,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">07 / 14</div>
+  <div class="slide-counter">09 / 16</div>
 </section>
 
 <!-- Slide 8: Result P4 — Adaptive Schedule -->
@@ -430,7 +526,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">08 / 14</div>
+  <div class="slide-counter">10 / 16</div>
 </section>
 
 <!-- Slide 9: Downstream Eval -->
@@ -474,7 +570,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">09 / 14</div>
+  <div class="slide-counter">11 / 16</div>
 </section>
 
 <!-- Slide 10: K2 Diagnostic Case Study -->
@@ -520,7 +616,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">10 / 14</div>
+  <div class="slide-counter">12 / 16</div>
 </section>
 
 <!-- Slide 11: Practical Guidance -->
@@ -571,7 +667,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">11 / 14</div>
+  <div class="slide-counter">13 / 16</div>
 </section>
 
 <!-- Slide 12: Per-Layer Heatmap -->
@@ -593,7 +689,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">12 / 14</div>
+  <div class="slide-counter">14 / 16</div>
 </section>
 
 <!-- Slide 13: Scale Comparison — Advantage Amplifies -->
@@ -632,7 +728,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">13 / 14</div>
+  <div class="slide-counter">15 / 16</div>
 </section>
 
 <!-- Slide 14: Summary & Next Steps -->
@@ -681,7 +777,7 @@ tr:hover td { background: rgba(79, 172, 254, 0.03); }
     </div>
   </div>
   <div class="footer-bar"></div>
-  <div class="slide-counter">14 / 14</div>
+  <div class="slide-counter">16 / 16</div>
 </section>
 
 <!-- Lightbox overlay -->
