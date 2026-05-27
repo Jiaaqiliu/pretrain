@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beyond Loss Curves: Spectral Monitoring for LLM Pretraining</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700;900&family=Source+Serif+4:wght@400;600&display=swap');
+
+:root {
+  --bg: #fafbfc;
+  --bg-alt: #f0f2f5;
+  --bg-card: #ffffff;
+  --bg-dark: #1b2838;
+  --bg-accent: #f6f8fb;
+  --text: #1a2332;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  --text-light: #a0aec0;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --accent-dark: #1e40af;
+  --teal: #0d9488;
+  --teal-light: #ccfbf1;
+  --red: #dc2626;
+  --red-light: #fecaca;
+  --amber: #d97706;
+  --amber-light: #fef3c7;
+  --purple: #7c3aed;
+  --purple-light: #ede9fe;
+  --emerald: #059669;
+  --emerald-light: #d1fae5;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', 'Noto Serif SC', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-snap-type: y mandatory; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+/* Slide System */
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 96px;
+  position: relative;
+  page-break-after: always;
+  page-break-inside: avoid;
+}
+@media print {
+  .slide { min-height: auto; height: 100vh; overflow: hidden; padding: 48px 72px; }
+  .nav-indicator, .progress-bar { display: none !important; }
+}
+
+/* Progress bar */
+.progress-bar {
+  position: fixed; top: 0; left: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--teal));
+  z-index: 1000; transition: width 0.3s ease;
+}
+
+/* Navigation */
+.nav-indicator {
+  position: fixed; bottom: 32px; right: 48px;
+  font-family: var(--font-mono); font-size: 13px;
+  color: var(--text-muted); letter-spacing: 1px;
+  background: var(--bg-card); padding: 6px 14px;
+  border-radius: 20px; border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Title Slide */
+.slide-title {
+  text-align: center;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-alt) 100%);
+}
+.slide-title h1 {
+  font-size: 2.8rem; font-weight: 800;
+  letter-spacing: -0.03em; line-height: 1.2;
+  color: var(--text); margin-bottom: 16px;
+}
+.slide-title .subtitle {
+  font-size: 1.25rem; color: var(--text-secondary);
+  font-weight: 400; margin-bottom: 48px;
+  max-width: 700px; margin-left: auto; margin-right: auto;
+  line-height: 1.7;
+}
+.slide-title .meta {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+}
+.tag {
+  padding: 6px 16px; border-radius: 100px;
+  font-size: 0.8rem; font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-secondary);
+}
+.tag.primary { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.tag.success { border-color: var(--emerald); color: var(--emerald); background: var(--emerald-light); }
+
+/* Section Headers */
+.slide-section {
+  text-align: center;
+  background: var(--bg-dark);
+}
+.slide-section h2 {
+  font-size: 2.6rem; font-weight: 700;
+  color: #ffffff; letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+.slide-section .section-num {
+  font-family: var(--font-mono); font-size: 0.9rem;
+  color: rgba(255,255,255,0.4); letter-spacing: 3px;
+  text-transform: uppercase; margin-bottom: 16px;
+}
+.slide-section .section-sub {
+  font-size: 1.1rem; color: rgba(255,255,255,0.6);
+  font-weight: 300; max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Typography */
+h2 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 36px; color: var(--text); }
+h3 { font-size: 1.3rem; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+.label { font-size: 0.75rem; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+
+/* Layout */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+.two-col-60 { display: grid; grid-template-columns: 3fr 2fr; gap: 48px; align-items: start; }
+.two-col-40 { display: grid; grid-template-columns: 2fr 3fr; gap: 48px; align-items: start; }
+.three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.four-col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+
+/* Cards */
+.card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+.card-accent {
+  background: var(--bg-card); border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 24px;
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.card-dark {
+  background: var(--bg-dark); border: none;
+  border-radius: var(--radius); padding: 24px;
+  color: #ffffff;
+}
+
+/* Metric Display */
+.metric-box {
+  text-align: center; padding: 20px 16px;
+  background: var(--bg-accent); border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.metric-value {
+  font-family: var(--font-mono); font-size: 2rem;
+  font-weight: 700; color: var(--accent);
+  letter-spacing: -0.02em;
+}
+.metric-label {
+  font-size: 0.8rem; color: var(--text-muted);
+  margin-top: 4px; font-weight: 500;
+}
+.metric-value.red { color: var(--red); }
+.metric-value.teal { color: var(--teal); }
+.metric-value.amber { color: var(--amber); }
+.metric-value.purple { color: var(--purple); }
+
+/* Tables */
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.85rem;
+}
+th {
+  text-align: left; padding: 10px 14px;
+  font-weight: 600; color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-strong);
+  font-size: 0.78rem; letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+tr:last-child td { border-bottom: none; }
+tr.highlight td { background: var(--accent-light); font-weight: 600; }
+.mono { font-family: var(--font-mono); font-size: 0.82rem; }
+
+/* Figure */
+.figure {
+  text-align: center; margin: 16px 0;
+}
+.figure img {
+  max-width: 100%; height: auto;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.figure-caption {
+  font-size: 0.78rem; color: var(--text-muted);
+  margin-top: 10px; font-style: italic;
+}
+.figure-full img {
+  max-height: 55vh; width: auto;
+}
+.figure-wide img {
+  max-height: 48vh; width: auto; max-width: 90%;
+}
+.figure-medium img {
+  max-height: 42vh; width: auto; max-width: 85%;
+}
+
+/* Highlight boxes */
+.insight {
+  background: var(--accent-light); border-left: 4px solid var(--accent);
+  padding: 16px 20px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 16px 0;
+}
+.insight p { color: var(--accent-dark); font-weight: 500; font-size: 0.92rem; }
+.warning {
+  background: var(--amber-light); border-left: 4px solid var(--amber);
+  padding: 16px 20px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.warning p { color: #92400e; font-weight: 500; font-size: 0.92rem; }
+.success {
+  background: var(--emerald-light); border-left: 4px solid var(--emerald);
+  padding: 16px 20px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.success p { color: #065f46; font-weight: 500; font-size: 0.92rem; }
+
+/* Quote */
+.quote {
+  font-family: var(--font-serif); font-size: 1.4rem;
+  color: var(--text-secondary); line-height: 1.6;
+  text-align: center; max-width: 700px;
+  margin: 0 auto; padding: 32px 0;
+  font-style: italic;
+}
+.quote::before { content: '"'; font-size: 3rem; color: var(--accent); display: block; line-height: 0.5; margin-bottom: 16px; }
+
+/* Code block */
+.code-block {
+  background: #1e293b; color: #e2e8f0;
+  padding: 20px 24px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 0.82rem;
+  line-height: 1.8; overflow-x: auto;
+}
+.code-block .keyword { color: #c084fc; }
+.code-block .func { color: #67e8f9; }
+.code-block .string { color: #86efac; }
+.code-block .comment { color: #64748b; }
+.code-block .number { color: #fbbf24; }
+
+/* List */
+.bullet-list { list-style: none; padding: 0; }
+.bullet-list li {
+  padding: 8px 0 8px 24px; position: relative;
+  font-size: 0.95rem; color: var(--text-secondary);
+}
+.bullet-list li::before {
+  content: ''; position: absolute; left: 0; top: 16px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); opacity: 0.7;
+}
+.bullet-list li strong { color: var(--text); }
+
+/* Status indicators */
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 500; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-green .status-dot { background: var(--emerald); }
+.status-yellow .status-dot { background: var(--amber); }
+.status-red .status-dot { background: var(--red); }
+
+/* Equation */
+.equation {
+  text-align: center; padding: 20px;
+  font-family: var(--font-serif); font-size: 1.3rem;
+  color: var(--text); background: var(--bg-accent);
+  border-radius: var(--radius-sm); margin: 16px 0;
+  border: 1px solid var(--border);
+}
+
+/* Comparison */
+.vs-container {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 24px;
+  align-items: center;
+}
+.vs-divider {
+  font-size: 1.2rem; font-weight: 700; color: var(--text-muted);
+  padding: 0 8px;
+}
+
+/* Diagram */
+.flow-diagram {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin: 24px 0;
+}
+.flow-step {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 12px 20px; border-radius: var(--radius-sm);
+  font-size: 0.85rem; font-weight: 500; text-align: center;
+}
+.flow-step.active { border-color: var(--accent); background: var(--accent-light); color: var(--accent-dark); }
+.flow-arrow { color: var(--text-light); font-size: 1.2rem; }
+
+/* Animation */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn 0.6s ease forwards; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress" style="width: 0%"></div>
+<div class="nav-indicator" id="nav">01 / 27</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 1: Title -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-title" id="s1">
+  <h1>Beyond Loss Curves</h1>
+  <p class="subtitle">
+    Spectral Monitoring for LLM Pretraining<br>
+    <span style="font-size:0.9em; color:var(--text-muted)">基于谱结构的大模型预训练监控框架</span>
+  </p>
+  <div class="meta">
+    <span class="tag primary">14 Models</span>
+    <span class="tag primary">4 Architectures</span>
+    <span class="tag primary">~340 Checkpoints</span>
+    <span class="tag success">2 Scales Validated</span>
+  </div>
+  <p style="margin-top:40px; color:var(--text-muted); font-size:0.85rem;">
+    组会汇报 · 2026-05-27
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 2: The Problem -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <h2>预训练的 "盲飞" 现状 <span style="font-size:0.6em; color:var(--text-muted)">The Blind Flight Problem</span></h2>
+  <div class="two-col">
+    <div>
+      <table>
+        <tr><th>Model</th><th>Cost</th><th>GPUs</th><th>Time</th></tr>
+        <tr><td>GPT-4</td><td>~$100M+</td><td>数万 A100</td><td>3-6 月</td></tr>
+        <tr><td>Llama-3-70B</td><td>~$30M</td><td>16K H100</td><td>~3 月</td></tr>
+        <tr><td>DeepSeek-V3</td><td>~$5.5M</td><td>2048 H800</td><td>2 月</td></tr>
+      </table>
+      <div class="insight" style="margin-top:24px;">
+        <p>整个训练过程中，工程师判断"训练是否正常"的核心指标只有一个：<strong>training loss</strong></p>
+      </div>
+    </div>
+    <div class="card-dark" style="text-align:center; padding:40px;">
+      <div style="font-size:2.5rem; margin-bottom:16px; letter-spacing:-2px; font-weight:200; opacity:0.4;">
+        <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"><path d="M12 2L4 7l8 5 8-5-8-5z"/><path d="M4 12l8 5 8-5"/><path d="M4 17l8 5 8-5"/></svg>
+      </div>
+      <p style="font-size:1.2rem; opacity:0.9; font-weight:600;">$100M+ Investment</p>
+      <p style="font-size:0.9rem; opacity:0.5; margin-top:12px;">Only 1 instrument:<br><span style="color:#4facfe; font-weight:500;">training loss</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 3: Loss Blind Spots -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s3">
+  <h2>Loss 的四个根本性盲区 <span style="font-size:0.6em; color:var(--text-muted)">Fundamental Blind Spots</span></h2>
+  <div class="four-col">
+    <div class="card" style="border-top: 3px solid var(--red);">
+      <h3 style="font-size:1rem; color:var(--red);">盲区 1</h3>
+      <p style="font-size:0.85rem; font-weight:600; margin-bottom:8px;">Loss ↓ ≠ 模型变好</p>
+      <p style="font-size:0.78rem; color:var(--text-muted);">Memorization 也能降 loss，但泛化结构在退化</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--amber);">
+      <h3 style="font-size:1rem; color:var(--amber);">盲区 2</h3>
+      <p style="font-size:0.85rem; font-weight:600; margin-bottom:8px;">无法跨模型比较</p>
+      <p style="font-size:0.78rem; color:var(--text-muted);">1B 的 loss=3.0 与 70B 的 loss=3.0 含义完全不同</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--purple);">
+      <h3 style="font-size:1rem; color:var(--purple);">盲区 3</h3>
+      <p style="font-size:0.85rem; font-weight:600; margin-bottom:8px;">不知何时降 LR</p>
+      <p style="font-size:0.78rem; color:var(--text-muted);">Cosine/WSD 都是人为预设，缺乏模型自身信号</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--teal);">
+      <h3 style="font-size:1rem; color:var(--teal);">盲区 4</h3>
+      <p style="font-size:0.85rem; font-weight:600; margin-bottom:8px;">没有早期预警</p>
+      <p style="font-size:0.78rem; color:var(--text-muted);">结构退化时 loss 仍在下降——直到不可逆</p>
+    </div>
+  </div>
+  <div class="warning" style="margin-top:32px;">
+    <p>核心洞察 (Core Insight): 智能不是记住信息，而是<strong>发现结构</strong>——我们需要直接测量结构</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 4: Section - Metrics -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-section" id="s4">
+  <div class="section-num">Part I</div>
+  <h2>两个核心指标</h2>
+  <p class="section-sub">Two Spectral Metrics: SR/d & α</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 5: SR/d Definition -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s5">
+  <h2>指标 1: SR/d <span style="font-size:0.6em; color:var(--text-muted)">Normalized Stable Rank</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="equation">
+        SR(W) = ‖W‖²<sub>F</sub> / σ₁² &nbsp;&nbsp;→&nbsp;&nbsp; SR/d = SR(W) / d<sub>model</sub>
+      </div>
+      <ul class="bullet-list" style="margin-top:20px;">
+        <li><strong>物理含义</strong>: 矩阵用了多少百分比的可用维度空间</li>
+        <li><strong>数学本质</strong>: SR = exp(H₂)，即 Rényi-2 谱熵的指数</li>
+        <li><strong>计算成本</strong>: O(mn)，7B 全部层 ~5 min</li>
+      </ul>
+      <div class="insight" style="margin-top:20px;">
+        <p>SR/d ↓ = 谱熵减少 = 信息在压缩<br>这不是类比——是<strong>数学恒等式</strong></p>
+      </div>
+    </div>
+    <div>
+      <div class="metric-box" style="margin-bottom:16px;">
+        <div class="metric-value" style="color:var(--text-muted);">~0.40</div>
+        <div class="metric-label">随机初始化 (Random Init)</div>
+      </div>
+      <div style="text-align:center; padding:12px; color:var(--text-muted); font-size:1.5rem;">↓ 训练 ↓</div>
+      <div class="metric-box">
+        <div class="metric-value teal">~0.05</div>
+        <div class="metric-label">训练完成 (Fully Trained)</div>
+      </div>
+      <p style="margin-top:16px; font-size:0.8rem; color:var(--text-muted); text-align:center;">
+        压缩 ~8× → ΔH₂ ≈ -2.0 nats<br>(Universal across all models!)
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 6: Alpha Definition -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s6">
+  <h2>指标 2: α <span style="font-size:0.6em; color:var(--text-muted)">Power-Law Exponent</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="equation">
+        P(λ) ~ λ<sup>-α</sup> &nbsp;&nbsp; (ESD of W<sup>T</sup>W)
+      </div>
+      <ul class="bullet-list" style="margin-top:20px;">
+        <li><strong>物理含义</strong>: 权重矩阵的内部结构质量</li>
+        <li><strong>理论基础</strong>: Heavy-Tail Self-Regularization (HTSR)</li>
+        <li><strong>α ↓ = heavy-tail ↑ = 特征相关性 ↑ = 泛化 ↑</strong></li>
+      </ul>
+      <div class="warning" style="margin-top:20px;">
+        <p>关键发现: α 不是单调下降的——在大模型上它会<strong>反转 (Reversal)</strong>！</p>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="padding:20px;">
+        <table style="font-size:0.82rem;">
+          <tr><th>α 范围</th><th>状态</th><th>含义</th></tr>
+          <tr><td class="mono" style="color:var(--red);">&gt; 6</td><td>Random</td><td>接近 Marchenko-Pastur</td></tr>
+          <tr><td class="mono" style="color:var(--amber);">4 ~ 6</td><td>Bulk + Spikes</td><td>部分结构化</td></tr>
+          <tr><td class="mono" style="color:var(--teal);">2 ~ 4</td><td>Heavy-Tail</td><td>良好自正则化 ✓</td></tr>
+          <tr><td class="mono" style="color:var(--purple);">&lt; 2</td><td>Over-trained</td><td>Rank collapse 风险</td></tr>
+        </table>
+      </div>
+      <p style="margin-top:16px; font-size:0.82rem; color:var(--text-secondary); text-align:center;">
+        <strong>Martin & Mahoney (JMLR 2021)</strong><br>
+        训练好的网络层遵循 power-law 分布
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 7: Two Metrics Relationship -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s7">
+  <h2>两个指标的协同 <span style="font-size:0.6em; color:var(--text-muted)">Dual-Metric Dynamics</span></h2>
+  <div class="figure figure-full">
+    <img src="paper/figures_v2/fig01_phase_portrait.png" alt="Phase Portrait">
+    <p class="figure-caption">Fig 1. Spectral Phase Portrait — 所有模型在 (SR/d, α) 空间中的训练轨迹。小模型收敛到左下角 (压缩+有序)，大模型停滞在高 α 区域</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 8: Section - Results -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-section" id="s8">
+  <div class="section-num">Part II</div>
+  <h2>核心发现</h2>
+  <p class="section-sub">Key Findings from 14 Models × 4 Architectures</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 9: Finding 1 - Universal Convergence -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s9">
+  <h2>发现 1: SR/d 通用收敛 <span style="font-size:0.6em; color:var(--text-muted)">Universal Convergence</span></h2>
+  <div class="two-col-60">
+    <div class="figure">
+      <img src="paper/figures_v2/fig02_srd_convergence.png" alt="SR/d Convergence" style="max-height:50vh;">
+    </div>
+    <div>
+      <div class="equation" style="font-size:1.1rem;">
+        SR/d(∞) = 0.040 + 0.61 / √d
+      </div>
+      <ul class="bullet-list" style="margin-top:20px;">
+        <li><strong>14 个模型</strong>全部收敛到 0.04-0.07</li>
+        <li>只由层宽度 d 决定，<strong>与深度无关</strong></li>
+        <li>OLMo-2-13B 和 32B (同 d=5120): <strong>SR/d 完全相同</strong> (0.043)</li>
+      </ul>
+      <div class="success" style="margin-top:20px;">
+        <p>通用压缩定律: ΔH₂ = -2.04 ± 0.17 nats<br>所有 Transformer 精确压缩 ~2 nats 谱熵</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 10: Finding 2 - Alpha Reversal -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s10">
+  <h2>发现 2: α Reversal <span style="font-size:0.6em; color:var(--text-muted)">Structural Degradation Signal</span></h2>
+  <div class="two-col-60">
+    <div class="figure">
+      <img src="paper/figures_v2/fig03_alpha_dynamics.png" alt="Alpha Dynamics" style="max-height:50vh;">
+    </div>
+    <div>
+      <h3 style="color:var(--red);">Loss 下降，但结构在退化！</h3>
+      <ul class="bullet-list">
+        <li><strong>OLMo-2-13B</strong>: α 从 4.25 反转到 6.95 (Δα = +2.71)</li>
+        <li>5/8 大模型展现 reversal，跨架构一致</li>
+        <li><strong>MLP 驱动</strong>: α_mlp 上升而 α_attn 稳定</li>
+      </ul>
+      <div class="card" style="margin-top:16px; padding:16px;">
+        <p class="label">直觉 (Intuition)</p>
+        <p style="font-size:0.85rem; color:var(--text-secondary);">
+          嘈杂环境搭积木: 该学的学完后(手没方向), 噪声把精细结构震坏(α↑)。<br>
+          <strong>降 LR = 减小振动 = 保护结构</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 11: Finding 3 - Predictive Power -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s11">
+  <h2>发现 3: 预测下游性能 <span style="font-size:0.6em; color:var(--text-muted)">Predictive Power</span></h2>
+  <div class="two-col">
+    <div class="figure">
+      <img src="paper/figures_v2/fig08_correlation.png" alt="Correlation" style="max-height:45vh;">
+    </div>
+    <div>
+      <div class="three-col" style="margin-bottom:20px;">
+        <div class="metric-box">
+          <div class="metric-value">-0.90</div>
+          <div class="metric-label">Spearman ρ</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value teal">0.63</div>
+          <div class="metric-label">R² (单变量)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value purple">0.84</div>
+          <div class="metric-label">R² (+log N)</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:16px;">
+        N=102 (6 models × 17 checkpoints × 5 benchmarks)
+      </p>
+      <div class="equation" style="font-size:0.9rem;">
+        Perf ≈ -0.248·log₁₀(SR/d) + 0.062·log₁₀(N) - 0.365
+      </div>
+      <div class="insight" style="margin-top:16px;">
+        <p>不需要训练数据、测试数据或 loss，仅从权重就能预测 84% 的下游方差</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 12: Finding 4 - Phase Transition -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s12">
+  <h2>发现 4: 结构相变 <span style="font-size:0.6em; color:var(--text-muted)">Phase Transition at N ≈ 1.7B</span></h2>
+  <div class="two-col-60">
+    <div class="figure">
+      <img src="paper/figures_v2/fig07_phase_transition.png" alt="Phase Transition" style="max-height:48vh;">
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px; border-left:4px solid var(--red);">
+        <p style="font-size:0.85rem;"><strong>&lt; 1.7B:</strong> α 能降到 &lt;3 (结构成熟)</p>
+        <p style="font-size:0.85rem;"><strong>&gt; 1.7B:</strong> α stuck &gt;5 (结构不成熟)</p>
+      </div>
+      <div class="equation" style="font-size:0.85rem;">
+        α(N) ≈ 2.65 + 2.1 × σ((log₁₀N - 9.23) / 0.07)<br>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Sigmoid fit R² = 0.97</span>
+      </div>
+      <div class="warning" style="margin-top:16px;">
+        <p>"大模型难训" 不只是数据量问题——大模型<strong>根本性地更难结构化</strong></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 13: Finding 5 - MLP Bottleneck -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s13">
+  <h2>发现 5: MLP 是结构瓶颈 <span style="font-size:0.6em; color:var(--text-muted)">MLP as Structural Bottleneck</span></h2>
+  <div class="two-col">
+    <div class="figure">
+      <img src="paper/figures_v2/fig06_mlp_attn_gap.png" alt="MLP-Attn Gap" style="max-height:48vh;">
+    </div>
+    <div>
+      <table>
+        <tr><th>Model</th><th>α_attn</th><th>α_mlp</th><th>Gap</th></tr>
+        <tr><td>OLMo-2-1B</td><td class="mono" style="color:var(--teal);">1.35</td><td class="mono" style="color:var(--teal);">3.56</td><td class="mono">2.21</td></tr>
+        <tr><td>OLMo-2-32B</td><td class="mono" style="color:var(--teal);">3.44</td><td class="mono" style="color:var(--red);">7.59</td><td class="mono" style="font-weight:700;">4.15</td></tr>
+        <tr class="highlight"><td>Mistral-7B</td><td class="mono" style="color:var(--teal);">3.79</td><td class="mono" style="color:var(--red);">9.22</td><td class="mono" style="font-weight:700;">5.43</td></tr>
+      </table>
+      <div class="insight" style="margin-top:20px;">
+        <p><strong>Attention 已结构化 (α &lt; 4)，MLP 仍是随机噪声 (α &gt; 7)</strong></p>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:12px;">
+        → 优先增加 MLP 容量 (更宽 FFN / MoE)，而非更多 attention heads
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 14: Section - Prescriptive -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-section" id="s14">
+  <div class="section-num">Part III</div>
+  <h2>从诊断到行动</h2>
+  <p class="section-sub">α-Guided Adaptive LR Schedule</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 15: Alpha-Guided Schedule -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s15">
+  <h2>α-Guided Schedule <span style="font-size:0.6em; color:var(--text-muted)">Data-Driven LR Decay</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="flow-diagram" style="flex-direction:column; align-items:stretch; gap:8px;">
+        <div class="flow-step active">每 500 步测量 α (2 层 SVD, ~5s)</div>
+        <div style="text-align:center; color:var(--text-light);">↓</div>
+        <div class="flow-step">检测: dα/dt > 0 连续 3+ 次?</div>
+        <div style="text-align:center; color:var(--text-light);">↓</div>
+        <div class="flow-step active" style="border-color:var(--red); background:var(--red-light); color:var(--red);">触发 LR Decay (linear to η_min)</div>
+      </div>
+      <div class="code-block" style="margin-top:16px; font-size:0.75rem;">
+<span class="comment"># 核心逻辑 (替代人工设定 stable_fraction)</span>
+<span class="keyword">if</span> <span class="func">alpha_increasing</span>(window=<span class="number">3</span>):
+    <span class="func">start_lr_decay</span>()
+<span class="comment"># 不需要知道 "stable 阶段该多长"</span>
+      </div>
+    </div>
+    <div>
+      <h3>核心优势</h3>
+      <ul class="bullet-list">
+        <li>自动适应不同规模: 410M→83%, 1B→74%</li>
+        <li>自动适应不同数据: 无需人工调参</li>
+        <li>信号来自模型自身结构</li>
+      </ul>
+      <div class="card" style="margin-top:20px; text-align:center;">
+        <p class="label">理论依据 (Theoretical Basis)</p>
+        <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:8px;">
+          α reversal = SGD noise > spectral gap<br>
+          降 η → noise ∝ η² 下降 → 恢复 SNR > 1<br>
+          <span style="font-size:0.78rem; color:var(--text-muted);">(Wedin's sin-Θ theorem bounds subspace rotation)</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 16: 3-Way Results 410M -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s16">
+  <h2>实验验证: 410M 3-Way <span style="font-size:0.6em; color:var(--text-muted)">FineWeb-Edu, 10B tokens, 2 seeds</span></h2>
+  <div class="two-col-60">
+    <div class="figure">
+      <img src="paper/figures_v2/fig04_3way_comparison.png" alt="3-Way Comparison" style="max-height:50vh;">
+    </div>
+    <div>
+      <table>
+        <tr><th>Schedule</th><th>Loss</th><th>α</th><th>Avg ↑</th></tr>
+        <tr><td>Cosine</td><td class="mono">2.931</td><td class="mono">2.68</td><td class="mono">0.459</td></tr>
+        <tr><td>WSD</td><td class="mono">2.874</td><td class="mono">2.47</td><td class="mono">0.467</td></tr>
+        <tr class="highlight"><td><strong>α-Guided</strong></td><td class="mono">2.877</td><td class="mono">2.44</td><td class="mono"><strong>0.468</strong></td></tr>
+      </table>
+      <div style="margin-top:16px;">
+        <div class="three-col">
+          <div class="metric-box">
+            <div class="metric-value" style="font-size:1.4rem;">+1.95%</div>
+            <div class="metric-label">vs Cosine</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value teal" style="font-size:1.4rem;">+6.3%</div>
+            <div class="metric-label">LAMBADA ↑</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value amber" style="font-size:1.4rem;">≈ WSD</div>
+            <div class="metric-label">自动匹配</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 17: 3-Way Results 1B (NEW) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s17">
+  <h2>Scale-Up: 1B 验证 <span style="font-size:0.6em; color:var(--text-muted)">Advantage Amplifies with Scale</span></h2>
+  <div class="two-col">
+    <div>
+      <table>
+        <tr><th>Schedule</th><th>Loss</th><th>α</th><th>SR/d</th><th>Avg ↑</th></tr>
+        <tr><td>Cosine</td><td class="mono">2.739</td><td class="mono">4.05</td><td class="mono">0.056</td><td class="mono">0.486</td></tr>
+        <tr><td>WSD</td><td class="mono"><strong>2.701</strong></td><td class="mono">4.01</td><td class="mono">0.054</td><td class="mono">0.494</td></tr>
+        <tr class="highlight"><td><strong>α-Guided</strong></td><td class="mono">2.709</td><td class="mono"><strong>3.87</strong></td><td class="mono"><strong>0.054</strong></td><td class="mono"><strong>0.498</strong></td></tr>
+      </table>
+      <div class="insight" style="margin-top:20px;">
+        <p>α-Guided 首次<strong>明确超越 WSD</strong> (+0.98%)，而非仅持平</p>
+      </div>
+    </div>
+    <div>
+      <h3>跨规模趋势</h3>
+      <div class="card" style="padding:20px;">
+        <table style="font-size:0.85rem;">
+          <tr><th>对比</th><th>410M</th><th>1B</th><th>趋势</th></tr>
+          <tr><td>α-Guided vs Cosine</td><td class="mono">+1.95%</td><td class="mono" style="color:var(--accent); font-weight:700;">+2.56%</td><td>↑ 放大</td></tr>
+          <tr><td>α-Guided vs WSD</td><td class="mono">+0.11%</td><td class="mono" style="color:var(--accent); font-weight:700;">+0.98%</td><td>↑ 显著</td></tr>
+          <tr><td>Decay point</td><td class="mono">83%</td><td class="mono">74%</td><td>自适应</td></tr>
+          <tr><td>LAMBADA ↑</td><td class="mono">+6.3%</td><td class="mono" style="color:var(--accent); font-weight:700;">+10.2%</td><td>↑ 放大</td></tr>
+        </table>
+      </div>
+      <div class="success" style="margin-top:16px;">
+        <p>优势随规模放大: 预计 7B+ 更显著</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 18: Cross-Architecture -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s18">
+  <h2>跨架构验证 <span style="font-size:0.6em; color:var(--text-muted)">Cross-Architecture Validation</span></h2>
+  <div class="two-col">
+    <div class="figure">
+      <img src="paper/figures_v2/fig11_cross_arch.png" alt="Cross Architecture" style="max-height:45vh;">
+    </div>
+    <div>
+      <div class="figure">
+        <img src="paper/figures_v2/fig05_srd_vs_d.png" alt="SR/d vs d" style="max-height:45vh;">
+      </div>
+    </div>
+  </div>
+  <div class="three-col" style="margin-top:16px;">
+    <div class="card" style="text-align:center; padding:14px;">
+      <p style="font-weight:600; font-size:0.85rem;">GPT-NeoX (Pythia)</p>
+      <p class="mono" style="font-size:0.8rem; color:var(--text-muted);">6 scales, 150 ckpts</p>
+    </div>
+    <div class="card" style="text-align:center; padding:14px;">
+      <p style="font-weight:600; font-size:0.85rem;">OLMo-2</p>
+      <p class="mono" style="font-size:0.8rem; color:var(--text-muted);">4 scales, 100 ckpts</p>
+    </div>
+    <div class="card" style="text-align:center; padding:14px;">
+      <p style="font-weight:600; font-size:0.85rem;">Mistral (GQA)</p>
+      <p class="mono" style="font-size:0.8rem; color:var(--text-muted);">v0.1 + v0.3, Δα < 0.02</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 19: Heatmaps -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s19">
+  <h2>谱结构热力图 <span style="font-size:0.6em; color:var(--text-muted)">Spectral Heatmaps</span></h2>
+  <div class="figure figure-wide">
+    <img src="paper/figures_v2/fig13_heatmaps_v2.png" alt="Heatmaps">
+    <p class="figure-caption">Left: α evolution across 10 models over training. Center: Eigenvalue concentration (Pythia). Right: SR/d compression ratio (Pythia)</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 20: Section - Applications -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-section" id="s20">
+  <div class="section-num">Part IV</div>
+  <h2>实践价值</h2>
+  <p class="section-sub">Practical Applications for Pretraining Engineers</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 21: Monitoring Dashboard -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s21">
+  <h2>训练监控仪表盘 <span style="font-size:0.6em; color:var(--text-muted)">Health Monitoring Dashboard</span></h2>
+  <div class="two-col">
+    <div class="figure">
+      <img src="paper/figures_v2/fig09_dashboard.png" alt="Dashboard" style="max-height:48vh;">
+    </div>
+    <div>
+      <h3>四级警报系统</h3>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px;">
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--emerald-light); border-radius:8px;">
+          <span style="font-size:1.2rem;">🟢</span>
+          <div><strong style="font-size:0.85rem;">HEALTHY</strong><br><span style="font-size:0.78rem; color:var(--text-muted);">dα/dt < 0 → 继续训练</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--amber-light); border-radius:8px;">
+          <span style="font-size:1.2rem;">🟡</span>
+          <div><strong style="font-size:0.85rem;">PLATEAU</strong><br><span style="font-size:0.78rem; color:var(--text-muted);">|dα/dt| ≈ 0 → 考虑 decay</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--red-light); border-radius:8px;">
+          <span style="font-size:1.2rem;">🔴</span>
+          <div><strong style="font-size:0.85rem;">REVERSAL</strong><br><span style="font-size:0.78rem; color:var(--text-muted);">dα/dt > 0 ×3 → 立即降 LR</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f1f5f9; border-radius:8px;">
+          <span style="font-size:1.2rem;">⚫</span>
+          <div><strong style="font-size:0.85rem;">EXHAUSTED</strong><br><span style="font-size:0.78rem; color:var(--text-muted);">α > 4 + ↑ → 需要更多容量</span></div>
+        </div>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-muted);">成本: < 0.05% 训练 compute</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 22: Post-hoc Diagnosis -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s22">
+  <h2>Post-hoc 模型体检 <span style="font-size:0.6em; color:var(--text-muted)">5-Minute Model Audit</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>案例: K2-65B 诊断</h3>
+      <div class="card" style="border-left:4px solid var(--red); margin-bottom:16px;">
+        <table style="font-size:0.85rem;">
+          <tr><td style="font-weight:600;">SR/d</td><td class="mono">0.036</td><td style="color:var(--amber);">偏低</td></tr>
+          <tr><td style="font-weight:600;">α</td><td class="mono">5.09</td><td style="color:var(--red);">不成熟</td></tr>
+          <tr><td style="font-weight:600;">Reversal</td><td class="mono">Δα = +0.65</td><td style="color:var(--red);">已退化</td></tr>
+        </table>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:12px;">
+        <strong>诊断</strong>: 训练不充分 (only 1.4T tokens, D/N=21)
+      </p>
+      <p style="font-size:0.85rem; color:var(--text-secondary);">
+        <strong>外部验证</strong>: K2 在 15/21 benchmark 低于 Llama-2-70B
+      </p>
+      <div class="success" style="margin-top:16px;">
+        <p><strong>5 分钟测量 = 跑几天 benchmark 的结论</strong></p>
+      </div>
+    </div>
+    <div>
+      <h3>完整模型审计表</h3>
+      <div class="card" style="padding:16px; font-size:0.78rem;">
+        <table>
+          <tr><th style="width:30%;">Model</th><th>SR/d</th><th>α</th><th style="width:22%;">判定</th></tr>
+          <tr><td>Pythia-1B</td><td class="mono">0.050</td><td class="mono" style="color:var(--teal);">2.78</td><td>✅ 成熟</td></tr>
+          <tr><td>OLMo-2-1B</td><td class="mono">0.064</td><td class="mono" style="color:var(--teal);">2.37</td><td>✅ 成熟</td></tr>
+          <tr><td>OLMo-2-13B</td><td class="mono">0.043</td><td class="mono" style="color:var(--red);">6.95</td><td>❌ 不成熟</td></tr>
+          <tr><td>OLMo-2-32B</td><td class="mono">0.043</td><td class="mono" style="color:var(--amber);">5.25</td><td>⚠️ 不成熟</td></tr>
+          <tr><td>Mistral-7B</td><td class="mono">0.040</td><td class="mono" style="color:var(--amber);">6.13</td><td>⚠️</td></tr>
+          <tr><td>K2-65B</td><td class="mono">0.036</td><td class="mono" style="color:var(--amber);">5.09</td><td>❌ 严重不足</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 23: Key Recommendations -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s23">
+  <h2>对预训练的建议 <span style="font-size:0.6em; color:var(--text-muted)">Actionable Recommendations</span></h2>
+  <div class="three-col">
+    <div class="card" style="border-top:3px solid var(--accent);">
+      <h3 style="font-size:1rem; color:var(--accent);">建议 1: 不用 Cosine</h3>
+      <p style="font-size:0.82rem; color:var(--text-secondary);">
+        Cosine 过早衰减 LR，浪费"结构形成黄金期"。<br><br>
+        <strong>WSD 或 α-Guided</strong> 保持高 LR 到 74-83%<br>
+        → benchmark +2-2.6%
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--red);">
+      <h3 style="font-size:1rem; color:var(--red);">建议 2: 数据远超 Chinchilla</h3>
+      <p style="font-size:0.82rem; color:var(--text-secondary);">
+        结构成熟需要 15-25× Chinchilla 推荐量<br><br>
+        1B: ~300B tokens<br>
+        7B: ~3.5T tokens<br>
+        13B: 远超 5T tokens
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--teal);">
+      <h3 style="font-size:1rem; color:var(--teal);">建议 3: 关注 MLP 容量</h3>
+      <p style="font-size:0.82rem; color:var(--text-secondary);">
+        大模型 Attn 已结构化,<br>
+        <strong>MLP 是瓶颈</strong> (gap 可达 5.4)<br><br>
+        → 更宽 FFN / MoE 增加 MLP 容量
+      </p>
+    </div>
+  </div>
+  <div class="insight" style="margin-top:24px;">
+    <p>总结: 发布前 5 分钟谱体检 — SR/d 接近 0.040 + 0.61/√d 且 α &lt; 4 → 训练充分</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 24: Comparison with Prior Work -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s24">
+  <h2>与现有方法对比 <span style="font-size:0.6em; color:var(--text-muted)">Comparison with Existing Methods</span></h2>
+  <table style="font-size:0.85rem;">
+    <tr>
+      <th style="width:20%;">Capability</th>
+      <th style="width:16%;">Training Loss</th>
+      <th style="width:16%;">WeightWatcher<br><span style="font-size:0.7rem; font-weight:400;">(Martin 2021)</span></th>
+      <th style="width:16%;">Scaling Laws<br><span style="font-size:0.7rem; font-weight:400;">(Chinchilla)</span></th>
+      <th style="width:20%; background:var(--accent-light);">Ours</th>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">实时监控 (Real-time)</td>
+      <td style="text-align:center;">✓</td>
+      <td style="text-align:center; color:var(--red);">✗ (post-hoc)</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">✓</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">跨模型可比 (Scale-free)</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center;">✓</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">✓</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">检测结构退化 (Detect degradation)</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">✓ (α reversal)</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">预测下游性能 (Predict perf)</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; color:var(--amber);">部分 (r~0.7)</td>
+      <td style="text-align:center; color:var(--amber);">仅 loss</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">ρ=-0.90, R²=0.84</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">指导训练决策 (Guide training)</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; color:var(--red);">✗</td>
+      <td style="text-align:center; color:var(--amber);">仅数据量</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">✓ (+2.56% @1B)</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">开销 (Cost)</td>
+      <td style="text-align:center;">0</td>
+      <td style="text-align:center;">分钟级</td>
+      <td style="text-align:center;">0</td>
+      <td style="text-align:center; background:var(--accent-light); font-weight:600; color:var(--accent);">&lt;0.05% compute</td>
+    </tr>
+  </table>
+  <div class="insight" style="margin-top:24px;">
+    <p>我们的方法首次将 post-hoc 谱分析升级为 <strong>实时训练指导工具</strong>，且在预测精度和可操作性上全面超越</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 25: Theory Foundation -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s25">
+  <h2>理论基础 <span style="font-size:0.6em; color:var(--text-muted)">Theoretical Foundation</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>信息论恒等式</h3>
+      <div class="equation" style="font-size:1rem;">
+        SR(W) = exp(H₂) = 1 / Σ p<sub>i</sub>²<br>
+        <span style="font-size:0.8rem; color:var(--text-muted);">where p<sub>i</sub> = σ<sub>i</sub>² / ‖W‖²<sub>F</sub></span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:12px;">
+        Stable Rank = Participation Ratio ≈ exp(Rényi-2 谱熵)
+      </p>
+      <h3 style="margin-top:24px;">α Reversal 的 SNR 解释</h3>
+      <div class="equation" style="font-size:0.9rem;">
+        SNR(t) = ‖E[∇L]‖² / Var[∇L]<br>
+        <span style="font-size:0.78rem; color:var(--text-muted);">α reversal ⟺ SNR(t) < 1</span>
+      </div>
+      <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:8px;">
+        降 η 使 noise ∝ η² ↓ → 恢复 SNR > 1
+      </p>
+    </div>
+    <div>
+      <h3>Wedin 子空间稳定性</h3>
+      <div class="equation" style="font-size:0.9rem;">
+        ‖sinΘ(U<sub>k</sub>, U'<sub>k</sub>)‖ ≤ η·‖∇L‖ / γ<sub>k</sub>(W)
+      </div>
+      <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:12px;">
+        α-guided 在 γ<sub>k</sub> 缩小时减小 η → 最小化子空间旋转
+      </p>
+      <h3 style="margin-top:24px;">Langevin 动力学</h3>
+      <div class="card" style="padding:16px; font-size:0.82rem;">
+        <p>SGD = 梯度下降 + 有效温度扩散:</p>
+        <p style="margin-top:8px; font-family:var(--font-serif);">
+          dσ<sub>i</sub> = -η ∂L/∂σ<sub>i</sub> dt + √(2ηT<sub>eff</sub>) dB<sub>i</sub>
+        </p>
+        <p style="margin-top:8px; color:var(--text-muted);">
+          Higher T<sub>eff</sub> → spectrum blurs → α ↑<br>
+          T<sub>eff</sub> = η · C<sub>batch</sub>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 26: Summary & Contributions -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s26">
+  <h2>总结与贡献 <span style="font-size:0.6em; color:var(--text-muted)">Summary</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>四个层次的贡献</h3>
+      <ul class="bullet-list">
+        <li><strong>描述性 (Descriptive)</strong>: SR/d 通用收敛 + α reversal 发现</li>
+        <li><strong>预测性 (Predictive)</strong>: 仅从权重预测 84% 下游方差</li>
+        <li><strong>指导性 (Prescriptive)</strong>: α-guided schedule +2.56% @ 1B</li>
+        <li><strong>诊断性 (Diagnostic)</strong>: 5 min post-hoc 模型审计</li>
+      </ul>
+      <div class="card" style="margin-top:20px; padding:16px;">
+        <p class="label">科学意义</p>
+        <ul style="font-size:0.82rem; color:var(--text-secondary); padding-left:16px;">
+          <li>通用压缩定律: ΔH₂ ≈ -2 nats</li>
+          <li>结构相变: N ≈ 1.7B 阈值</li>
+          <li>Loss ≠ Quality 的直接证据</li>
+          <li>SR = exp(H₂) 严格桥梁</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <h3>实验规模</h3>
+      <div class="four-col" style="grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:20px;">
+        <div class="metric-box">
+          <div class="metric-value" style="font-size:1.6rem;">14</div>
+          <div class="metric-label">Models</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value teal" style="font-size:1.6rem;">4</div>
+          <div class="metric-label">Architectures</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value purple" style="font-size:1.6rem;">~340</div>
+          <div class="metric-label">Checkpoints</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value amber" style="font-size:1.6rem;">930×</div>
+          <div class="metric-label">Scale Range</div>
+        </div>
+      </div>
+      <div class="card-accent" style="text-align:center; padding:20px;">
+        <p style="font-size:1rem; font-weight:600; color:var(--accent);">Target: NeurIPS 2026</p>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-top:8px;">14 publication-quality figures<br>Comprehensive theory framework<br>38 citations in Related Work</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 27: Thank You -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="slide slide-title" id="s27" style="background: var(--bg-dark); color: white;">
+  <h1 style="color:white; font-size:2.4rem;">Thank You</h1>
+  <p class="subtitle" style="color:rgba(255,255,255,0.7);">
+    Beyond Loss Curves: Spectral Monitoring for LLM Pretraining
+  </p>
+  <p style="color:rgba(255,255,255,0.45); font-size:1.05rem; max-width:620px; margin:32px auto 0; line-height:1.8; font-style:italic;">
+    仅从权重矩阵的谱结构，就能诊断训练健康度、预测下游性能、指导 LR 决策——成本 &lt;0.05% 训练 compute
+  </p>
+  <div class="meta" style="margin-top:40px;">
+    <span class="tag" style="border-color:rgba(255,255,255,0.2); color:rgba(255,255,255,0.6);">Q & A</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- JavaScript: Navigation & Progress -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script>
+const slides = document.querySelectorAll('.slide');
+const totalSlides = slides.length;
+const progressBar = document.getElementById('progress');
+const navIndicator = document.getElementById('nav');
+
+function updateProgress() {
+  const scrollTop = window.scrollY;
+  const docHeight = document.body.scrollHeight - window.innerHeight;
+  const progress = Math.min((scrollTop / docHeight) * 100, 100);
+  progressBar.style.width = progress + '%';
+
+  const currentSlide = Math.round(scrollTop / window.innerHeight) + 1;
+  navIndicator.textContent = String(currentSlide).padStart(2, '0') + ' / ' + String(totalSlides).padStart(2, '0');
+}
+
+window.addEventListener('scroll', updateProgress);
+window.addEventListener('resize', updateProgress);
+updateProgress();
+
+document.addEventListener('keydown', (e) => {
+  const currentScroll = window.scrollY;
+  const slideHeight = window.innerHeight;
+  if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+    e.preventDefault();
+    window.scrollTo({ top: currentScroll + slideHeight, behavior: 'smooth' });
+  } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+    e.preventDefault();
+    window.scrollTo({ top: currentScroll - slideHeight, behavior: 'smooth' });
+  }
+});
+</script>
+
+</body>
+</html>

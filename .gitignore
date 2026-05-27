@@ -64,6 +64,7 @@ inspect_evals/
 !/docs/THEORY_UPGRADE.md
 !/docs/THEORY_V2.md
 !/docs/VISUALIZATION_PLAN.md
+!/docs/presentation/
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py
