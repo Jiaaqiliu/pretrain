@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: luhanqin-moe-phase0
+  namespace: default
+  labels:
+    app: luhanqin-moe-phase0
+spec:
+  nodeSelector:
+    node.kubernetes.io/instance-type: "c5.24xlarge"
+  restartPolicy: Never
+  containers:
+  - name: workspace
+    image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/faim-rl-slime:base
+    imagePullPolicy: IfNotPresent
+    command: ["sleep", "infinity"]
+    resources:
+      requests:
+        cpu: "8"
+        memory: "32Gi"
+      limits:
+        cpu: "32"
+        memory: "128Gi"
+    volumeMounts:
+    - mountPath: /fsx
+      name: fsx-vol
+  volumes:
+  - name: fsx-vol
+    persistentVolumeClaim:
+      claimName: fsx

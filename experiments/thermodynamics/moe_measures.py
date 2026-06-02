@@ -292,6 +292,7 @@ def compute_cross_expert_alignment(
 MOE_ARCHITECTURES = {
     "olmoe": {
         "expert_pattern": r"model\.layers\.(\d+)\.mlp\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)\.weight",
+        "fused_expert_pattern": r"model\.layers\.(\d+)\.mlp\.experts\.(gate_up_proj|down_proj)",
         "router_pattern": r"model\.layers\.(\d+)\.mlp\.gate\.weight",
         "attn_pattern": r"model\.layers\.(\d+)\.self_attn\.(q_proj|k_proj|v_proj|o_proj)\.weight",
         "shared_expert_pattern": None,
@@ -480,6 +481,7 @@ def measure_moe_checkpoint(
 
     # Compile patterns
     expert_re = re.compile(patterns["expert_pattern"]) if patterns["expert_pattern"] else None
+    fused_re = re.compile(patterns["fused_expert_pattern"]) if patterns.get("fused_expert_pattern") else None
     router_re = re.compile(patterns["router_pattern"]) if patterns["router_pattern"] else None
     attn_re = re.compile(patterns["attn_pattern"]) if patterns["attn_pattern"] else None
     shared_re = re.compile(patterns["shared_expert_pattern"]) if patterns.get("shared_expert_pattern") else None
@@ -491,6 +493,17 @@ def measure_moe_checkpoint(
     shared_weights = {}   # {layer_idx: {proj_type: tensor}}
 
     for name, param in model.named_parameters():
+        # Handle fused 3D expert weights [num_experts, out_dim, in_dim]
+        if param.ndim == 3 and fused_re:
+            m = fused_re.match(name)
+            if m:
+                li = int(m.group(1))
+                pt = m.group(2)
+                n_exp = param.shape[0]
+                for ei in range(n_exp):
+                    expert_weights.setdefault(li, {}).setdefault(ei, {})[pt] = param.data[ei]
+                continue
+
         if param.ndim != 2:
             continue
 
