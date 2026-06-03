@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoPretrain - Autonomous Training Framework</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-primary: #000000;
+    --bg-secondary: #1a1a1a;
+    --bg-card: #111111;
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1a6;
+    --accent-blue: #2997ff;
+    --accent-purple: #bf5af2;
+    --accent-green: #30d158;
+    --accent-orange: #ff9f0a;
+    --accent-red: #ff453a;
+    --accent-teal: #64d2ff;
+    --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --gradient-2: linear-gradient(135deg, #2997ff 0%, #bf5af2 100%);
+    --gradient-3: linear-gradient(135deg, #30d158 0%, #64d2ff 100%);
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    overflow-x: hidden;
+}
+
+.slide {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 120px;
+    scroll-snap-align: start;
+    position: relative;
+}
+
+.slide-title {
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #000000 70%);
+}
+
+.slide-title h1 {
+    font-size: 96px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    background: var(--gradient-2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 24px;
+}
+
+.slide-title .subtitle {
+    font-size: 32px;
+    color: var(--text-secondary);
+    font-weight: 300;
+    margin-bottom: 48px;
+}
+
+.slide-title .tagline {
+    font-size: 20px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.section-label {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent-blue);
+    margin-bottom: 16px;
+}
+
+.slide h2 {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -1.5px;
+    margin-bottom: 32px;
+    line-height: 1.1;
+}
+
+.slide h3 {
+    font-size: 36px;
+    font-weight: 600;
+    margin-bottom: 24px;
+}
+
+.slide p {
+    font-size: 22px;
+    color: var(--text-secondary);
+    max-width: 800px;
+    line-height: 1.6;
+}
+
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-top: 48px;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 20px;
+    padding: 36px;
+    transition: transform 0.3s, border-color 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    border-color: #555;
+}
+
+.card-icon {
+    font-size: 36px;
+    margin-bottom: 16px;
+}
+
+.card h4 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.card p {
+    font-size: 16px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
+    width: 100%;
+    max-width: 1200px;
+    align-items: center;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    margin-top: 48px;
+    width: 100%;
+    max-width: 1100px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 56px;
+    font-weight: 700;
+    background: var(--gradient-2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-label {
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+}
+
+.timeline {
+    width: 100%;
+    max-width: 900px;
+    margin-top: 48px;
+}
+
+.timeline-item {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 32px;
+    align-items: flex-start;
+}
+
+.timeline-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+
+.timeline-dot.done {
+    background: var(--accent-green);
+}
+
+.timeline-dot.active {
+    background: var(--accent-orange);
+    box-shadow: 0 0 12px var(--accent-orange);
+}
+
+.timeline-dot.future {
+    background: #444;
+}
+
+.timeline-content h4 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.timeline-content p {
+    font-size: 16px;
+    color: var(--text-secondary);
+}
+
+.comparison-table {
+    width: 100%;
+    max-width: 1000px;
+    margin-top: 40px;
+    border-collapse: collapse;
+}
+
+.comparison-table th {
+    text-align: left;
+    padding: 16px 24px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #333;
+}
+
+.comparison-table td {
+    padding: 16px 24px;
+    font-size: 17px;
+    border-bottom: 1px solid #222;
+}
+
+.comparison-table tr:hover td {
+    background: var(--bg-card);
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.badge-green { background: rgba(48, 209, 88, 0.15); color: var(--accent-green); }
+.badge-blue { background: rgba(41, 151, 255, 0.15); color: var(--accent-blue); }
+.badge-orange { background: rgba(255, 159, 10, 0.15); color: var(--accent-orange); }
+.badge-purple { background: rgba(191, 90, 242, 0.15); color: var(--accent-purple); }
+
+.flow-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.flow-step {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 140px;
+}
+
+.flow-step .step-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+}
+
+.flow-step .step-label {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.flow-arrow {
+    font-size: 24px;
+    color: var(--text-secondary);
+}
+
+.results-highlight {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 20px;
+    padding: 40px;
+    margin-top: 40px;
+    width: 100%;
+    max-width: 900px;
+}
+
+.results-highlight h4 {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: var(--accent-green);
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #222;
+}
+
+.result-row:last-child {
+    border-bottom: none;
+}
+
+.result-name {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.result-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.result-value.best {
+    color: var(--accent-green);
+}
+
+.nav-dots {
+    position: fixed;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 100;
+}
+
+.nav-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #555;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.nav-dot.active {
+    background: var(--accent-blue);
+    transform: scale(1.5);
+}
+
+@media (max-width: 1024px) {
+    .slide { padding: 60px 40px; }
+    .slide-title h1 { font-size: 64px; }
+    .slide h2 { font-size: 48px; }
+    .cards-grid { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation Dots -->
+<div class="nav-dots">
+    <div class="nav-dot active" onclick="scrollToSlide(0)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(1)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(2)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(3)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(4)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(5)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(6)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(7)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(8)"></div>
+</div>
+
+<!-- Slide 1: Title -->
+<section class="slide slide-title">
+    <h1>AutoPretrain</h1>
+    <p class="subtitle">Autonomous LLM Pretraining Orchestration</p>
+    <p class="tagline">Self-Healing &middot; Self-Evolving &middot; Zero Human Intervention</p>
+</section>
+
+<!-- Slide 2: Vision -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Vision</div>
+    <h2>What if pretraining<br>could run itself?</h2>
+    <p style="margin-top: 24px;">
+        Issue a single command. The framework handles everything else&mdash;<br>
+        experiment design, real-time monitoring, failure recovery, hyperparameter tuning&mdash;<br>
+        running autonomously for days like a world-class training engineer.
+    </p>
+    <div class="stats-row">
+        <div class="stat-item">
+            <div class="stat-number">>95%</div>
+            <div class="stat-label">Auto-Recovery Rate</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">&lt;1min</div>
+            <div class="stat-label">Mean Time to Recover</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">7+ days</div>
+            <div class="stat-label">Unattended Operation</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">190M~32B</div>
+            <div class="stat-label">Model Scale Support</div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 3: The Problem -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Motivation</div>
+    <h2>The Cost of<br>Large-Scale Pretraining</h2>
+    <div class="cards-grid" style="margin-top: 40px;">
+        <div class="card">
+            <div class="card-icon">&#x26A1;</div>
+            <h4>Constant Failures</h4>
+            <p>Network drops, OOM crashes, node preemptions, NCCL timeouts&mdash;multiple incidents daily at scale</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F50D;</div>
+            <h4>Vast Search Space</h4>
+            <p>Data mixtures, learning rates, batch sizes&mdash;the hyperparameter landscape is enormous and expensive to explore</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x23F0;</div>
+            <h4>Human Bottleneck</h4>
+            <p>Engineers must monitor 24/7, manually restart jobs, and interpret logs&mdash;expensive and unscalable</p>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 4: Architecture -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Architecture</div>
+        <h2>Layered Autonomy</h2>
+        <p>Training scripts fail fast. The external agent recovers intelligently.</p>
+    </div>
+    <div class="cards-grid" style="grid-template-columns: repeat(4, 1fr); margin-top: 48px;">
+        <div class="card" style="border-color: var(--accent-blue); border-width: 2px;">
+            <div class="card-icon">&#x1F9E0;</div>
+            <h4>Orchestrator</h4>
+            <p>Formal state machine<br>Async event loop<br>Scheduling &amp; decisions</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-green); border-width: 2px;">
+            <div class="card-icon">&#x1F6E1;</div>
+            <h4>Resilience</h4>
+            <p>Multi-layer diagnosis<br>Adaptive recovery<br>Self-learning knowledge base</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-purple); border-width: 2px;">
+            <div class="card-icon">&#x1F4CA;</div>
+            <h4>Monitor</h4>
+            <p>6 anomaly detectors<br>Real-time heartbeat<br>Throughput tracking</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-orange); border-width: 2px;">
+            <div class="card-icon">&#x1F52C;</div>
+            <h4>Search</h4>
+            <p>MCGS recipe search<br>Full-parameter mutation<br>Proxy-to-full transfer</p>
+        </div>
+    </div>
+    <div style="text-align: center; margin-top: 40px; width: 100%;">
+        <div class="flow-container">
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4DD;</div>
+                <div class="step-label">Generate Script</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F680;</div>
+                <div class="step-label">Submit to K8s</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4E1;</div>
+                <div class="step-label">Heartbeat Monitor</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x26A0;&#xFE0F;</div>
+                <div class="step-label">Diagnose Failure</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F504;</div>
+                <div class="step-label">Auto-Recover</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4D6;</div>
+                <div class="step-label">Learn &amp; Record</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 5: Self-Healing -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Self-Healing</div>
+        <h2>Learns From Every Failure</h2>
+        <p>Novel errors are analyzed, fixed, and remembered&mdash;the system gets smarter over time</p>
+    </div>
+    <table class="comparison-table" style="margin-top: 48px;">
+        <thead>
+            <tr>
+                <th>Failure Type</th>
+                <th>Detection</th>
+                <th>Recovery Strategy</th>
+                <th>Confidence</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Out of Memory</td>
+                <td>CUDA log pattern matching</td>
+                <td>Halve batch &rarr; Grad checkpoint &rarr; Aggressive reduction</td>
+                <td><span class="badge badge-green">0.90</span></td>
+            </tr>
+            <tr>
+                <td>Network Failure</td>
+                <td>gloo / NCCL timeout</td>
+                <td>Exponential backoff &amp; resubmit</td>
+                <td><span class="badge badge-green">0.95</span></td>
+            </tr>
+            <tr>
+                <td>Silent Hang</td>
+                <td>Heartbeat timeout (6 min)</td>
+                <td>Force kill &amp; restart from checkpoint</td>
+                <td><span class="badge badge-blue">0.85</span></td>
+            </tr>
+            <tr>
+                <td>Loss Divergence</td>
+                <td>Statistical slope detection</td>
+                <td>Roll back checkpoint + reduce learning rate</td>
+                <td><span class="badge badge-blue">0.80</span></td>
+            </tr>
+            <tr>
+                <td>Recurring Node Failure</td>
+                <td>Correlation analysis</td>
+                <td>Exclude node from scheduling &amp; resubmit</td>
+                <td><span class="badge badge-green">0.90</span></td>
+            </tr>
+            <tr>
+                <td>Unknown Error</td>
+                <td>SelfDiagnoser</td>
+                <td>Heuristic analysis &rarr; Safety validation &rarr; Attempt fix &rarr; Learn outcome</td>
+                <td><span class="badge badge-orange">0.50&ndash;0.70</span></td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- Slide 6: Features -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Capabilities</div>
+    <h2>Key Features</h2>
+    <div class="cards-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 40px;">
+        <div class="card">
+            <div class="card-icon">&#x1F3AF;</div>
+            <h4>Formal State Machine</h4>
+            <p>9 states with strict transition rules. Every decision is auditable and reproducible.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4A1;</div>
+            <h4>6 Anomaly Detectors</h4>
+            <p>Loss spikes, gradient explosions, NaN, throughput drops, plateaus, and divergence.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F9EC;</div>
+            <h4>Recipe Search</h4>
+            <p>Monte Carlo Graph Search with 5 mutation strategies. Automatic discovery of optimal data mixes.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x2696;&#xFE0F;</div>
+            <h4>Multi-Scale</h4>
+            <p>OLMo2 190M through 32B. Automatic GPU allocation, batch sizing, and FSDP configuration.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4B0;</div>
+            <h4>Budget Management</h4>
+            <p>GPU-hour tracking with hard limits. Graceful shutdown when budget is exhausted.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F50C;</div>
+            <h4>Pluggable Backends</h4>
+            <p>Kubernetes, SLURM, or local. OLMo-core or NeMo. Swap without changing logic.</p>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 7: Current Results -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Results</div>
+    <h2>Experiment in Progress</h2>
+    <p>MVP validation: Does data mixture composition matter for reasoning?</p>
+
+    <div class="results-highlight">
+        <h4>OLMo2-1B &middot; 5,000 steps &middot; 8&times;H200 &middot; Training Now</h4>
+        <div class="result-row">
+            <span class="result-name">&#x1F947; Reasoning-Heavy <span class="badge badge-purple">code 30% + math 30%</span></span>
+            <span class="result-value best">2.973</span>
+        </div>
+        <div class="result-row">
+            <span class="result-name">&#x1F948; Llama-3 Baseline <span class="badge badge-blue">web 52% + math 26%</span></span>
+            <span class="result-value">3.020</span>
+        </div>
+        <div class="result-row">
+            <span class="result-name">&#x1F949; Uniform Control <span class="badge badge-orange">25% each</span></span>
+            <span class="result-value">3.025</span>
+        </div>
+    </div>
+
+    <div style="margin-top: 32px; text-align: left; max-width: 700px;">
+        <p style="font-size: 18px;"><strong style="color: var(--accent-green);">Early Signal:</strong> The reasoning-heavy mixture achieves lower CE loss given the same token budget, providing initial evidence that data composition significantly impacts reasoning capability.</p>
+    </div>
+</section>
+
+<!-- Slide 8: Technical Foundation -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Technical Foundation</div>
+    <h2>Built on Giants,<br>Designed to Surpass</h2>
+    <div class="two-col" style="margin-top: 40px; text-align: left;">
+        <div>
+            <h3 style="font-size: 24px; margin-bottom: 16px;">Standing on Shoulders</h3>
+            <table class="comparison-table" style="margin-top: 0;">
+                <tbody>
+                    <tr><td>Training Engine</td><td>OLMo-core (AllenAI)</td></tr>
+                    <tr><td>Stability Monitoring</td><td>StabilityMonitor + SkipStep</td></tr>
+                    <tr><td>Checkpointing</td><td>Atomic + Async + Ephemeral</td></tr>
+                    <tr><td>Elastic Launch</td><td>PyTorch Elastic (torchrun)</td></tr>
+                    <tr><td>Cluster Orchestration</td><td>Kubernetes + kubectl</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <h3 style="font-size: 24px; margin-bottom: 16px;">Our Innovations</h3>
+            <table class="comparison-table" style="margin-top: 0;">
+                <tbody>
+                    <tr><td>SelfDiagnoser</td><td><span class="badge badge-green">Learning knowledge base</span></td></tr>
+                    <tr><td>Full-Space Search</td><td><span class="badge badge-purple">mix + LR + batch + warmup</span></td></tr>
+                    <tr><td>Confidence Gating</td><td><span class="badge badge-blue">Only act when &gt;0.7</span></td></tr>
+                    <tr><td>Cross-Trial Correlation</td><td><span class="badge badge-orange">Cluster-wide detection</span></td></tr>
+                    <tr><td>Budget Awareness</td><td><span class="badge badge-green">GPU-hour accounting</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="stats-row" style="margin-top: 48px;">
+        <div class="stat-item">
+            <div class="stat-number">4,200+</div>
+            <div class="stat-label">Lines of Python</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">30</div>
+            <div class="stat-label">Module Files</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">19/19</div>
+            <div class="stat-label">Integration Tests Passing</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">9</div>
+            <div class="stat-label">Open-Source Projects Studied</div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 9: Roadmap -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Roadmap</div>
+        <h2>What Comes Next</h2>
+    </div>
+    <div class="timeline">
+        <div class="timeline-item">
+            <div class="timeline-dot done"></div>
+            <div class="timeline-content">
+                <h4>Phase 0: Framework Skeleton <span class="badge badge-green">DONE</span></h4>
+                <p>Core types, protocol interfaces, state machine, diagnoser, recovery engine, anomaly detectors</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot active"></div>
+            <div class="timeline-content">
+                <h4>Phase 1: MVP Validation <span class="badge badge-orange">IN PROGRESS</span></h4>
+                <p>3-trial data mix experiment &middot; OLMo2-1B &middot; 5,000 steps &middot; Confirming the mixture hypothesis</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 2: Fully Autonomous Search</h4>
+                <p>30-cycle MCGS search &middot; Full parameter space (LR, batch, warmup) &middot; 7-day unattended agent</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 3: Scale Transfer</h4>
+                <p>Best recipe from 1B proxy &rarr; validate at 3B &rarr; full training at 7B+</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 4: Downstream Evaluation</h4>
+                <p>LoRA SFT on reasoning data &rarr; Kaggle submission &middot; MMLU / GSM8K / HumanEval benchmarks</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 5: Open-Source Release</h4>
+                <p>Standalone project &middot; Research paper &middot; Support for additional frameworks (NeMo, torchtune)</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const dots = document.querySelectorAll('.nav-dot');
+
+function scrollToSlide(index) {
+    slides[index].scrollIntoView({ behavior: 'smooth' });
+}
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const index = Array.from(slides).indexOf(entry.target);
+            dots.forEach((dot, i) => {
+                dot.classList.toggle('active', i === index);
+            });
+        }
+    });
+}, { threshold: 0.5 });
+
+slides.forEach(slide => observer.observe(slide));
+
+document.addEventListener('keydown', (e) => {
+    const currentIndex = Array.from(dots).findIndex(d => d.classList.contains('active'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        if (currentIndex < slides.length - 1) scrollToSlide(currentIndex + 1);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex > 0) scrollToSlide(currentIndex - 1);
+    }
+});
+</script>
+
+</body>
+</html>

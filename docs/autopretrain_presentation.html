@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoPretrain - Autonomous Training Framework</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-primary: #000000;
+    --bg-secondary: #1a1a1a;
+    --bg-card: #111111;
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1a6;
+    --accent-blue: #2997ff;
+    --accent-purple: #bf5af2;
+    --accent-green: #30d158;
+    --accent-orange: #ff9f0a;
+    --accent-red: #ff453a;
+    --accent-teal: #64d2ff;
+    --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --gradient-2: linear-gradient(135deg, #2997ff 0%, #bf5af2 100%);
+    --gradient-3: linear-gradient(135deg, #30d158 0%, #64d2ff 100%);
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    overflow-x: hidden;
+}
+
+.slide {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 120px;
+    scroll-snap-align: start;
+    position: relative;
+}
+
+/* Title Slide */
+.slide-title {
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #000000 70%);
+}
+
+.slide-title h1 {
+    font-size: 96px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    background: var(--gradient-2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 24px;
+}
+
+.slide-title .subtitle {
+    font-size: 32px;
+    color: var(--text-secondary);
+    font-weight: 300;
+    margin-bottom: 48px;
+}
+
+.slide-title .tagline {
+    font-size: 20px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+/* Section Headers */
+.section-label {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent-blue);
+    margin-bottom: 16px;
+}
+
+.slide h2 {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -1.5px;
+    margin-bottom: 32px;
+    line-height: 1.1;
+}
+
+.slide h3 {
+    font-size: 36px;
+    font-weight: 600;
+    margin-bottom: 24px;
+}
+
+.slide p {
+    font-size: 22px;
+    color: var(--text-secondary);
+    max-width: 800px;
+    line-height: 1.6;
+}
+
+/* Cards Grid */
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-top: 48px;
+    width: 100%;
+    max-width: 1200px;
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 20px;
+    padding: 36px;
+    transition: transform 0.3s, border-color 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    border-color: #555;
+}
+
+.card-icon {
+    font-size: 36px;
+    margin-bottom: 16px;
+}
+
+.card h4 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.card p {
+    font-size: 16px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Two Column Layout */
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
+    width: 100%;
+    max-width: 1200px;
+    align-items: center;
+}
+
+/* Architecture Diagram */
+.arch-diagram {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 20px;
+    padding: 40px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre;
+    color: var(--text-secondary);
+    overflow-x: auto;
+}
+
+.arch-diagram .highlight {
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+/* Stats Row */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    margin-top: 48px;
+    width: 100%;
+    max-width: 1100px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 56px;
+    font-weight: 700;
+    background: var(--gradient-2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-label {
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+}
+
+/* Timeline */
+.timeline {
+    width: 100%;
+    max-width: 900px;
+    margin-top: 48px;
+}
+
+.timeline-item {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 32px;
+    align-items: flex-start;
+}
+
+.timeline-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+
+.timeline-dot.done {
+    background: var(--accent-green);
+}
+
+.timeline-dot.active {
+    background: var(--accent-orange);
+    box-shadow: 0 0 12px var(--accent-orange);
+}
+
+.timeline-dot.future {
+    background: #444;
+}
+
+.timeline-content h4 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.timeline-content p {
+    font-size: 16px;
+    color: var(--text-secondary);
+}
+
+/* Comparison Table */
+.comparison-table {
+    width: 100%;
+    max-width: 1000px;
+    margin-top: 40px;
+    border-collapse: collapse;
+}
+
+.comparison-table th {
+    text-align: left;
+    padding: 16px 24px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #333;
+}
+
+.comparison-table td {
+    padding: 16px 24px;
+    font-size: 17px;
+    border-bottom: 1px solid #222;
+}
+
+.comparison-table tr:hover td {
+    background: var(--bg-card);
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.badge-green { background: rgba(48, 209, 88, 0.15); color: var(--accent-green); }
+.badge-blue { background: rgba(41, 151, 255, 0.15); color: var(--accent-blue); }
+.badge-orange { background: rgba(255, 159, 10, 0.15); color: var(--accent-orange); }
+.badge-purple { background: rgba(191, 90, 242, 0.15); color: var(--accent-purple); }
+
+/* Flow Diagram */
+.flow-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.flow-step {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 140px;
+}
+
+.flow-step .step-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+}
+
+.flow-step .step-label {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.flow-arrow {
+    font-size: 24px;
+    color: var(--text-secondary);
+}
+
+/* Results Table */
+.results-highlight {
+    background: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 20px;
+    padding: 40px;
+    margin-top: 40px;
+    width: 100%;
+    max-width: 900px;
+}
+
+.results-highlight h4 {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: var(--accent-green);
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #222;
+}
+
+.result-row:last-child {
+    border-bottom: none;
+}
+
+.result-name {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.result-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.result-value.best {
+    color: var(--accent-green);
+}
+
+/* Nav dots */
+.nav-dots {
+    position: fixed;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 100;
+}
+
+.nav-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #555;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.nav-dot.active {
+    background: var(--accent-blue);
+    transform: scale(1.5);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .slide { padding: 60px 40px; }
+    .slide-title h1 { font-size: 64px; }
+    .slide h2 { font-size: 48px; }
+    .cards-grid { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation Dots -->
+<div class="nav-dots">
+    <div class="nav-dot active" onclick="scrollToSlide(0)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(1)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(2)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(3)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(4)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(5)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(6)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(7)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(8)"></div>
+</div>
+
+<!-- Slide 1: Title -->
+<section class="slide slide-title">
+    <h1>AutoPretrain</h1>
+    <p class="subtitle">Autonomous LLM Pretraining Orchestration Framework</p>
+    <p class="tagline">Self-Healing &middot; Self-Evolving &middot; Zero Human Intervention</p>
+</section>
+
+<!-- Slide 2: Vision -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Vision</div>
+    <h2>像顶级训练工程师一样<br>自主完成预训练全流程</h2>
+    <p style="margin-top: 24px;">
+        发布一条启动指令，框架如同一位经验丰富的 AI 训练员：<br>
+        自主实验、实时监控、故障诊断、参数调优、持续改进——7x24 无人值守运行。
+    </p>
+    <div class="stats-row">
+        <div class="stat-item">
+            <div class="stat-number">>95%</div>
+            <div class="stat-label">自动故障恢复率</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">&lt;1min</div>
+            <div class="stat-label">平均恢复时间</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">7天+</div>
+            <div class="stat-label">无人值守运行</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">190M~32B</div>
+            <div class="stat-label">支持模型规模</div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 3: Core Problem -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Why</div>
+    <h2>大规模预训练的核心挑战</h2>
+    <div class="cards-grid" style="margin-top: 40px;">
+        <div class="card">
+            <div class="card-icon">&#x26A1;</div>
+            <h4>频繁故障</h4>
+            <p>网络断连、OOM、节点抢占、NCCL超时——千卡规模下每天多次故障</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F50D;</div>
+            <h4>配方搜索</h4>
+            <p>数据配比、学习率、batch size——超参空间巨大，人工调参效率低下</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x23F0;</div>
+            <h4>人力消耗</h4>
+            <p>训练员需 24h 监控、手动重启、分析日志——昂贵且不可扩展</p>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 4: Architecture -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Architecture</div>
+        <h2>分层自治架构</h2>
+        <p>训练脚本 fast-fail + 外部 Agent 智能恢复</p>
+    </div>
+    <div class="cards-grid" style="grid-template-columns: repeat(4, 1fr); margin-top: 48px;">
+        <div class="card" style="border-color: var(--accent-blue); border-width: 2px;">
+            <div class="card-icon">&#x1F9E0;</div>
+            <h4>Orchestrator</h4>
+            <p>状态机 + Async 事件循环<br>调度、监控、决策</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-green); border-width: 2px;">
+            <div class="card-icon">&#x1F6E1;</div>
+            <h4>Resilience</h4>
+            <p>多层诊断 + 自适应恢复<br>自学习知识库</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-purple); border-width: 2px;">
+            <div class="card-icon">&#x1F4CA;</div>
+            <h4>Monitor</h4>
+            <p>6 种异常检测<br>实时 Heartbeat</p>
+        </div>
+        <div class="card" style="border-color: var(--accent-orange); border-width: 2px;">
+            <div class="card-icon">&#x1F52C;</div>
+            <h4>Search</h4>
+            <p>MCGS 配方搜索<br>全参数 Mutation</p>
+        </div>
+    </div>
+    <div style="text-align: center; margin-top: 40px; width: 100%;">
+        <div class="flow-container">
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4DD;</div>
+                <div class="step-label">生成脚本</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F680;</div>
+                <div class="step-label">提交 K8s</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4E1;</div>
+                <div class="step-label">Heartbeat 监控</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x26A0;&#xFE0F;</div>
+                <div class="step-label">故障诊断</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F504;</div>
+                <div class="step-label">自动恢复</div>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="step-icon">&#x1F4D6;</div>
+                <div class="step-label">学习记录</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 5: Self-Healing -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Self-Healing</div>
+        <h2>自学习故障诊断</h2>
+        <p>遇到未知错误时自主分析，成功修复后加入知识库——越用越聪明</p>
+    </div>
+    <table class="comparison-table" style="margin-top: 48px;">
+        <thead>
+            <tr>
+                <th>故障类型</th>
+                <th>检测方式</th>
+                <th>恢复策略</th>
+                <th>置信度</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>OOM</td>
+                <td>CUDA 日志 regex</td>
+                <td>减半 batch &rarr; grad ckpt &rarr; 激进缩减</td>
+                <td><span class="badge badge-green">0.90</span></td>
+            </tr>
+            <tr>
+                <td>网络断连</td>
+                <td>gloo/NCCL timeout</td>
+                <td>指数退避重试</td>
+                <td><span class="badge badge-green">0.95</span></td>
+            </tr>
+            <tr>
+                <td>Silent Hang</td>
+                <td>Heartbeat 超时 6min</td>
+                <td>强制 kill + 重提交</td>
+                <td><span class="badge badge-blue">0.85</span></td>
+            </tr>
+            <tr>
+                <td>Loss Divergence</td>
+                <td>统计检测 (slope)</td>
+                <td>回滚 checkpoint + 降 LR</td>
+                <td><span class="badge badge-blue">0.80</span></td>
+            </tr>
+            <tr>
+                <td>节点反复故障</td>
+                <td>关联分析</td>
+                <td>节点黑名单 + 换节点重跑</td>
+                <td><span class="badge badge-green">0.90</span></td>
+            </tr>
+            <tr>
+                <td>未知错误</td>
+                <td>SelfDiagnoser</td>
+                <td>启发式分析 &rarr; 安全验证 &rarr; 尝试修复 &rarr; 学习结果</td>
+                <td><span class="badge badge-orange">0.50~0.70</span></td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- Slide 6: Features -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Features</div>
+    <h2>核心功能特性</h2>
+    <div class="cards-grid" style="grid-template-columns: repeat(3, 1fr); margin-top: 40px;">
+        <div class="card">
+            <div class="card-icon">&#x1F3AF;</div>
+            <h4>正式状态机</h4>
+            <p>9 个状态、严格转换规则、完整审计日志——每个决策可追溯</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4A1;</div>
+            <h4>6 种异常检测</h4>
+            <p>Loss Spike, 梯度爆炸, NaN, 吞吐下降, Plateau, Divergence</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F9EC;</div>
+            <h4>数据配比搜索</h4>
+            <p>MCGS 算法 + 5 种 Mutation 策略<br>自动寻找最优 data mix</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x2696;&#xFE0F;</div>
+            <h4>多规模支持</h4>
+            <p>OLMo2 190M ~ 32B<br>自动配置 GPU 数、batch、FSDP</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4B0;</div>
+            <h4>Budget 管理</h4>
+            <p>GPU-hour 预算追踪<br>超限自动优雅停止</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F50C;</div>
+            <h4>可插拔后端</h4>
+            <p>K8s / SLURM / Local<br>OLMo-core / NeMo 适配</p>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 7: Current Progress -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Progress</div>
+    <h2>当前实验进展</h2>
+    <p>MVP 3-Trial 验证：数据配比对 Reasoning 能力的影响</p>
+
+    <div class="results-highlight">
+        <h4>OLMo2-1B &middot; 5000 steps &middot; 8&times;H200 &middot; 实时训练中</h4>
+        <div class="result-row">
+            <span class="result-name">&#x1F947; Reasoning-Heavy <span class="badge badge-purple">code 30% + math 30%</span></span>
+            <span class="result-value best">2.973</span>
+        </div>
+        <div class="result-row">
+            <span class="result-name">&#x1F948; Llama-3 Baseline <span class="badge badge-blue">web 52% + math 26%</span></span>
+            <span class="result-value">3.020</span>
+        </div>
+        <div class="result-row">
+            <span class="result-name">&#x1F949; Uniform Control <span class="badge badge-orange">各 25%</span></span>
+            <span class="result-value">3.025</span>
+        </div>
+    </div>
+
+    <div style="margin-top: 32px; text-align: left; max-width: 700px;">
+        <p style="font-size: 18px;"><strong style="color: var(--accent-green);">Key Finding:</strong> Reasoning-heavy 配比在相同 token 预算下 loss 更低，验证了"数据配比对推理能力有显著影响"的假设。</p>
+    </div>
+</section>
+
+<!-- Slide 8: Tech Stack & Benchmarks -->
+<section class="slide" style="text-align: center;">
+    <div class="section-label">Implementation</div>
+    <h2>技术实现</h2>
+    <div class="two-col" style="margin-top: 40px; text-align: left;">
+        <div>
+            <h3 style="font-size: 24px; margin-bottom: 16px;">站在巨人肩膀上</h3>
+            <table class="comparison-table" style="margin-top: 0;">
+                <tbody>
+                    <tr><td>训练引擎</td><td>OLMo-core (AllenAI)</td></tr>
+                    <tr><td>稳定性监控</td><td>StabilityMonitor + SkipStep</td></tr>
+                    <tr><td>Checkpoint</td><td>Atomic + Async + Ephemeral</td></tr>
+                    <tr><td>弹性启动</td><td>PyTorch Elastic (torchrun)</td></tr>
+                    <tr><td>集群管理</td><td>Kubernetes + kubectl</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <h3 style="font-size: 24px; margin-bottom: 16px;">我们的创新</h3>
+            <table class="comparison-table" style="margin-top: 0;">
+                <tbody>
+                    <tr><td>SelfDiagnoser</td><td><span class="badge badge-green">自学习知识库</span></td></tr>
+                    <tr><td>全参数搜索</td><td><span class="badge badge-purple">data mix + LR + batch</span></td></tr>
+                    <tr><td>Confidence 门控</td><td><span class="badge badge-blue">>0.7 才自动执行</span></td></tr>
+                    <tr><td>多 Trial 关联</td><td><span class="badge badge-orange">集群级故障检测</span></td></tr>
+                    <tr><td>Budget-aware</td><td><span class="badge badge-green">GPU-hour 预算管理</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="stats-row" style="margin-top: 48px;">
+        <div class="stat-item">
+            <div class="stat-number">4,200+</div>
+            <div class="stat-label">行 Python 代码</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">30</div>
+            <div class="stat-label">模块文件</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">19/19</div>
+            <div class="stat-label">集成测试通过</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">9</div>
+            <div class="stat-label">调研的开源项目</div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 9: Roadmap -->
+<section class="slide">
+    <div style="text-align: center; width: 100%;">
+        <div class="section-label">Roadmap</div>
+        <h2>未来规划</h2>
+    </div>
+    <div class="timeline">
+        <div class="timeline-item">
+            <div class="timeline-dot done"></div>
+            <div class="timeline-content">
+                <h4>Phase 0: 框架骨架 <span class="badge badge-green">DONE</span></h4>
+                <p>核心类型、Protocol 接口、状态机、诊断器、恢复器、监控器</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot active"></div>
+            <div class="timeline-content">
+                <h4>Phase 1: MVP 验证 <span class="badge badge-orange">IN PROGRESS</span></h4>
+                <p>3-Trial 数据配比实验 &middot; OLMo2-1B &middot; 5000 steps &middot; 验证 mix 假设</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 2: 全自主搜索</h4>
+                <p>MCGS 30-cycle 自动搜索 &middot; 全参数空间（LR/batch/warmup）&middot; Agent 7x24 运行</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 3: Scale Transfer</h4>
+                <p>1B proxy 最优配方 &rarr; 3B 验证 &rarr; 7B+ 全量训练</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 4: 下游验证</h4>
+                <p>LoRA SFT on NeMo Reasoning &rarr; Kaggle 提交 &middot; MMLU/GSM8K/HumanEval 评测</p>
+            </div>
+        </div>
+        <div class="timeline-item">
+            <div class="timeline-dot future"></div>
+            <div class="timeline-content">
+                <h4>Phase 5: 开源发布</h4>
+                <p>独立项目发布 &middot; 论文撰写 &middot; 支持更多训练框架（NeMo, torchtune）</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+// Navigation dots
+const slides = document.querySelectorAll('.slide');
+const dots = document.querySelectorAll('.nav-dot');
+
+function scrollToSlide(index) {
+    slides[index].scrollIntoView({ behavior: 'smooth' });
+}
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const index = Array.from(slides).indexOf(entry.target);
+            dots.forEach((dot, i) => {
+                dot.classList.toggle('active', i === index);
+            });
+        }
+    });
+}, { threshold: 0.5 });
+
+slides.forEach(slide => observer.observe(slide));
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+    const currentIndex = Array.from(dots).findIndex(d => d.classList.contains('active'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        if (currentIndex < slides.length - 1) scrollToSlide(currentIndex + 1);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex > 0) scrollToSlide(currentIndex - 1);
+    }
+});
+</script>
+
+</body>
+</html>

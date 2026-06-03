@@ -1,0 +1,60 @@
+# HoloPretrain Agent — long-running CPU pod that orchestrates GPU training jobs
+#
+# Deploy:
+#   kubectl apply -f autopretrain/deploy/agent_pod.yaml \
+#     -n default --context arn:aws:eks:ap-south-1:801953956576:cluster/p5-llm
+#
+# Usage (exec into pod):
+#   kubectl exec -it autopretrain-agent -- bash
+#   cd /fsx/dev/jiaqi/A-EVOLVE-V2
+#   python -m autopretrain run --trials llama3,reasoning_heavy,uniform --model olmo2_1B
+#
+# Monitor:
+#   kubectl logs autopretrain-agent --follow
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: autopretrain-agent
+  namespace: default
+  labels:
+    app: autopretrain-agent
+    managed-by: autopretrain
+spec:
+  restartPolicy: Always
+  containers:
+  - name: agent
+    image: 801953956576.dkr.ecr.ap-south-1.amazonaws.com/ads-foundation-model-training/verl-multiturn:1.0.2
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      set -e
+      echo "HoloPretrain Agent starting..."
+      cd /fsx/dev/jiaqi/A-EVOLVE-V2
+
+      # Install dependencies
+      pip install -e olmo-core/.[all] > /dev/null 2>&1 || true
+
+      # Keep pod alive — agent is launched via exec or cron
+      echo "Agent pod ready. Use 'kubectl exec' to start experiments."
+      echo "Or run: python -m autopretrain run --trials llama3,reasoning_heavy,uniform"
+      sleep infinity
+    env:
+    - name: PYTHONPATH
+      value: "/fsx/dev/jiaqi/A-EVOLVE-V2"
+    - name: HF_HOME
+      value: "/fsx/dev/jiaqi/.cache/huggingface"
+    resources:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+      limits:
+        cpu: "8"
+        memory: "32Gi"
+    volumeMounts:
+    - mountPath: /fsx
+      name: fsx
+  volumes:
+  - name: fsx
+    persistentVolumeClaim:
+      claimName: fsx
