@@ -31,6 +31,12 @@ PYTHIA_CONFIGS = {
         "total_steps": 143_000,
         "checkpoints": list(range(0, 144_000, 6_000)),
     },
+    "410m": {
+        "hf_repo": "EleutherAI/pythia-410m-deduped",
+        "hidden_dim": 1024,
+        "total_steps": 143_000,
+        "checkpoints": list(range(0, 144_000, 6_000)),
+    },
     "1b": {
         "hf_repo": "EleutherAI/pythia-1b-deduped",
         "hidden_dim": 2048,
@@ -141,6 +147,18 @@ def measure_perlayer(model, hidden_dim, svd_k=256):
         total_var = sv_sq.sum()
         c10 = float(sv_sq[:10].sum() / total_var) if total_var > 0 and len(sv_sq) >= 10 else 1.0
 
+        # Order parameter psi = (s1 - s2) / (s1 + s2)  [align with MoE measures]
+        if len(sv_pos) >= 2:
+            s1, s2 = float(sv_pos[0]), float(sv_pos[1])
+            psi = (s1 - s2) / (s1 + s2) if (s1 + s2) > 0 else 0.0
+        else:
+            psi = 0.0
+
+        # Spectral entropy H2 (nats) of normalized squared spectrum
+        p = sv_sq / total_var if total_var > 0 else sv_sq
+        p = p[p > 0]
+        entropy = float(-(p * np.log(p)).sum()) if len(p) else 0.0
+
         layer_type = classify_layer(name)
 
         layers.append({
@@ -151,6 +169,8 @@ def measure_perlayer(model, hidden_dim, svd_k=256):
             "sr": round(float(sr), 2),
             "sr_d": round(float(sr_d), 5),
             "c10": round(float(c10), 4),
+            "psi": round(float(psi), 4),
+            "entropy": round(float(entropy), 4),
         })
 
     return layers

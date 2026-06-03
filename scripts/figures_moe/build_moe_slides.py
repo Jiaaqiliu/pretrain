@@ -140,7 +140,7 @@ def title_block(slide, title, label):
 
 
 # small total placeholder; fixed after we know final count
-TOTAL = len(prs.slides) + 7
+TOTAL = len(prs.slides) + 10
 
 # =========================================================================
 # SLIDE A — Part V divider
@@ -346,6 +346,74 @@ finding_page(
       ("information-bottleneck", 13, True, GREEN, YAHEI),
       (" effect,", 13, False, INK, YAHEI)],
      [("not over-fitting — narrow experts force a heavy tail.",
+       13, False, INK, YAHEI)]],
+)
+
+# Finding F — attn vs FFN: same ordering, but compressed into Lévy region
+finding_page(
+    "Finding F: Same Ordering, Lévy-Shifted",
+    "Per-Layer Breakdown",
+    "dense_vs_moe_attn_ffn.png",
+    "FFN > attn in BOTH;  gap Δα 1.26 → 0.41",
+    [
+        [("Ordering is preserved: ", 13, False, SUB, YAHEI),
+         ("FFN α > attn α", 13, True, INK, YAHEI),
+         (" in both", 13, False, SUB, YAHEI)],
+        [("(dense MLP 3.34 > attn 2.08; MoE 1.62 > 1.21)", 13, False, SUB, YAHEI)],
+        [("But MoE pushes ", 13, False, SUB, YAHEI),
+         ("every component below α=2", 13, True, GREEN, YAHEI)],
+        [("and shrinks the attn–FFN gap (1.26 → 0.41)", 13, False, SUB, YAHEI)],
+        [("Within attn: q/k (α≈1.1) < v/o (α≈1.27)", 13, False, SUB, YAHEI)],
+    ],
+    [[("MoE doesn’t reverse the hierarchy — it ", 13, False, INK, YAHEI),
+      ("compresses", 13, True, GREEN, YAHEI)],
+     [("everything into the heavy-tailed Lévy regime.",
+       13, False, INK, YAHEI)]],
+    hi_fill=CARD_BLUE, hi_col=BLUE,
+)
+
+# Finding G — expert count vs specialization
+finding_page(
+    "Finding G: Fewer Experts, More Specialized",
+    "Per-Expert Divergence",
+    "moe_spread_compare.png",
+    "OLMoE σ(α)=0.02   vs   Mixtral σ(α)=0.85",
+    [
+        [("OLMoE (64 experts): experts ", 13, False, SUB, YAHEI),
+         ("near-identical", 13, True, BLUE, YAHEI)],
+        [("spectra — fine-grained MoE homogenizes", 13, False, SUB, YAHEI)],
+        [("Mixtral (8 experts): α spans 2.5–6.5 —", 13, False, SUB, YAHEI)],
+        [("coarse MoE drives strong specialization", 13, False, SUB, YAHEI)],
+        [("Mixtral FFN α rises with depth (→6), like dense", 13, False, SUB, YAHEI)],
+    ],
+    [[("Expert granularity is a ", 13, False, INK, YAHEI),
+      ("specialization knob", 13, True, GREEN, YAHEI),
+      (":", 13, False, INK, YAHEI)],
+     [("few wide experts diverge, many narrow ones converge.",
+       13, False, INK, YAHEI)]],
+)
+
+# Finding H — unified alpha vs width (dense + MoE)
+finding_page(
+    "Finding H: Width Sets the α Regime — Universally",
+    "Dense + MoE Unified",
+    "unified_alpha_vs_width.png",
+    "narrow matrix → Lévy (α<2)   ·   wide matrix → α 4–5",
+    [
+        [("Same trend in ", 13, False, SUB, YAHEI),
+         ("both families", 13, True, INK, YAHEI),
+         (": wider → higher α", 13, False, SUB, YAHEI)],
+        [("Dense Pythia: hidden 512→4096 ⇒ attn α 1.6→5.2", 13, False, SUB, YAHEI)],
+        [("MoE: expert int 1024→14336 ⇒ α 1.46→4.00", 13, False, SUB, YAHEI)],
+        [("α<2 is ", 13, False, SUB, YAHEI),
+         ("not MoE-specific", 13, True, GREEN, YAHEI),
+         (" — small dense", 13, False, SUB, YAHEI)],
+        [("models’ attention is heavy-tailed too", 13, False, SUB, YAHEI)],
+    ],
+    [[("The α regime is set by ", 13, False, INK, YAHEI),
+      ("per-matrix width", 13, True, GREEN, YAHEI),
+      (",", 13, False, INK, YAHEI)],
+     [("not by MoE vs dense — a single unifying knob.",
        13, False, INK, YAHEI)]],
 )
 

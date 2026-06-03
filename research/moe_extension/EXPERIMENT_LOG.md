@@ -1,7 +1,7 @@
 # MoE Spectral Thermodynamics — 实验日志
 
-> 记录每个阶段的发现、过程、结果。最后更新：2026-06-03 00:35 UTC  
-> Phase 0 ✅ | Phase 1 ✅ | Phase 2 ✅ | 逐层细测 ✅ | Phase 3 ⏳ (可选)
+> 记录每个阶段的发现、过程、结果。最后更新：2026-06-03 04:30 UTC  
+> Phase 0 ✅ | Phase 1 ✅ | Phase 2 ✅ | 逐层细测 ✅ | Dense 补测 ✅ | Phase 3 ⏳ (可选)
 
 ---
 
@@ -275,7 +275,7 @@ Phi-3.5 的高 EPR 可能反映了其训练策略或者是 instruct tuning 的�
 | M1a: SR/d 收敛 | ✅ 对小专家成立 | ⚠️ 对大专家不成立 | **SR/d 公式需要修正**: 只在 intermediate ≤ hidden 时有效 |
 | M1b: SR/d 依赖 d_expert | — | ✅ **已验证** | SR/d 取决于矩阵形状比例，不仅是 hidden_dim |
 | M4: 相变阈值 | — | ✅ **已验证** | 相变由 per-expert params (hidden × intermediate) 决定 |
-| M5: MLP 瓶颈 | — | ✅ 方向反转 | Dense: α_mlp >> α_attn; MoE: α_attn < α_expert |
+| M5: MLP 瓶颈 | — | ✅ 排序一致 | Dense & MoE 都是 α_ffn > α_attn；MoE 整体压入 Lévy 区且 gap 缩小 (1.26→0.41) |
 
 ---
 
@@ -298,9 +298,18 @@ Phi-3.5 的高 EPR 可能反映了其训练策略或者是 instruct tuning 的�
 | ffn gate/up/down | 1.59–1.69 | 比 attn 高 |
 | router | 1.54–2.30 | 最高，浅层(L1-4)显著高于深层 |
 
-**关键发现 1: MoE 中 attention 比 FFN 更 heavy-tailed (α_attn < α_ffn)**  
-这与 dense 模型完全相反！Dense: α_mlp(7+) >> α_attn(<4)。MoE: α_attn(~1.2) < α_ffn(~1.6)。  
-原因: MoE 把容量分散到 64 个小专家，每个专家 intermediate=1024 比 attention 投影 (2048×2048) 更"宽"，反而不那么 heavy-tailed。Attention 仍是单一矩阵，承担全部 token 的压缩。
+**关键发现 1 (已纠正): 排序与 dense 一致 (FFN > attn)，但 MoE 整体压入 Lévy 区**  
+
+> ⚠️ **纠错记录 (2026-06-03)**: 初版曾写"MoE 反转了 dense 的 attn/MLP 排序"，这是**错误**的。  
+> 用 Pythia-1B final checkpoint 核对后发现：dense 本身就是 α_attn(2.08) < α_mlp(3.34)，  
+> MoE 也是 α_attn(1.21) < α_ffn(1.62)。**两者排序相同，都是 FFN > attn，没有反转。**
+
+真正的区别是**绝对值和 gap**:
+- Dense: attn α=2.08, MLP α=3.34, gap Δα=1.26 (MLP 在 Lévy 区之上)
+- MoE: attn α=1.21, FFN α=1.62, gap Δα=0.41 (全部在 Lévy 区 α<2 之内)
+- MoE 把**所有组件**压进 heavy-tail 区间，且 attn–FFN 差距缩小 ~3x
+
+原因: MoE 把容量分散到 64 个小专家 (intermediate=1024)，每个专家自由度受限 → 整体 α 下移；同时各组件趋同，gap 缩小。Attention 仍承担全部 token 的压缩，所以它在 dense 和 MoE 中都比 FFN 更 heavy-tailed (α 更低)。
 
 **关键发现 2: q/k 比 v/o 更极端**  
 q_proj/k_proj (α≈1.1) < v_proj/o_proj (α≈1.27)。q/k 决定注意力模式(相似度计算)，承担最强的结构压缩；v/o 是值变换，更接近普通线性层。
@@ -352,6 +361,52 @@ Router α 从 L1 的 2.30 单调降到深层的 ~1.6。浅层路由决策更"随
 
 ---
 
+## Dense 补测量: 5 模型逐层 + ψ/entropy 回填 ✅ COMPLETED
+
+**日期**: 2026-06-03  
+**目标**: (1) 给 dense 逐层数据补 ψ 和 spectral entropy，与 MoE 指标对齐；(2) 测多个 hidden_dim 的 dense 模型，画 α-vs-width 趋势  
+**脚本**: `scripts/thermo/measure_perlayer_heatmap.py` (加了 410m config + psi/entropy)  
+**数据**: `results/heatmap_v2/pythia_{70m,410m,1b,2.8b,6.9b}_perlayer.jsonl` (各 24 ckpt)  
+**运行**: 1× c5.24xlarge CPU Pod, ~3.5h (5 模型串行)
+
+### Dense α vs hidden_dim (final checkpoint)
+
+| 模型 | hidden_dim | MLP α | attn α | ψ |
+|------|-----------|-------|--------|---|
+| Pythia-70m | 512 | 3.40 | 1.62 | 0.173 |
+| Pythia-410m | 1024 | 3.49 | 1.86 | 0.181 |
+| Pythia-1B | 2048 | 3.34 | 2.08 | 0.209 |
+| Pythia-2.8B | 2560 | 5.53 | 4.80 | 0.187 |
+| Pythia-6.9B | 4096 | 5.13 | 5.15 | 0.175 |
+
+### 关键发现 6: α 随矩阵宽度上升 —— dense 和 MoE 机制一致
+
+**最重要的统一论点**:
+- Dense: hidden_dim 从 512→4096，attn α 从 1.62→5.15 单调上升 (MLP 从 3.4→5.1)
+- MoE: expert intermediate 从 1024→14336，expert α 从 1.46→4.00 单调上升
+- **两个族里，矩阵越宽 → α 越高 → 越远离 Lévy 区 (α<2)**
+
+这把之前 Phase 2 的"MoE α 由 expert width 决定"提升为更普适的规律：
+> α regime 由单个权重矩阵的宽度决定，与是否 MoE 无关。窄矩阵 (无论是小 dense 模型还是细粒度 MoE 专家) 都进入 heavy-tail Lévy 区。
+
+⚠️ **诚实声明 (度量口径)**: dense 用 hidden_dim、MoE 用 intermediate_size 作 x 轴，两者不是严格同一个"宽度"定义 (dense MLP 实际是 hidden×4hidden)。所以统一图展示的是**定性趋势一致**，不是两族落在同一条曲线上。MoE 星标点不在 dense 曲线上是预期的。
+
+### 关键发现 7: dense attention 在小模型里也 < 2
+
+Pythia-70m/410m 的 attn α (1.62/1.86) 也低于 Lévy 边界 α=2。说明 **α<2 不是 MoE 独有**——小 dense 模型的 attention 同样处于 heavy-tail 区。这进一步支持"宽度决定 regime"而非"MoE 特殊"。
+
+### 生成的图 (新增)
+
+| 文件 | 内容 |
+|------|------|
+| `unified_alpha_vs_width.png` | dense 5点 + MoE 3点的 α-vs-width 趋势 (核心统一图) |
+| `dense_dynamics_{pythia1b,pythia6.9b}.png` | dense 逐层×ckpt 动力学 (attn/MLP × α/SR/d) |
+| `dense_mlp_vs_attn_{pythia1b,pythia6.9b}_{alpha,sr_d}.png` | dense MLP vs attn 逐层 |
+| `dense_psi_entropy_{1b,6.9b}.png` | dense 逐层 ψ/entropy (回填指标) |
+| `dense_vs_moe_attn_ffn.png` | dense vs MoE 的 attn/FFN α 对比 (排序一致, MoE 压入 Lévy) |
+
+---
+
 ## Phase 3: 架构对比 ⏳ OPTIONAL
 
 **目标**: 共享专家 vs 纯 MoE (N6)  
@@ -373,8 +428,9 @@ Router α 从 L1 的 2.30 单调降到深层的 ~1.6。浅层路由决策更"随
 5. **β > 1 compressed exponential** — ML 文献中无先例的训练动力学发现
 6. **EPR U-型曲线** — 新的 MoE 训练健康监控指标
 7. **α 在 MoE 中全程稳定** — 与 Dense 的相变动力学形成根本区别
-8. **MoE 中 α_attn < α_ffn (方向反转)** — Dense 是 α_mlp >> α_attn；逐层细测证实 attention 在 MoE 中是最 heavy-tailed 的组件
+8. **MoE 把所有组件压入 Lévy 区且压缩 attn–FFN gap** — 排序与 dense 一致 (FFN α > attn α)，但 MoE 整体 α<2，gap 从 dense 的 1.26 缩到 0.41 (q/k 是最 heavy-tailed 的组件)
 9. **专家数 vs 专家分化的反比关系** — OLMoE(64专家)高度同质 (σ_α≈0.02)，Mixtral(8专家)高度分化 (σ_α≈0.5)，对细/粗粒度 MoE 架构选择有指导意义
+10. **α-vs-width 是跨 dense/MoE 的普适规律** — dense (hidden 512→4096) 和 MoE (expert intermediate 1024→14336) 都呈现矩阵越宽 α 越高的单调趋势；α<2 不是 MoE 独有 (小 dense 模型的 attention 也 < 2)
 
 ---
 

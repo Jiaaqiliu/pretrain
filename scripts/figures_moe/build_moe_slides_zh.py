@@ -38,7 +38,7 @@ prs = Presentation()
 prs.slide_width = Inches(13.333)
 prs.slide_height = Inches(7.5)
 BLANK = prs.slide_layouts[6]
-TOTAL = 7
+TOTAL = 10
 
 
 def _set_bg(slide, color):
@@ -307,6 +307,68 @@ finding_page(
       ("信息瓶颈", 13, True, GREEN, YAHEI),
       (" 效应，", 13, False, INK, YAHEI)],
      [("而非过拟合 —— 窄专家强制形成重尾分布。", 13, False, INK, YAHEI)]],
+)
+
+# 发现 F — attn vs FFN：排序一致，但整体压入 Lévy 区
+finding_page(
+    8, "发现 F：排序一致，整体下移至 Lévy 区", "逐层分解",
+    "dense_vs_moe_attn_ffn.png",
+    "两者都是 FFN > attn；gap Δα 1.26 → 0.41",
+    [
+        [("排序保持不变：", 13, False, SUB, YAHEI),
+         ("FFN α > attn α", 13, True, INK, YAHEI),
+         ("（两者皆然）", 13, False, SUB, YAHEI)],
+        [("（Dense：MLP 3.34 > attn 2.08；MoE：1.62 > 1.21）", 13, False, SUB, YAHEI)],
+        [("但 MoE 把 ", 13, False, SUB, YAHEI),
+         ("每个组件都压到 α<2", 13, True, GREEN, YAHEI)],
+        [("且 attn–FFN 的差距缩小（1.26 → 0.41）", 13, False, SUB, YAHEI)],
+        [("attn 内部：q/k（α≈1.1）< v/o（α≈1.27）", 13, False, SUB, YAHEI)],
+    ],
+    [[("MoE 并未反转层次结构 —— 而是把", 13, False, INK, YAHEI),
+      ("所有组件", 13, True, GREEN, YAHEI)],
+     [("压缩进重尾的 Lévy 区间。", 13, False, INK, YAHEI)]],
+    hi_fill=CARD_BLUE,
+)
+
+# 发现 G — 专家数量 vs 特化程度
+finding_page(
+    9, "发现 G：专家越少，特化越强", "逐专家差异",
+    "moe_spread_compare.png",
+    "OLMoE σ(α)=0.02   vs   Mixtral σ(α)=0.85",
+    [
+        [("OLMoE（64 专家）：各专家谱性质 ", 13, False, SUB, YAHEI),
+         ("近乎相同", 13, True, BLUE, YAHEI)],
+        [("—— 细粒度 MoE 趋向同质化", 13, False, SUB, YAHEI)],
+        [("Mixtral（8 专家）：α 跨度 2.5–6.5 ——", 13, False, SUB, YAHEI)],
+        [("粗粒度 MoE 驱动强烈特化", 13, False, SUB, YAHEI)],
+        [("Mixtral FFN α 随深度升高（→6），类似 dense", 13, False, SUB, YAHEI)],
+    ],
+    [[("专家粒度是一个 ", 13, False, INK, YAHEI),
+      ("特化调节旋钮", 13, True, GREEN, YAHEI),
+      ("：", 13, False, INK, YAHEI)],
+     [("少而宽的专家分化，多而窄的专家趋同。", 13, False, INK, YAHEI)]],
+)
+
+# 发现 H — 统一的 α-vs-width（dense + MoE）
+finding_page(
+    10, "发现 H：矩阵宽度普适地决定 α regime", "Dense + MoE 统一",
+    "unified_alpha_vs_width.png",
+    "窄矩阵 → Lévy (α<2)   ·   宽矩阵 → α 4–5",
+    [
+        [("两个族 ", 13, False, SUB, YAHEI),
+         ("趋势一致", 13, True, INK, YAHEI),
+         ("：越宽 → α 越高", 13, False, SUB, YAHEI)],
+        [("Dense Pythia：hidden 512→4096 ⇒ attn α 1.6→5.2", 13, False, SUB, YAHEI)],
+        [("MoE：expert int 1024→14336 ⇒ α 1.46→4.00", 13, False, SUB, YAHEI)],
+        [("α<2 ", 13, False, SUB, YAHEI),
+         ("并非 MoE 独有", 13, True, GREEN, YAHEI),
+         ("——小 dense", 13, False, SUB, YAHEI)],
+        [("模型的 attention 同样是重尾的", 13, False, SUB, YAHEI)],
+    ],
+    [[("α regime 由 ", 13, False, INK, YAHEI),
+      ("单矩阵宽度", 13, True, GREEN, YAHEI),
+      (" 决定，", 13, False, INK, YAHEI)],
+     [("而非 MoE/dense 之分 —— 一个统一的调节旋钮。", 13, False, INK, YAHEI)]],
 )
 
 prs.save(str(DST))

@@ -144,6 +144,38 @@ def fig_expert_spread(data, tag):
     plt.close(fig)
 
 
+# ===========================================================================
+# Figure 4: Slide-ready combined — expert spread OLMoE vs Mixtral side by side
+# ===========================================================================
+def fig_spread_compare(olmoe, mixtral):
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.6), sharey=False)
+    for ax, data, color in [(axes[0], olmoe, "C0"), (axes[1], mixtral, "C3")]:
+        recs = [r for r in data["records"] if r["kind"] == "expert"]
+        layers = layers_of(recs)
+        means, mins, maxs = [], [], []
+        for l in layers:
+            vals = [r["alpha"] for r in recs if r["layer"] == l]
+            means.append(np.mean(vals)); mins.append(np.min(vals)); maxs.append(np.max(vals))
+        x = range(len(layers))
+        ax.fill_between(x, mins, maxs, alpha=0.22, color=color, label="expert min–max")
+        ax.plot(x, means, "o-", color=color, label="layer mean")
+        ax.set_xticks(list(x)); ax.set_xticklabels(layers, fontsize=8)
+        ax.set_xlabel("Layer index")
+        name = data["model"].split("/")[-1]
+        ne = data["num_experts"]
+        sig = np.std([r["alpha"] for r in recs])
+        ax.set_title(f"{name}\n{ne} experts · σ(α)={sig:.2f}", fontsize=11)
+        ax.legend(fontsize=8)
+        ax.axhline(2.0, ls="--", color="grey", lw=0.8)
+    axes[0].set_ylabel(r"Expert $\alpha$")
+    fig.suptitle("Fewer experts → stronger specialization (wider α spread)", fontsize=13)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fn = OUT / "moe_spread_compare.png"
+    fig.savefig(fn, dpi=160)
+    print("Saved", fn)
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     olmoe = load("olmoe")
     mixtral = load("mixtral")
@@ -156,5 +188,7 @@ if __name__ == "__main__":
 
     fig_expert_spread(olmoe, "olmoe")
     fig_expert_spread(mixtral, "mixtral")
+
+    fig_spread_compare(olmoe, mixtral)
 
     print("\nDone.")
