@@ -1,7 +1,7 @@
 # MoE Spectral Thermodynamics — 实验日志
 
-> 记录每个阶段的发现、过程、结果。最后更新：2026-06-02 21:30 UTC  
-> Phase 0 ✅ | Phase 1 ✅ | Phase 2 ✅ | Phase 3 ⏳ (可选)
+> 记录每个阶段的发现、过程、结果。最后更新：2026-06-03 00:35 UTC  
+> Phase 0 ✅ | Phase 1 ✅ | Phase 2 ✅ | 逐层细测 ✅ | Phase 3 ⏳ (可选)
 
 ---
 
@@ -279,6 +279,79 @@ Phi-3.5 的高 EPR 可能反映了其训练策略或者是 instruct tuning 的�
 
 ---
 
+## 逐层细测: Attention vs FFN + 专家间差异 ✅ COMPLETED
+
+**日期**: 2026-06-03  
+**目标**: 存储每层 attention (q/k/v/o) + 每个专家 + router 的单独谱值，画 dense-style 热力图  
+**脚本**: `scripts/run_perlayer_detail.py`  
+**数据**: `results/perlayer_detail/{olmoe,mixtral}_detail.json` (848 + 232 矩阵)  
+**图**: `docs/presentation/figures_moe/moe_perlayer_*`, `moe_perexpert_*`, `moe_expertspread_*`
+
+### OLMoE 逐层 α 分解 (核心发现)
+
+| 组件 | α 范围 | 说明 |
+|------|--------|------|
+| attn q_proj | 1.05–1.24 | **最 heavy-tailed** |
+| attn k_proj | 1.07–1.23 | 同上 |
+| attn v_proj | 1.26–1.28 | 极稳定 |
+| attn o_proj | 1.25–1.30 | 极稳定 |
+| ffn gate/up/down | 1.59–1.69 | 比 attn 高 |
+| router | 1.54–2.30 | 最高，浅层(L1-4)显著高于深层 |
+
+**关键发现 1: MoE 中 attention 比 FFN 更 heavy-tailed (α_attn < α_ffn)**  
+这与 dense 模型完全相反！Dense: α_mlp(7+) >> α_attn(<4)。MoE: α_attn(~1.2) < α_ffn(~1.6)。  
+原因: MoE 把容量分散到 64 个小专家，每个专家 intermediate=1024 比 attention 投影 (2048×2048) 更"宽"，反而不那么 heavy-tailed。Attention 仍是单一矩阵，承担全部 token 的压缩。
+
+**关键发现 2: q/k 比 v/o 更极端**  
+q_proj/k_proj (α≈1.1) < v_proj/o_proj (α≈1.27)。q/k 决定注意力模式(相似度计算)，承担最强的结构压缩；v/o 是值变换，更接近普通线性层。
+
+**关键发现 3: router 浅层高、深层低**  
+Router α 从 L1 的 2.30 单调降到深层的 ~1.6。浅层路由决策更"随机/均匀"(高α)，深层路由更"结构化/专门化"(低α)。
+
+### Mixtral 逐层 α 分解 (大专家对比)
+
+| 组件 | α 范围 | 说明 |
+|------|--------|------|
+| attn k_proj | 1.23–1.57 | heavy-tailed |
+| attn v_proj | 1.52–1.84 | — |
+| attn q_proj | 1.56–2.87 | 深层升高 |
+| attn o_proj | 2.91–3.64 | 高 |
+| ffn w1/w2/w3 | 2.65–6.09 | **随深度显著升高** |
+
+**关键发现 4: Mixtral 恢复了 dense-like 的层次结构**  
+- FFN 专家 α 随深度增大 (浅层~3 → 深层 w3 达 6.09)，与 dense MLP 的深度趋势一致
+- 大专家 (intermediate=14336) 使 FFN 重新进入 α>2 regime
+- 但 attn k/v 仍保持 heavy-tailed (<2)，说明 attention 的压缩特性是架构无关的
+
+### 专家间差异 (per-expert spread)
+
+| 模型 | 专家 α spread | 解读 |
+|------|--------------|------|
+| OLMoE | 1.54–1.68 (极窄, σ≈0.02) | 64 个专家高度同质，load balancing 强 |
+| Mixtral | 2.5–6.5 (极宽, σ≈0.5) | 8 个专家高度分化，每个专家独特 |
+
+**关键发现 5: 专家数越少，专家间分化越大**  
+- OLMoE (64 experts): 专家近乎相同的谱性质 → 细粒度 MoE 倾向同质化
+- Mixtral (8 experts): 专家谱性质差异巨大 → 粗粒度 MoE 倾向专门化
+- 这对"细粒度 vs 粗粒度 MoE"的架构选择有理论意义
+
+### 生成的图 (10 张)
+
+| 文件 | 内容 |
+|------|------|
+| `moe_perlayer_olmoe_attn_vs_ffn_{alpha,srd}.png` | OLMoE: attn/ffn/router × 16层 热力图 |
+| `moe_perlayer_mixtral_attn_vs_ffn_{alpha,srd}.png` | Mixtral: 同上 × 8层 |
+| `moe_perexpert_olmoe_{alpha,srd}.png` | OLMoE: 16专家 × 16层 |
+| `moe_perexpert_mixtral_{alpha,srd}.png` | Mixtral: 8专家 × 8层 |
+| `moe_expertspread_{olmoe,mixtral}.png` | 专家 α spread 折线图 |
+
+### 已知限制
+
+- Mixtral router α = NaN: router 矩阵 [8, 4096] 只有 8 个奇异值，太少无法拟合 power-law (OLMoE [64,2048] 可以)。SR/d 仍有值。
+- 测的是 final checkpoint，逐层 attention 的训练动力学未测 (Phase 1 只存了 FFN 逐层轨迹)。
+
+---
+
 ## Phase 3: 架构对比 ⏳ OPTIONAL
 
 **目标**: 共享专家 vs 纯 MoE (N6)  
@@ -300,6 +373,8 @@ Phi-3.5 的高 EPR 可能反映了其训练策略或者是 instruct tuning 的�
 5. **β > 1 compressed exponential** — ML 文献中无先例的训练动力学发现
 6. **EPR U-型曲线** — 新的 MoE 训练健康监控指标
 7. **α 在 MoE 中全程稳定** — 与 Dense 的相变动力学形成根本区别
+8. **MoE 中 α_attn < α_ffn (方向反转)** — Dense 是 α_mlp >> α_attn；逐层细测证实 attention 在 MoE 中是最 heavy-tailed 的组件
+9. **专家数 vs 专家分化的反比关系** — OLMoE(64专家)高度同质 (σ_α≈0.02)，Mixtral(8专家)高度分化 (σ_α≈0.5)，对细/粗粒度 MoE 架构选择有指导意义
 
 ---
 
